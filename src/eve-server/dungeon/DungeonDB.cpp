@@ -60,8 +60,9 @@ void DungeonDB::GetArchetypes(DBQueryResult& res)
 }
 
 // Mission encounter templates are stored separately from the legacy dunDungeons
-// and dunRooms tables. Load their NPC room objects directly so they can be used
-// without creating or modifying database rows.
+// and dunRooms tables. Import every room object so mission pockets retain both
+// NPC entities and non-NPC scenery, gates, containers, and other static objects.
+// NPC classification is performed against the local inventory group data at use time.
 void DungeonDB::GetMissionTemplateData(DBQueryResult& res)
 {
     if (!sDatabase.RunQuery(res,
@@ -70,8 +71,6 @@ void DungeonDB::GetMissionTemplateData(DBQueryResult& res)
         "o.x, o.y, o.z, o.yaw, o.pitch, o.roll, o.radius "
         "FROM dunTemplates t "
         "INNER JOIN dunRoomObjects o ON o.roomID = t.dunRoomID "
-        "INNER JOIN invGroups g ON g.groupID = o.groupID "
-        "WHERE g.categoryID IN (6, 18) "
         "ORDER BY t.dunTemplateID, o.objectID"))
         _log(DATABASE__ERROR, "Error in GetMissionTemplateData query: %s", res.error.c_str());
 }
