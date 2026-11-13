@@ -170,3 +170,13 @@ Added ccache to Linux and Windows CI, with GitHub Actions cache storage keyed by
 - Failure diagnosed from Windows job `131909122206`: compile/link succeeded; package failed because it searched `C:\mingw64` instead of the UCRT64 prefix.
 - New workflow changes: packaging path correction and ccache.
 - Validation: pending fresh Linux, Windows and Docker runs.
+
+
+### Windows startup-crash diagnostic symbols
+
+The user's Windows 11 executable terminates before `main()` during C++ static initialization. The supplied GDB trace reaches the compiler-generated initializer for the translation unit containing `PyException::PyException(PyRep*)`, but the packaged executable has no debugging symbols. GDB also reports GCC's Windows C++ exception code (`0x20474343`) as an unknown target exception, so continuing causes the process to exit without a usable throw-site stack.
+
+Changed the Windows CI configuration from `Release` to `RelWithDebInfo`. This keeps optimized code while embedding debug information in the executable, allowing a fresh Windows ZIP to provide source-level symbols for the next GDB run. Linux remains a Release build. No runtime code has been changed based on the incomplete stack trace.
+
+- Diagnostic change: Windows `RelWithDebInfo` build; symbols must be confirmed in the resulting executable with GDB before use.
+- Validation: pending Windows CI run and a fresh user-side GDB trace.
