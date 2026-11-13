@@ -123,3 +123,14 @@ These are targeted null-safety fixes; fresh Linux, Windows, and Docker CI valida
 The successful Linux build still reports format/type mismatches, ignored `vasprintf`/`fread` return values, possible null `this` paths, a non-null violation in `ServiceDB.cpp`, and unsafe non-literal format strings in admin/debug commands. Windows still reports deprecated `std::iterator` inheritance and a possible oversized `memmove` bound in `Buffer.h`. Both platforms report no registered CTest tests. GitHub Actions also warns that `actions/checkout@v4` and `actions/upload-artifact@v4` target deprecated Node.js 20 runtimes.
 
 These are recorded for targeted review; no warning suppression or speculative gameplay changes were made.
+
+
+### Follow-up warning cleanup after green baseline
+
+Applied a small safety cleanup to five admin/debug reply formatting calls. They previously passed generated text as the `snprintf` format string; they now pass the explicit `"%s"` format and the generated text as data. This removes the `-Wformat-security` warnings at the reviewed call sites and prevents percent characters in reply text from being interpreted as format directives.
+
+- `debug_commands.cpp`: commit `5420e4635910858ab2bc50488ad6af12c7896ac8`
+- `DungeonCommands.cpp`: commit `e0db93b773a887b47776028d2dced8e7bca94756`
+- `SystemCommands.cpp`: commit `da50679894796ed5a7409375342d5b1fb99e067d`
+
+The null-safety fixes and formatting cleanup are committed on the modernization branch. CI validation is pending for the resulting branch head; the earlier all-green result applies to the parent commit only.
