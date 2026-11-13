@@ -95,3 +95,31 @@ Corrective workflow changes:
 - Fix commit: `5bc93bd8a6b525bc20e1679e3de1a0a3fdb23cb8`
 - Validation: pending fresh Windows UCRT64 packaging run. A green Windows artifact is not yet claimed.
 - Latest completed validation before this change: Linux GCC and Docker passed; Windows compile, link, test invocation, and install passed, but packaging failed.
+
+
+### Green CI verification and warning review
+
+Verified PR workflow run [43430216126](https://github.com/xrizonx/evemu_Crucible/actions/runs/43430216126) on commit `52f0a977d7120945d27f25960be8cf77af413fb7`:
+- Linux GCC: build, CTest invocation, install, package, and artifact upload succeeded.
+- Windows UCRT64: build, CTest invocation, install, runtime DLL packaging, and artifact upload succeeded.
+- Docker image build succeeded.
+- Both platform artifacts were uploaded successfully.
+- Important qualification: CTest printed `No tests were found!!!` on both platforms. The CI green result therefore does not represent automated gameplay/test coverage.
+
+### Confirmed null-pointer defects fixed after green run
+
+The compiler warning review exposed two definite guard/handling defects:
+
+1. `ModuleManager::RepairModule(GenericModule*, EvilNumber)` tested `pMod != nullptr` before logging that the module was not loaded and returning. This rejected valid modules and allowed null pointers to be dereferenced. Corrected the guard to `pMod == nullptr`; valid modules now reach `Repair(amount)`.
+   - Commit: `ff6c88ebbb6e9b695e185990e452bd8601891990`
+
+2. `Colony::LaunchCommodities()` tested for a failed container spawn, then dereferenced the null container and continued. Removed the invalid delete and now return safely when spawning fails and exceptions are not enabled; the existing exception path is retained.
+   - Commit: `314ef3a8ddb76618b2e990c6f89b86173fbb42a2`
+
+These are targeted null-safety fixes; fresh Linux, Windows, and Docker CI validation is required on the updated branch before claiming them verified.
+
+### Remaining warning and quality backlog
+
+The successful Linux build still reports format/type mismatches, ignored `vasprintf`/`fread` return values, possible null `this` paths, a non-null violation in `ServiceDB.cpp`, and unsafe non-literal format strings in admin/debug commands. Windows still reports deprecated `std::iterator` inheritance and a possible oversized `memmove` bound in `Buffer.h`. Both platforms report no registered CTest tests. GitHub Actions also warns that `actions/checkout@v4` and `actions/upload-artifact@v4` target deprecated Node.js 20 runtimes.
+
+These are recorded for targeted review; no warning suppression or speculative gameplay changes were made.
