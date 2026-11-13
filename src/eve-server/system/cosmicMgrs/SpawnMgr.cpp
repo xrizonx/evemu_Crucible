@@ -20,6 +20,17 @@
 #include "system/cosmicMgrs/DungeonMgr.h"
 #include "agents/Agent.h"
 
+// NPC ship types in this Crucible data set use Entity category (11) and
+// faction rat groups named "Asteroid ...". Retain non-NPC room objects as
+// celestials instead of silently discarding them.
+static bool IsMissionNPCGroup(const Inv::GrpData& group)
+{
+    return group.catID == EVEDB::invCategories::Ship
+        || group.catID == EVEDB::invCategories::Drone
+        || (group.catID == EVEDB::invCategories::Entity
+            && group.name.compare(0, 9, "Asteroid ") == 0);
+}
+
 /** @todo  this can be updated to spawn mission, anomaly and deadspace rats.
  *   change all *roidRat* to *somethingelse* to better explain/describe the maps and how they're used.
  *  add objects for mission, anomaly and deadspace rats as needed to aid in tracking/deleting.
@@ -522,52 +533,68 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
                     continue;
                 }
 
-                if (objectGroup.catID != EVEDB::invCategories::Ship
-                    && objectGroup.catID != EVEDB::invCategories::Drone)
-                    continue;
-
                 GPoint spawnPosition = pBubble->GetCenter();
                 spawnPosition.x += object.x;
                 spawnPosition.y += object.y;
                 spawnPosition.z += object.z;
 
-                ItemData itemData(object.typeID, corpID, m_system->GetID(), flagNone,
-                                  "", spawnPosition, objectType.name.c_str());
-                InventoryItemRef item = sItemFactory.SpawnItem(itemData);
-                if (item.get() == nullptr) {
-                    _log(SPAWN__ERROR, "Mission %u failed to create template NPC type %u.",
-                            offerID, object.typeID);
-                    continue;
+                if (IsMissionNPCGroup(objectGroup)) {
+                    ItemData itemData(object.typeID, corpID, m_system->GetID(), flagNone,
+                                      "", spawnPosition, objectType.name.c_str());
+                    InventoryItemRef item = sItemFactory.SpawnItem(itemData);
+                    if (item.get() == nullptr) {
+                        _log(SPAWN__ERROR, "Mission %u failed to create template NPC type %u.",
+                                offerID, object.typeID);
+                        continue;
+                    }
+
+                    NPC* pNPC = new NPC(item, m_services, m_system, factionData, this);
+                    if (pNPC == nullptr)
+                        continue;
+                    if (!pNPC->Load()) {
+                        _log(SPAWN__ERROR, "Mission %u failed to load template NPC %u (type %u).",
+                                offerID, pNPC->GetID(), object.typeID);
+                        pNPC->Delete();
+                        continue;
+                    }
+
+                    m_system->AddNPC(pNPC);
+                    pNPC->DestinyMgr()->SetPosition(spawnPosition);
+
+                    SpawnEntry entry = SpawnEntry();
+                    entry.enabled = false;
+                    entry.groupID = item->type().groupID();
+                    entry.itemID = item->itemID();
+                    entry.total = 1;
+                    entry.number = ++spawnNumber;
+                    entry.typeID = object.typeID;
+                    entry.spawnID = m_spawnID;
+                    entry.corpID = corpID;
+                    entry.factionID = factionID;
+                    entry.spawnClass = spawnClass;
+                    entry.spawnGroup = GetSpawnGroup(spawnClass);
+                    entry.level = missionLevel;
+                    entry.stamp = 0;
+                    m_spawns.emplace(pBubble->GetID(), entry);
+                } else {
+                    // Non-NPC room objects (structures, gates, containers and
+                    // scenery) remain part of the pocket as ordinary celestials.
+                    ItemData objectData(object.typeID, corpID, m_system->GetID(), flagNone,
+                                        "", spawnPosition, objectType.name.c_str());
+                    InventoryItemRef objectItem = sItemFactory.SpawnItem(objectData);
+                    if (objectItem.get() == nullptr) {
+                        _log(SPAWN__WARNING, "Mission %u failed to create room object type %u.",
+                                offerID, object.typeID);
+                        continue;
+                    }
+
+                    CelestialSE* pCelestial = new CelestialSE(objectItem, m_services, m_system);
+                    if (pCelestial == nullptr) {
+                        objectItem->Delete();
+                        continue;
+                    }
+                    m_system->AddEntity(pCelestial, false);
                 }
-
-                NPC* pNPC = new NPC(item, m_services, m_system, factionData, this);
-                if (pNPC == nullptr)
-                    continue;
-                if (!pNPC->Load()) {
-                    _log(SPAWN__ERROR, "Mission %u failed to load template NPC %u (type %u).",
-                            offerID, pNPC->GetID(), object.typeID);
-                    pNPC->Delete();
-                    continue;
-                }
-
-                m_system->AddNPC(pNPC);
-                pNPC->DestinyMgr()->SetPosition(spawnPosition);
-
-                SpawnEntry entry = SpawnEntry();
-                entry.enabled = false;
-                entry.groupID = item->type().groupID();
-                entry.itemID = item->itemID();
-                entry.total = 1;
-                entry.number = ++spawnNumber;
-                entry.typeID = object.typeID;
-                entry.spawnID = m_spawnID;
-                entry.corpID = corpID;
-                entry.factionID = factionID;
-                entry.spawnClass = spawnClass;
-                entry.spawnGroup = GetSpawnGroup(spawnClass);
-                entry.level = missionLevel;
-                entry.stamp = 0;
-                m_spawns.emplace(pBubble->GetID(), entry);
             }
 
             if (spawnNumber > 0) {
