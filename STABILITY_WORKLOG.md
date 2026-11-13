@@ -134,3 +134,16 @@ Applied a small safety cleanup to five admin/debug reply formatting calls. They 
 - `SystemCommands.cpp`: commit `da50679894796ed5a7409375342d5b1fb99e067d`
 
 The null-safety fixes and formatting cleanup are committed on the modernization branch. CI validation is pending for the resulting branch head; the earlier all-green result applies to the parent commit only.
+
+
+### Windows 11 runtime DLL packaging hardening
+
+User reported that the distributed Windows ZIP was missing `libtinyxml-0.dll`, `libmariadb.dll`, and `libz-1.dll`, causing startup failures on Windows 11 systems without the MSYS2 development environment installed.
+
+Updated the Windows packaging step:
+- Resolve imported DLL dependencies recursively against the complete UCRT64 installation tree, rather than checking only the `bin` directory.
+- Copy discovered runtime DLLs into the package root beside the executables so Windows loader lookup can find them.
+- Explicitly verify that `libtinyxml-0.dll`, `libmariadb.dll`, and `libz-1.dll` are present in the staged package; fail packaging if any are absent instead of uploading an incomplete ZIP.
+
+- Fix commit: `bf340ba09a34dbb3e8d17b9d738b821cb21b01db`
+- Validation: fresh Windows packaging workflow pending. The fix is not yet claimed as verified until the build produces a ZIP containing all three DLLs.
