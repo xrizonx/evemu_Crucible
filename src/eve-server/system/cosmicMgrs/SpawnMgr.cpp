@@ -493,8 +493,15 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
         // The imported mission rows in some Crucible data sets have dungeonID=0.
         // Resolve a real NPC-bearing agent-mission template by faction instead
         // of requiring the empty legacy dunDungeons/dunRooms tables.
-        if (missionDungeon.rooms.empty())
-            sDunDataMgr.GetRandomMissionDungeon(missionDungeon, factionID);
+        if (missionDungeon.rooms.empty()) {
+            if (offer.missionID == 65535) {
+                // The synthetic Blockade test is Angel Cartel content and must
+                // not inherit the issuing agent's empire faction.
+                sDunDataMgr.GetRandomMissionDungeonForGroup(missionDungeon, "Asteroid Angel Cartel");
+            } else {
+                sDunDataMgr.GetRandomMissionDungeon(missionDungeon, factionID);
+            }
+        }
 
         if (missionDungeon.factionID != 0)
             factionID = missionDungeon.factionID;
