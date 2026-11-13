@@ -68,9 +68,11 @@ void EVETCPConnection::QueueRep( const PyRep* rep, bool compress/*true*/ )
         success = MarshalDeflate(rep, *pBuffer, PACKET_SIZE_LIMIT);
     }
 
+    bool packetTooLarge(false);
     if (success && pBuffer->size() - sizeof(uint32) > PACKET_SIZE_LIMIT) {
         sLog.Error("Network", "Outbound packet length %u exceeds hardcoded packet length limit %u.",
                    static_cast<uint32>(pBuffer->size() - sizeof(uint32)), PACKET_SIZE_LIMIT);
+        packetTooLarge = true;
         success = false;
     }
 
@@ -80,7 +82,7 @@ void EVETCPConnection::QueueRep( const PyRep* rep, bool compress/*true*/ )
         // write length
         *bufLen = ( pBuffer->size() - sizeof( uint32 ) );
         Send( &pBuffer );
-    } else if (pBuffer->size() - sizeof(uint32) <= PACKET_SIZE_LIMIT) {
+    } else if (!packetTooLarge) {
         sLog.Error( "Network", "Failed to marshal new packet." );
     }
 
