@@ -10,7 +10,7 @@
 ###############
 # We need a target-specific property INCLUDE_DIRECTORIES which
 # is part of CMake 2.8.8 and later.
-CMAKE_MINIMUM_REQUIRED( VERSION 2.8.8 FATAL_ERROR )
+CMAKE_MINIMUM_REQUIRED( VERSION 3.16 FATAL_ERROR )
 
 PROJECT( "evemu" )
 SET( PROJECT_DESCRIPTION_SUMMARY "A server emulator for EVE Online" )
@@ -62,8 +62,10 @@ INCLUDE( "DetectScm" )
 # override the setup.
 #
 # Switch to the C++11 standard (required)
-IF (WIN32)
-  set (CMAKE_CXX_STANDARD 17)
+SET(CMAKE_CXX_STANDARD 17)
+SET(CMAKE_CXX_STANDARD_REQUIRED ON)
+SET(CMAKE_CXX_EXTENSIONS ON)
+IF (WIN32 AND MSVC)
   SET( CMAKE_CXX_FLAGS "/permissive- -DHAVE_WINDOWS_H -DHAVE_WINSOCK2_H /DEBUG /Zi ${CMAKE_CXX_FLAGS}" )
   link_libraries(DbgHelp.lib)
 ELSE()
