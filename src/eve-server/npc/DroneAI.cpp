@@ -261,7 +261,7 @@ void DroneAIMgr::Target(SystemEntity* pTarget) {
 
 void DroneAIMgr::Targeted(SystemEntity* pAgressor) {
     if (m_pDrone == nullptr || pAgressor == nullptr) {
-        _log(DRONE__AI_WARNING, "Drone AI received a target notification without a valid drone or aggressor.");
+        _log(DRONE__AI_TRACE, "Drone AI received a target notification without a valid drone or aggressor.");
         return;
     }
     _log(DRONE__AI_TRACE, "Drone %s(%u): Targeted by %s(%u) while %s.",
