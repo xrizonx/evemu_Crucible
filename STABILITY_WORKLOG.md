@@ -65,3 +65,9 @@ Corrective changes:
 Commits: `4c6f635e23177c2299c336a24c45bf5f64711834`, `86db8862da512b658ba568194e893485633d82b9`.
 
 Validation is pending fresh CI on the updated branch. The PR was found unexpectedly closed during this check and was reopened immediately; it remains a draft and unmerged.
+
+
+## 2026-11-13 — Windows UCRT64 Boost.Asio compatibility
+- Rechecked the latest PR workflow: Linux GCC build, CTest, packaging, and Docker image build pass; Windows UCRT64 fails compiling `ImageServerConnection.cpp` because current Boost.Asio no longer exposes the legacy `const_buffers_1` type.
+- Replaced the four static HTTP response buffer declarations/definitions with the supported `boost::asio::const_buffer` type. The response payloads and asynchronous write behavior are unchanged.
+- Windows rebuild is required to verify this compatibility fix; no claim of a passing Windows build until CI completes.
