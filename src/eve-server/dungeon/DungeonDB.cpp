@@ -192,12 +192,12 @@ void DungeonDB::GetRoomObjects(uint32 roomID, std::vector< Dungeon::RoomObject >
             entry.roomID = row.GetInt(1);
             entry.typeID = row.GetInt(2);
             entry.groupID = row.GetInt(3);
-            entry.x = row.GetInt(4);
-            entry.y = row.GetInt(5);
-            entry.z = row.GetInt(6);
-            entry.pitch = row.GetDouble(7);
-            entry.roll = row.GetDouble(8);
-            entry.yaw = row.GetDouble(9);
+            entry.x = row.GetDouble(4);
+            entry.y = row.GetDouble(5);
+            entry.z = row.GetDouble(6);
+            entry.yaw = row.GetDouble(7);
+            entry.pitch = row.GetDouble(8);
+            entry.roll = row.GetDouble(9);
             entry.radius = row.GetDouble(10);
         into.push_back(entry);
     }
@@ -221,12 +221,12 @@ void DungeonDB::GetTemplateObjects(uint32 templateID, std::vector< Dungeon::Room
             entry.roomID = row.GetInt(1);
             entry.typeID = row.GetInt(2);
             entry.groupID = row.GetInt(3);
-            entry.x = row.GetInt(4);
-            entry.y = row.GetInt(5);
-            entry.z = row.GetInt(6);
-            entry.pitch = row.GetDouble(7);
-            entry.roll = row.GetDouble(8);
-            entry.yaw = row.GetDouble(9);
+            entry.x = row.GetDouble(4);
+            entry.y = row.GetDouble(5);
+            entry.z = row.GetDouble(6);
+            entry.yaw = row.GetDouble(7);
+            entry.pitch = row.GetDouble(8);
+            entry.roll = row.GetDouble(9);
             entry.radius = row.GetDouble(10);
         into.push_back(entry);
     }
