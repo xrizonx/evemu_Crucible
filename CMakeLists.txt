@@ -12,6 +12,11 @@
 # is part of CMake 2.8.8 and later.
 CMAKE_MINIMUM_REQUIRED( VERSION 3.16 FATAL_ERROR )
 
+# Prefer Boost's package-provided CMake config on newer CMake versions.
+IF( POLICY CMP0167 )
+  CMAKE_POLICY( SET CMP0167 NEW )
+ENDIF()
+
 PROJECT( "evemu" )
 SET( PROJECT_DESCRIPTION_SUMMARY "A server emulator for EVE Online" )
 SET( PROJECT_VENDOR              "The EVEmu development team" )
