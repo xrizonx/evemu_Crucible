@@ -14,6 +14,7 @@
 #include "npc/NPC.h"
 #include "npc/NPCAI.h"
 #include "system/DestinyManager.h"
+#include "system/Celestial.h"
 #include "system/SystemManager.h"
 #include "system/SystemBubble.h"
 #include "system/cosmicMgrs/SpawnMgr.h"
