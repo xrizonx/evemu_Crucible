@@ -184,7 +184,7 @@ bool DungeonDataMgr::GetRandomMissionDungeonForGroup(Dungeon::Dungeon& dungeon, 
             Inv::GrpData group = {};
             sDataMgr.GetGroup(object.groupID, group);
             if (group.id != 0 && group.catID == EVEDB::invCategories::Entity
-                    && group.name.compare(0, strlen(groupPrefix), groupPrefix) == 0) {
+                    && group.name.compare(0, std::strlen(groupPrefix), groupPrefix) == 0) {
                 hasRequestedNPC = true;
                 break;
             }
