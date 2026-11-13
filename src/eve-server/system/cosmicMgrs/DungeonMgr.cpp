@@ -125,8 +125,8 @@ bool DungeonDataMgr::GetRandomMissionDungeon(Dungeon::Dungeon& dungeon, uint32 f
     std::vector<Dungeon::Dungeon> factionCandidates;
 
     // Archetype 20 is the static-data archetype for agent mission dungeons.
-    // The template loader only returns room objects whose inventory groups
-    // are ships or drones, so mining-only rooms cannot be selected as combat pockets.
+    // Templates retain all room objects. Select only rooms containing known NPC
+    // groups so mining-only and scenery-only rooms cannot become combat pockets.
     for (const Dungeon::Dungeon& candidate : m_dungeons) {
         if (candidate.archetypeID != 20 || candidate.rooms.empty())
             continue;
@@ -196,7 +196,7 @@ void DungeonDataMgr::Populate()
         FillObject(row);
         ++missionTemplateObjectCount;
     }
-    _log(DUNG__MESSAGE, "Loaded %u NPC room objects from mission dungeon templates.", missionTemplateObjectCount);
+    _log(DUNG__MESSAGE, "Loaded %u room objects from mission dungeon templates.", missionTemplateObjectCount);
     SafeDelete(templateRes);
 
     sLog.Cyan("       DunDataMgr", "%lu Dungeon data sets loaded in %.3fms.",
