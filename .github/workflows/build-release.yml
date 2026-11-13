@@ -1,5 +1,9 @@
 name: EVEmu Build and Release
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [master, evemu-crucible-modernization]
