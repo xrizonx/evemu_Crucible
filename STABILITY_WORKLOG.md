@@ -71,3 +71,13 @@ Validation is pending fresh CI on the updated branch. The PR was found unexpecte
 - Rechecked the latest PR workflow: Linux GCC build, CTest, packaging, and Docker image build pass; Windows UCRT64 fails compiling `ImageServerConnection.cpp` because current Boost.Asio no longer exposes the legacy `const_buffers_1` type.
 - Replaced the four static HTTP response buffer declarations/definitions with the supported `boost::asio::const_buffer` type. The response payloads and asynchronous write behavior are unchanged.
 - Windows rebuild is required to verify this compatibility fix; no claim of a passing Windows build until CI completes.
+
+
+### Windows UCRT64 linker correction — Mswsock
+
+The uploaded Windows CI log shows the full 345-step compile completed and the failure occurs only when linking `eve-server.exe`. The remaining unresolved symbols are `AcceptEx` and `GetAcceptExSockaddrs`, used by Boost.Asio's Windows IOCP accept implementation. These extension functions are exported by the Windows Mswsock library.
+
+- Updated the global Windows link dependencies from `ws2_32` to `ws2_32 mswsock`; this applies consistently to all Windows executable targets.
+- No application code or socket behavior was changed.
+- The same log contains repeated `std::iterator` deprecation warnings from `Buffer.h` and a GCC `-Wstringop-overflow` diagnostic around its generic `memmove`. These warnings are not the linker failure; they are recorded for a separate, behavior-preserving cleanup after the Windows link is verified. No warning suppression or test weakening was added.
+- Validation: fresh CI required; Windows link success is not yet claimed.
