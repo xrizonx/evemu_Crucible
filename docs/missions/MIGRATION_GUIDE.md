@@ -6,6 +6,10 @@ Restore the missing EVEmu mission catalogue from traceable EVE Online data, with
 
 The current database investigation found 2,673 `agtMissions` rows with zero `rewardISK` and zero `dungeonID`; the 16 encounter-type rows are named `Cargo Delivery`. The current loader in `src/eve-server/missions/MissionDB.cpp` also filters `agtMissions` on `rewardISK > 0`. Removing that filter alone would load incomplete records and is not a valid repair.
 
+## Version compatibility gate
+
+The current CCP SDE is not automatically a safe import target for this older Crucible codebase. Before importing any current SDE mission or NPC type, compare the SDE build/era against the repository's bundled static data and the target database's existing type/faction IDs. Prefer an archived SDE matching the static-data era of this fork. Current 2026 mission guides are useful for discovering variants and mechanics, but must be version-tagged and must not silently overwrite legacy-compatible data. Any type ID absent from this fork's `invTypes` must be rejected or explicitly mapped; never create guessed type rows.
+
 ## Data-source hierarchy
 
 1. **CCP Static Data Export (SDE)** — canonical source for mission IDs, mission kind, localized briefing/objective text, static reward fields, item/type IDs, NPC ship types, groups, factions and dungeon metadata where present. Official documentation: https://developers.eveonline.com/docs/services/static-data/
