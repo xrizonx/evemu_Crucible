@@ -51,6 +51,12 @@ jobs:
         run: ctest --test-dir build --output-on-failure
       - name: Install
         run: cmake --install build --prefix stage
+      - name: Download matching EVEDBTool Linux x86_64 binary
+        run: |
+          curl --fail --location --retry 3 --output sql/evedbtool https://github.com/EvEmu-Project/EVEDBTool/releases/download/0.0.6/evedbtool
+          test -s sql/evedbtool
+          chmod +x sql/evedbtool
+          file sql/evedbtool
       - name: Add runtime files and package
         run: |
           mkdir -p stage/share/evemu
@@ -114,6 +120,15 @@ jobs:
       - name: Install
         shell: msys2 {0}
         run: cmake --install build --prefix stage
+      - name: Download matching EVEDBTool Windows x86_64 binary
+        shell: pwsh
+        run: |
+          $url = "https://github.com/EvEmu-Project/EVEDBTool/releases/download/0.0.6/evedbtool.exe"
+          Invoke-WebRequest -Uri $url -OutFile "sql/evedbtool.exe"
+          if (!(Test-Path "sql/evedbtool.exe") -or (Get-Item "sql/evedbtool.exe").Length -lt 1000000) {
+            throw "EVEDBTool download is missing or unexpectedly small."
+          }
+          Get-FileHash "sql/evedbtool.exe" -Algorithm SHA256 | Format-List
       - name: Bundle UCRT64 runtime DLLs beside executables
         shell: msys2 {0}
         run: |
