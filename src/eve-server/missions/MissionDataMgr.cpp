@@ -18,6 +18,12 @@
 #include "inventory/ItemFactory.h"
 #include <algorithm>
 
+namespace {
+// Reserved synthetic mission ID for the isolated Level 1 Blockade spawn test.
+// It has no fabricated briefing, payout, or reward item attached to it.
+constexpr uint16 kBlockadeSecurityTestMissionID = 65535;
+}
+
 MissionDataMgr::MissionDataMgr()
 {
     m_procCount = 0;
@@ -248,6 +254,29 @@ void MissionDataMgr::Populate()
             m_missions.emplace(row.GetInt(3), data);
         }
     }
+    // Test-only encounter: expose The Blockade (Angel Cartel, Level 1) to
+    // every Level 1 security agent, regardless of empire faction. The actual
+    // room NPCs come from loaded dunTemplates/dunRoomObjects; no wave sequence,
+    // briefing, bounty, or reward is fabricated here.
+    MissionData blockadeTest = MissionData();
+    blockadeTest.important = false;
+    blockadeTest.storyline = false;
+    blockadeTest.level = 1;
+    blockadeTest.typeID = Mission::Type::Encounter;
+    blockadeTest.raceID = 0; // faction-independent
+    blockadeTest.range = 1;
+    blockadeTest.missionID = kBlockadeSecurityTestMissionID;
+    blockadeTest.briefingID = 0;
+    blockadeTest.dungeonID = 0; // resolve a mission room template at acceptance
+    blockadeTest.rewardISK = 0;
+    blockadeTest.bonusISK = 0;
+    blockadeTest.name = "The Blockade - Angel Cartel (TEST)";
+    m_missions.emplace(1, blockadeTest);
+
+    MissionData importantBlockadeTest = blockadeTest;
+    importantBlockadeTest.important = true;
+    m_missionsImp.emplace(1, importantBlockadeTest);
+
     sLog.Cyan("   MissionDataMgr", "%lu(%lu) Unsorted Mission Data Sets loaded in %.3fms.", m_missions.size(), m_missionsImp.size(), (GetTimeMSeconds() - start));
 
     uint32 level1EncounterCount = 0;
@@ -452,7 +481,7 @@ bool MissionDataMgr::GetMissionData(uint16 missionID, MissionData& data) const
     return false;
 }
 
-void MissionDataMgr::CreateMissionOffer(uint8 typeID, uint8 level, uint8 raceID, bool important, MissionOffer& data, uint32 characterID)
+void MissionDataMgr::CreateMissionOffer(uint8 typeID, uint8 level, uint8 raceID, bool important, MissionOffer& data, uint32 characterID, bool securityAgent)
 {
     // variable mission data based on agent, init to 0 here.
     data.stateID                = Mission::State::Allocated;
@@ -578,8 +607,12 @@ void MissionDataMgr::CreateMissionOffer(uint8 typeID, uint8 level, uint8 raceID,
                 const bool notCompletedStarter = (level != 0)
                     || (std::find(completedStarterMissionIDs.begin(), completedStarterMissionIDs.end(), mission.missionID)
                         == completedStarterMissionIDs.end());
-                if (mission.typeID == Mission::Type::Encounter && raceMatches && notStoryline && notCompletedStarter)
+                if (securityAgent && mission.missionID == kBlockadeSecurityTestMissionID) {
                     candidates.push_back(mission);
+                } else if (!securityAgent && mission.typeID == Mission::Type::Encounter
+                        && raceMatches && notStoryline && notCompletedStarter) {
+                    candidates.push_back(mission);
+                }
             }
 
             // Some agent templates are in the opposite important/non-important pool.
@@ -594,8 +627,12 @@ void MissionDataMgr::CreateMissionOffer(uint8 typeID, uint8 level, uint8 raceID,
                     const bool notCompletedStarter = (level != 0)
                         || (std::find(completedStarterMissionIDs.begin(), completedStarterMissionIDs.end(), mission.missionID)
                             == completedStarterMissionIDs.end());
-                    if (mission.typeID == Mission::Type::Encounter && raceMatches && notStoryline && notCompletedStarter)
+                    if (securityAgent && mission.missionID == kBlockadeSecurityTestMissionID) {
                         candidates.push_back(mission);
+                    } else if (!securityAgent && mission.typeID == Mission::Type::Encounter
+                            && raceMatches && notStoryline && notCompletedStarter) {
+                        candidates.push_back(mission);
+                    }
                 }
             }
 
