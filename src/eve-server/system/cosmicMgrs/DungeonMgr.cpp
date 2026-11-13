@@ -167,7 +167,7 @@ void DungeonDataMgr::Populate()
     // not the legacy dunDungeons + dunRooms tables. Import NPC room objects
     // into the same in-memory representation; no SQL data is written.
     DBQueryResult* templateRes = new DBQueryResult();
-    uint32 missionTemplateCount = 0;
+    uint32 missionTemplateObjectCount = 0;
     DungeonDB::GetMissionTemplateData(*templateRes);
     while (templateRes->GetRow(row))
     {
@@ -177,9 +177,9 @@ void DungeonDataMgr::Populate()
             continue;
         CreateDungeon(row);
         FillObject(row);
-        ++missionTemplateCount;
+        ++missionTemplateObjectCount;
     }
-    _log(DUNG__MESSAGE, "Loaded %u mission dungeon templates with NPC room objects.", missionTemplateCount);
+    _log(DUNG__MESSAGE, "Loaded %u NPC room objects from mission dungeon templates.", missionTemplateObjectCount);
     SafeDelete(templateRes);
 
     sLog.Cyan("       DunDataMgr", "%lu Dungeon data sets loaded in %.3fms.",
