@@ -56,7 +56,6 @@ jobs:
           curl --fail --location --retry 3 --output sql/evedbtool https://github.com/EvEmu-Project/EVEDBTool/releases/download/0.0.6/evedbtool
           test -s sql/evedbtool
           chmod +x sql/evedbtool
-          file sql/evedbtool
       - name: Add runtime files and package
         run: |
           mkdir -p stage/share/evemu
@@ -143,7 +142,7 @@ jobs:
           # from the Windows PATH, which can select an unrelated MINGW64 tool.
           objdump=/ucrt64/bin/objdump.exe
           test -x "$objdump"
-          mapfile -t exe_dirs < <(find stage -type f -iname '*.exe' -printf '%h\n' | sort -u)
+          mapfile -t exe_dirs < <(find stage -type f -iname '*.exe' ! -path '*/share/evemu/sql/evedbtool.exe' -printf '%h\n' | sort -u)
           (("${#exe_dirs[@]}" > 0)) || { echo "No staged Windows executable found" >&2; exit 1; }
 
           for exe_dir in "${exe_dirs[@]}"; do
