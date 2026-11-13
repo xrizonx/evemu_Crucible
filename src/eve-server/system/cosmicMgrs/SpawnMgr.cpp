@@ -462,8 +462,8 @@ void SpawnMgr::DoSpawnForIncursion(SystemBubble* pBubble, uint32 regionID)
 }
 
 bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 missionLevel,
-                                  uint32 characterID, uint32 agentID, uint32 offerID, uint32 beaconID,
-                                  uint32 factionID, uint32 dungeonID)
+                                  uint32 characterID, uint32 agentID, uint32 offerID, uint16 missionID,
+                                  uint32 beaconID, uint32 factionID, uint32 dungeonID)
 {
     if (pBubble == nullptr || !IsRegionID(regionID)
         || characterID == 0 || agentID == 0 || offerID == 0)
@@ -480,7 +480,7 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
     }
 
     pBubble->SetMission();
-    const bool blockadeTestMission = (offer.missionID == 65535);
+    const bool blockadeTestMission = (missionID == 65535);
 
     // Mission dungeon metadata is more authoritative than the agent's faction:
     // the dungeon template identifies the actual opposing NPC faction and its
