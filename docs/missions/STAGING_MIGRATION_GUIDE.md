@@ -8,7 +8,8 @@ No SQL is executed by this project. The operator runs the reviewed file manually
 
 ## Files
 
-- `sql/mission_data/001_create_staging_schema.sql`: additive staging DDL.
+- `sql/mission_data/001_create_staging_schema.sql`: additive staging DDL; safe to re-run for tables that already exist.
+- `sql/mission_data/003_upgrade_existing_staging_schema.sql`: additive column upgrade for staging tables created by an earlier version; adds only missing columns and skips columns already present.
 - `sql/mission_data/002_seed_research_case.sql`: optional, non-executable The Blockade research placeholder with source links; it contains no guessed NPC/type/room/reward rows.
 - `docs/missions/STAGING_VALIDATION.sql`: read-only compatibility and completeness checks.
 - `sql/mission_data/source_manifest.json`: source policy and provenance.
@@ -20,14 +21,16 @@ The existing Crucible database has 2,673 `agtMissions` rows whose `rewardISK` an
 
 The repository's dungeon runtime path also depends on this fork's own dungeon/template and room-object structures. A modern EVE mission guide or current SDE type ID is not proof that the NPC, item, room or spawn is available in this Crucible database.
 
-## Installation on a test copy
+## Installation or upgrade on a test copy
 
 1. Back up the disposable test database.
 2. Confirm the test database was created from the same Crucible source revision and base SQL as the server binary.
-3. Review `001_create_staging_schema.sql` against the installed MySQL/MariaDB version.
-4. Apply that file to the test database only. It creates new `rmrMissionStage*` tables.
-5. Confirm all six staging tables exist. Do not run any production data migration at this stage.
-6. Load research records into staging only after each field has a source URL, source revision/date, confidence and compatibility status.
+3. Apply `001_create_staging_schema.sql` first. Its `CREATE TABLE IF NOT EXISTS` statements create missing staging tables and leave existing tables/data intact.
+4. If these staging tables already existed from an earlier schema revision, apply `003_upgrade_existing_staging_schema.sql` next. It checks `information_schema.COLUMNS`, adds only missing non-key columns and skips existing columns. It does not drop or rebuild tables. Existing placeholder/default values are retained and must be reviewed; the migration does not infer real mission data.
+5. Verify all five staging tables exist and inspect their columns using `SHOW TABLES LIKE 'rmrMissionStage%';` and `SHOW COLUMNS FROM <table_name>;`.
+6. Do not run any production data migration at this stage. Load research records only after each field has a source URL, source revision/date, confidence and compatibility status.
+
+**Important:** `003` assumes the five staging tables and their primary auto-increment ID columns were created by `001`. It upgrades missing data columns, not arbitrary third-party schemas. If a table has a different primary key or incompatible column type, stop and inspect it before applying `003`; do not force an automatic conversion.
 
 ## Data entry rules
 
