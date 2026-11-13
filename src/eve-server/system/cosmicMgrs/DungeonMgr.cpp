@@ -17,6 +17,7 @@
 #include "system/cosmicMgrs/AnomalyMgr.h"
 #include "system/cosmicMgrs/BeltMgr.h"
 #include "system/cosmicMgrs/DungeonMgr.h"
+#include <cstring>
 
 // NPC ship types in this Crucible data set use the Entity category (11) and
 // faction rat groups named "Asteroid ...". Keep ordinary Entity-category
