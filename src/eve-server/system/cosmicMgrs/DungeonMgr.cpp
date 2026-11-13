@@ -181,7 +181,7 @@ void DungeonDataMgr::Populate()
     }
 
     // Mission content in this data set uses dunTemplates + dunRoomObjects,
-    // not the legacy dunDungeons + dunRooms tables. Import NPC room objects
+    // not the legacy dunDungeons + dunRooms tables. Import all room objects
     // into the same in-memory representation; no SQL data is written.
     DBQueryResult* templateRes = new DBQueryResult();
     uint32 missionTemplateObjectCount = 0;
