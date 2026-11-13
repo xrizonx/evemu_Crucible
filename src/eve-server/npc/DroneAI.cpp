@@ -260,6 +260,10 @@ void DroneAIMgr::Target(SystemEntity* pTarget) {
 }
 
 void DroneAIMgr::Targeted(SystemEntity* pAgressor) {
+    if (m_pDrone == nullptr || pAgressor == nullptr) {
+        _log(DRONE__AI_WARNING, "Drone AI received a target notification without a valid drone or aggressor.");
+        return;
+    }
     _log(DRONE__AI_TRACE, "Drone %s(%u): Targeted by %s(%u) while %s.",
                 m_pDrone->GetName(), m_pDrone->GetID(), pAgressor->GetName(), pAgressor->GetID(), GetStateName(m_state).c_str());
     switch(m_state) {
@@ -295,15 +299,20 @@ void DroneAIMgr::Targeted(SystemEntity* pAgressor) {
 }
 
 void DroneAIMgr::TargetLost(SystemEntity* pTarget) {
+    if (m_pDrone == nullptr || m_pDrone->TargetMgr() == nullptr)
+        return;
+
+    const char* targetName = (pTarget != nullptr) ? pTarget->GetName() : "<unknown>";
+    const uint32 targetID = (pTarget != nullptr) ? pTarget->GetID() : 0;
     switch(m_state) {
         case DroneAI::State::Engaged: {
             if (m_pDrone->TargetMgr()->HasNoTargets()) {
                 _log(DRONE__AI_TRACE, "Drone %s(%u): Target %s(%u) lost. No targets remain.  Return to Idle.",
-                     m_pDrone->GetName(), m_pDrone->GetID(), pTarget->GetName(), pTarget->GetID());
+                     m_pDrone->GetName(), m_pDrone->GetID(), targetName, targetID);
                 SetIdle();
             } else {
                 _log(DRONE__AI_TRACE, "Drone %s(%u): Target %s(%u) lost, but more targets remain.",
-                     m_pDrone->GetName(), m_pDrone->GetID(), pTarget->GetName(), pTarget->GetID());
+                     m_pDrone->GetName(), m_pDrone->GetID(), targetName, targetID);
             }
 
         } break;
@@ -345,7 +354,7 @@ void DroneAIMgr::Attack(SystemEntity* pSE)
             return;
         }
 
-        if (m_pDrone->TargetMgr()->CanAttack())
+        if (m_pDrone->TargetMgr() != nullptr && m_pDrone->TargetMgr()->CanAttack())
             AttackTarget(pSE);
     }
 }
@@ -363,7 +372,8 @@ void DroneAIMgr::ClearTarget(SystemEntity* pSE) {
 //entityWarpScrambleChance
 
 void DroneAIMgr::AttackTarget(SystemEntity* pTarget) {
-    if (pTarget == nullptr || m_pDrone == nullptr || m_pDrone->GetSelf().get() == nullptr)
+    if (pTarget == nullptr || m_pDrone == nullptr || m_pDrone->GetSelf().get() == nullptr ||
+        m_pDrone->DestinyMgr() == nullptr)
         return;
     /** @todo  not all drones use lazors...fix this */
     //  woot!! --> group:1010        cat:8       Compact Citadel Torpedo         Citadel torpedoes for fighter-bombers
