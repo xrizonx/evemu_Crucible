@@ -157,3 +157,16 @@ Also corrected a confirmed undefined-behavior defect in `ServiceDB::ProcessRealC
 
 - Changes committed together to avoid unnecessary CI cancellation.
 - Validation remains pending; Windows ZIP contents and both platform builds must be checked before calling this complete.
+
+
+### Windows packaging failure diagnosis and build-time improvements
+
+The failed Windows run completed compilation and linking successfully (345/345 objects). Packaging then failed because the PowerShell step selected `objdump.exe` from `C:\mingw64` via the Windows PATH, while the workflow is configured for UCRT64. That made the DLL search root incorrect; it could not see the installed UCRT64 TinyXML DLL. The official MSYS2 UCRT64 TinyXML package provides `/ucrt64/bin/libtinyxml-0.dll` (package metadata checked against MSYS2).
+
+Corrected packaging to run dependency scanning inside the UCRT64 MSYS2 shell and use `/ucrt64/bin/objdump.exe` and `/ucrt64/bin` explicitly. The recursive dependency scanner now copies imported DLLs into the same directory as `stage/bin/eve-server.exe` and verifies all three reported DLLs there before ZIP creation. Archive creation remains a separate PowerShell step.
+
+Added ccache to Linux and Windows CI, with GitHub Actions cache storage keyed by platform, architecture, branch and CMake inputs. This should accelerate repeat builds by reusing unchanged compilation outputs; clean builds still compile all translation units. Compiler parallelism remains at two workers, matching the hosted runner's typical CPU allocation.
+
+- Failure diagnosed from Windows job `131909122206`: compile/link succeeded; package failed because it searched `C:\mingw64` instead of the UCRT64 prefix.
+- New workflow changes: packaging path correction and ccache.
+- Validation: pending fresh Linux, Windows and Docker runs.

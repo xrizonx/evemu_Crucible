@@ -17,6 +17,7 @@ permissions:
 
 env:
   BUILD_TYPE: Release
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
 
 jobs:
   linux:
@@ -30,11 +31,22 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build zlib1g-dev libmariadb-dev libboost-all-dev libtinyxml-dev libutfcpp-dev
+          sudo apt-get install -y build-essential ccache cmake ninja-build zlib1g-dev libmariadb-dev libboost-all-dev libtinyxml-dev libutfcpp-dev
+      - name: Cache compiler outputs
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-linux-${{ runner.arch }}-${{ github.ref_name }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
+          restore-keys: |
+            ccache-linux-${{ runner.arch }}-
       - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=\${{ env.BUILD_TYPE }} -DCMAKE_INSTALL_PREFIX=stage
+        run: |
+          ccache --max-size=1G
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_INSTALL_PREFIX=stage -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
-        run: cmake --build build --parallel 2
+        run: |
+          cmake --build build --parallel 2
+          ccache --show-stats
       - name: Test
         run: ctest --test-dir build --output-on-failure
       - name: Install
@@ -73,6 +85,7 @@ jobs:
           install: >-
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-binutils
+            mingw-w64-ucrt-x86_64-ccache
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-boost
@@ -80,9 +93,18 @@ jobs:
             mingw-w64-ucrt-x86_64-tinyxml
             mingw-w64-ucrt-x86_64-utf8cpp
             mingw-w64-ucrt-x86_64-zlib
+      - name: Cache compiler outputs
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-windows-${{ runner.arch }}-${{ github.ref_name }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}
+          restore-keys: |
+            ccache-windows-${{ runner.arch }}-
       - name: Configure
         shell: msys2 {0}
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=stage
+        run: |
+          ccache --max-size=1G
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=stage -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         shell: msys2 {0}
         run: cmake --build build --parallel 2
@@ -92,67 +114,61 @@ jobs:
       - name: Install
         shell: msys2 {0}
         run: cmake --install build --prefix stage
-      - name: Package Windows build and MinGW runtime DLLs
+      - name: Bundle UCRT64 runtime DLLs beside executables
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          mkdir -p stage/share/evemu
+          cp -a sql stage/share/evemu/
+          cp -a utils stage/share/evemu/
+          if [[ -d config ]]; then cp -a config stage/share/evemu/; fi
+          printf 'Commit: %s\nBranch: %s\nPlatform: Windows x86_64 UCRT64\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" > stage/BUILD-INFO.txt
+
+          # Use the active UCRT64 prefix explicitly. Do not resolve objdump
+          # from the Windows PATH, which can select an unrelated MINGW64 tool.
+          objdump=/ucrt64/bin/objdump.exe
+          test -x "$objdump"
+          mapfile -t exe_dirs < <(find stage -type f -iname '*.exe' -printf '%h\n' | sort -u)
+          (("${#exe_dirs[@]}" > 0)) || { echo "No staged Windows executable found" >&2; exit 1; }
+
+          for exe_dir in "${exe_dirs[@]}"; do
+            declare -A copied=()
+            queue=()
+            while IFS= read -r -d '' binary; do queue+=("$binary"); done < <(find "$exe_dir" -maxdepth 1 -type f \( -iname '*.exe' -o -iname '*.dll' \) -print0)
+            index=0
+            while (( index < ${#queue[@]} )); do
+              binary="${queue[$index]}"
+              ((index+=1))
+              while IFS= read -r name; do
+                [[ -n "$name" ]] || continue
+                key="${name,,}"
+                [[ -z "${copied[$key]+x}" ]] || continue
+                copied[$key]=1
+                candidate="/ucrt64/bin/$name"
+                if [[ -f "$candidate" ]]; then
+                  destination="$exe_dir/$name"
+                  if [[ ! -f "$destination" ]]; then cp -f "$candidate" "$destination"; fi
+                  queue+=("$destination")
+                fi
+              done < <("$objdump" -p "$binary" 2>/dev/null | awk '/DLL Name:/ {print $3}')
+            done
+          done
+
+          # Verify the exact UCRT64 package filenames in the Windows loader
+          # search directory. TinyXML's UCRT64 package ships libtinyxml-0.dll.
+          for exe_dir in "${exe_dirs[@]}"; do
+            for name in libtinyxml-0.dll libmariadb.dll libz-1.dll; do
+              if [[ ! -f "$exe_dir/$name" ]]; then
+                echo "Required runtime DLL $name missing beside executable in $exe_dir" >&2
+                echo "Available UCRT64 DLLs:" >&2
+                find /ucrt64/bin -maxdepth 1 -type f -iname '*.dll' -printf '%f\n' | sort >&2
+                exit 1
+              fi
+            done
+          done
+      - name: Create Windows ZIP and checksum
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path stage\share\evemu | Out-Null
-          Copy-Item sql -Destination stage\share\evemu\sql -Recurse
-          Copy-Item utils -Destination stage\share\evemu\utils -Recurse
-          if (Test-Path config) { Copy-Item config -Destination stage\share\evemu\config -Recurse }
-          ("Commit: " + $env:GITHUB_SHA + [Environment]::NewLine + "Branch: " + $env:GITHUB_REF_NAME + [Environment]::NewLine + "Platform: Windows x86_64 UCRT64") | Set-Content stage\BUILD-INFO.txt
-          $objdumpCommand = Get-Command objdump.exe -ErrorAction Stop
-          $objdump = $objdumpCommand.Source
-          $dllSource = Split-Path -Parent $objdump
-          $ucrtRoot = Split-Path -Parent $dllSource
-          # Search the complete UCRT64 installation, not only its bin directory:
-          # some MSYS2 packages place runtime DLLs in subdirectories.
-          $availableDlls = @(Get-ChildItem -Path $ucrtRoot -Filter '*.dll' -File -Recurse)
-          # Windows searches the executable's directory for dependent DLLs.
-          # Do not put runtime libraries only in the ZIP root when binaries live
-          # under bin/ or another install subdirectory.
-          $exeDirs = @(Get-ChildItem stage -Recurse -Filter '*.exe' -File | ForEach-Object { $_.DirectoryName } | Sort-Object -Unique)
-          if ($exeDirs.Count -eq 0) { throw 'No executable was found in the staged Windows installation.' }
-          $seen = @{}
-          $scanned = @{}
-          $queue = @(Get-ChildItem stage -Recurse -Filter '*.exe' -File)
-          while ($queue.Count -gt 0) {
-            $current = $queue
-            $queue = @()
-            foreach ($binary in $current) {
-              if ($scanned.ContainsKey($binary.FullName)) { continue }
-              $scanned[$binary.FullName] = $true
-              $imports = & $objdump -p $binary.FullName 2>$null | Select-String 'DLL Name:' | ForEach-Object { ($_ -split 'DLL Name:')[1].Trim() }
-              foreach ($name in $imports) {
-                $candidate = $availableDlls | Where-Object { $_.Name -ieq $name } | Select-Object -First 1
-                if ($null -ne $candidate) {
-                  foreach ($exeDir in $exeDirs) {
-                    $key = "$exeDir|$name".ToLowerInvariant()
-                    if (-not $seen.ContainsKey($key)) {
-                      $seen[$key] = $true
-                      $destination = Join-Path $exeDir $name
-                      Copy-Item $candidate.FullName $destination -Force
-                      $queue += Get-Item $destination
-                    }
-                  }
-                }
-              }
-            }
-          }
-          # Require each executable directory to contain these known runtime
-          # dependencies. This checks the actual loader search location.
-          $requiredRuntimeDlls = @('libtinyxml-0.dll', 'libmariadb.dll', 'libz-1.dll')
-          foreach ($exeDir in $exeDirs) {
-            foreach ($name in $requiredRuntimeDlls) {
-              $destination = Join-Path $exeDir $name
-              if (-not (Test-Path $destination)) {
-                $candidate = $availableDlls | Where-Object { $_.Name -ieq $name } | Select-Object -First 1
-                if ($null -eq $candidate) {
-                  throw "Required runtime DLL '$name' was not found under '$ucrtRoot'. Check the MSYS2 package installation."
-                }
-                Copy-Item $candidate.FullName $destination -Force
-              }
-            }
-          }
           Compress-Archive -Path stage\* -DestinationPath evemu-crucible-windows-x86_64.zip -Force
           $hash = (Get-FileHash evemu-crucible-windows-x86_64.zip -Algorithm SHA256).Hash.ToLower()
           "$hash  evemu-crucible-windows-x86_64.zip" | Set-Content evemu-crucible-windows-x86_64.zip.sha256
