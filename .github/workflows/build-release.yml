@@ -72,6 +72,7 @@ jobs:
           update: true
           install: >-
             mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-binutils
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-boost
@@ -99,8 +100,9 @@ jobs:
           Copy-Item utils -Destination stage\share\evemu\utils -Recurse
           if (Test-Path config) { Copy-Item config -Destination stage\share\evemu\config -Recurse }
           ("Commit: " + $env:GITHUB_SHA + [Environment]::NewLine + "Branch: " + $env:GITHUB_REF_NAME + [Environment]::NewLine + "Platform: Windows x86_64 UCRT64") | Set-Content stage\BUILD-INFO.txt
-          $dllSource = "C:\msys64\ucrt64\bin"
-          $objdump = Join-Path $dllSource "objdump.exe"
+          $objdumpCommand = Get-Command objdump.exe -ErrorAction Stop
+          $objdump = $objdumpCommand.Source
+          $dllSource = Split-Path -Parent $objdump
           $seen = @{}
           $queue = @(Get-ChildItem stage -Recurse -File | Where-Object { $_.Extension -in @('.exe', '.dll') })
           while ($queue.Count -gt 0) {
