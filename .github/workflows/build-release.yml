@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 env:
   BUILD_TYPE: Release
@@ -23,6 +22,7 @@ jobs:
   linux:
     name: Linux GCC build
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,6 +60,7 @@ jobs:
   windows:
     name: Windows 64-bit UCRT64 GCC build
     runs-on: windows-2022
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -135,6 +136,7 @@ jobs:
   docker:
     name: Docker image build
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Build Docker image
