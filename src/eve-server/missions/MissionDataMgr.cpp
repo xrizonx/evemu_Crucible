@@ -255,7 +255,7 @@ void MissionDataMgr::Populate()
         }
     }
     // Test-only encounter: expose The Blockade (Angel Cartel, Level 1) to
-    // every Level 1 security agent, regardless of empire faction. The actual
+    // every security agent (levels 1-5), regardless of empire faction. The actual
     // room NPCs come from loaded dunTemplates/dunRoomObjects; no wave sequence,
     // briefing, bounty, or reward is fabricated here.
     MissionData blockadeTest = MissionData();
