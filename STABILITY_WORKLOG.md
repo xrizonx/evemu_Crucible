@@ -180,3 +180,18 @@ Changed the Windows CI configuration from `Release` to `RelWithDebInfo`. This ke
 
 - Diagnostic change: Windows `RelWithDebInfo` build; symbols must be confirmed in the resulting executable with GDB before use.
 - Validation: pending Windows CI run and a fresh user-side GDB trace.
+
+
+### Windows startup crash root cause and targeted fix
+
+A user-provided GDB stack trace now identifies the exact startup failure:
+
+- `std::string::erase(this=0x5ffca0, __pos=7)` throws because the string is empty.
+- The call originates from global static initialization at `src/eve-common/EVEVersion.h:50`.
+- The failing expression truncated `GIT_COMMIT_HASH` using `.erase(7, std::string::npos)`. The Windows build supplied an empty value for this macro, so the operation threw before `main()`.
+- The compiler emitted the global initializer in the translation unit containing `PyException`, which was initially a misleading location; the source-level stack identifies `EVEVersion.h` as the actual fault.
+
+Replaced the positional erase with a bounds-safe substring operation and an explicit `"unknown"` fallback when the build hash is empty. This prevents version-string construction from throwing during static initialization. The underlying reason the Windows build supplied an empty hash remains worth checking in CMake metadata generation, but it is no longer fatal to startup.
+
+- Fix commit: `61226c9845f6aa8981ad40edd94f1d4fcef4554b`
+- Validation: pending fresh Windows CI build and user test of the newly packaged ZIP. This is a source-level diagnosis and targeted fix, not yet a verified runtime pass.
