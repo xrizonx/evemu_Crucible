@@ -35,3 +35,21 @@ This is a targeted include-dependency correction; date calculations and runtime 
 - Work remains on `evemu-crucible-modernization`.
 - PR #1 must remain open and draft.
 - No merge, release, tag, issue closure, or default-branch changes were made.
+### Follow-up CI review — current branch before BFD fix
+
+The next push and pull-request runs for commit `a3450a888dc8684e67128dbf8d8e6d32c744c56d` confirmed:
+- Linux GCC: passed build, CTest, install, packaging, and artifact upload.
+- Docker: image build passed.
+- Windows UCRT64: failed in `src/eve-core/utils/CallStack.cpp` because the installed modern BFD headers no longer declare the legacy `bfd_get_section_flags`, `bfd_get_section_vma`, and `bfd_get_section_size` accessors.
+
+### Confirmed BFD compatibility fix
+
+Updated the Windows MinGW BFD section inspection code to use the current section accessors:
+- `bfd_section_flags(tsec)`
+- `bfd_section_vma(tsec)`
+- `bfd_section_size(tsec)`
+
+This follows the current BFD API, which removed the older accessors that accepted an unnecessary `bfd*` argument. It preserves the section filtering, address range check, and symbol lookup behavior.
+
+- Fix commit: `02764f59b4443839e4b822f629f90da63413c67a`
+- Validation: pending new Linux, Windows UCRT64, and Docker workflow runs.
