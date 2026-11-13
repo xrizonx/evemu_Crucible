@@ -514,6 +514,7 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
             factionData.ownerID = corpID;
 
             uint16 spawnNumber = 0;
+            uint16 staticObjectCount = 0;
             for (const Dungeon::RoomObject& object : firstRoom.objects) {
                 // Static-data lookups are void-returning and leave the output
                 // untouched when an ID is missing. Zero-initialize both records
@@ -589,11 +590,8 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
                     }
 
                     CelestialSE* pCelestial = new CelestialSE(objectItem, m_services, m_system);
-                    if (pCelestial == nullptr) {
-                        objectItem->Delete();
-                        continue;
-                    }
                     m_system->AddEntity(pCelestial, false);
+                    ++staticObjectCount;
                 }
             }
 
@@ -601,8 +599,8 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
                 ++m_spawnID;
                 m_bubbles.push_back(pBubble);
                 spawnedFromTemplate = true;
-                _log(SPAWN__MESSAGE, "Mission %u spawned %u NPCs from dungeon %u room %u.",
-                        offerID, spawnNumber, selectedDungeonID, firstRoom.roomID);
+                _log(SPAWN__MESSAGE, "Mission %u spawned %u NPCs and %u room objects from dungeon %u room %u.",
+                        offerID, spawnNumber, staticObjectCount, selectedDungeonID, firstRoom.roomID);
             }
         }
     }
