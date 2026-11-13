@@ -108,6 +108,44 @@ void DungeonDataMgr::GetDungeon(Dungeon::Dungeon& dungeon, uint32 dungeonID) {
         }
 }
 
+bool DungeonDataMgr::GetRandomMissionDungeon(Dungeon::Dungeon& dungeon, uint32 factionID)
+{
+    std::vector<Dungeon::Dungeon> candidates;
+    std::vector<Dungeon::Dungeon> factionCandidates;
+
+    // Archetype 20 is the static-data archetype for agent mission dungeons.
+    // The template loader only returns room objects whose inventory groups
+    // are ships or drones, so mining-only rooms cannot be selected as combat pockets.
+    for (const Dungeon::Dungeon& candidate : m_dungeons) {
+        if (candidate.archetypeID != 20 || candidate.rooms.empty())
+            continue;
+
+        bool hasNPC = false;
+        for (const auto& room : candidate.rooms) {
+            if (!room.second.objects.empty()) {
+                hasNPC = true;
+                break;
+            }
+        }
+        if (!hasNPC)
+            continue;
+
+        candidates.push_back(candidate);
+        if (factionID != 0 && candidate.factionID == factionID)
+            factionCandidates.push_back(candidate);
+    }
+
+    const std::vector<Dungeon::Dungeon>& selection =
+        factionCandidates.empty() ? candidates : factionCandidates;
+    if (selection.empty()) {
+        _log(DUNG__WARNING, "GetRandomMissionDungeon() - No mission templates with NPC room objects are loaded.");
+        return false;
+    }
+
+    dungeon = selection[MakeRandomInt(0, static_cast<uint32>(selection.size() - 1))];
+    return true;
+}
+
 void DungeonDataMgr::Populate()
 {
     // Populate dungeon datasets from DB
@@ -124,6 +162,25 @@ void DungeonDataMgr::Populate()
         CreateDungeon(row);
         FillObject(row);
     }
+
+    // Mission content in this data set uses dunTemplates + dunRoomObjects,
+    // not the legacy dunDungeons + dunRooms tables. Import NPC room objects
+    // into the same in-memory representation; no SQL data is written.
+    DBQueryResult* templateRes = new DBQueryResult();
+    uint32 missionTemplateCount = 0;
+    DungeonDB::GetMissionTemplateData(*templateRes);
+    while (templateRes->GetRow(row))
+    {
+        const uint32 templateID = row.GetUInt(0);
+        // A legacy dungeon with the same ID takes precedence.
+        if (byDungeonID.find(templateID) != byDungeonID.end())
+            continue;
+        CreateDungeon(row);
+        FillObject(row);
+        ++missionTemplateCount;
+    }
+    _log(DUNG__MESSAGE, "Loaded %u mission dungeon templates with NPC room objects.", missionTemplateCount);
+    SafeDelete(templateRes);
 
     sLog.Cyan("       DunDataMgr", "%lu Dungeon data sets loaded in %.3fms.",
               byDungeonID.size(), (GetTimeMSeconds() - start));
