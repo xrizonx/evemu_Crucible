@@ -18,6 +18,17 @@
 #include "system/cosmicMgrs/BeltMgr.h"
 #include "system/cosmicMgrs/DungeonMgr.h"
 
+// NPC ship types in this Crucible data set use the Entity category (11) and
+// faction rat groups named "Asteroid ...". Keep ordinary Entity-category
+// scenery and structures out of the NPC selection path.
+static bool IsMissionNPCGroup(const Inv::GrpData& group)
+{
+    return group.catID == EVEDB::invCategories::Ship
+        || group.catID == EVEDB::invCategories::Drone
+        || (group.catID == EVEDB::invCategories::Entity
+            && group.name.compare(0, 9, "Asteroid ") == 0);
+}
+
 /*
 Dungeon flow:
 1. load dungeons from db on init
@@ -122,10 +133,16 @@ bool DungeonDataMgr::GetRandomMissionDungeon(Dungeon::Dungeon& dungeon, uint32 f
 
         bool hasNPC = false;
         for (const auto& room : candidate.rooms) {
-            if (!room.second.objects.empty()) {
-                hasNPC = true;
-                break;
+            for (const Dungeon::RoomObject& object : room.second.objects) {
+                Inv::GrpData group = {};
+                sDataMgr.GetGroup(object.groupID, group);
+                if (group.id != 0 && IsMissionNPCGroup(group)) {
+                    hasNPC = true;
+                    break;
+                }
             }
+            if (hasNPC)
+                break;
         }
         if (!hasNPC)
             continue;
@@ -240,13 +257,13 @@ void DungeonDataMgr::FillObject(DBResultRow row) {
         oData.objectID = row.GetUInt(7);
         oData.typeID = row.GetUInt(8);
         oData.groupID = row.GetUInt(9);
-        oData.x = row.GetInt(10);
-        oData.y = row.GetInt(11);
-        oData.z = row.GetInt(12);
-        oData.yaw = row.GetInt(13);
-        oData.pitch = row.GetInt(14);
-        oData.roll = row.GetInt(15);
-        oData.radius = row.GetInt(16);
+        oData.x = row.GetDouble(10);
+        oData.y = row.GetDouble(11);
+        oData.z = row.GetDouble(12);
+        oData.yaw = row.GetDouble(13);
+        oData.pitch = row.GetDouble(14);
+        oData.roll = row.GetDouble(15);
+        oData.radius = row.GetDouble(16);
         dData.rooms[row.GetUInt(5)].objects.push_back(oData);
         // Populate all data for the dungeon and room
         dData.name = row.GetText(1);
