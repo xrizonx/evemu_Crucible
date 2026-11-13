@@ -53,3 +53,15 @@ This follows the current BFD API, which removed the older accessors that accepte
 
 - Fix commit: `02764f59b4443839e4b822f629f90da63413c67a`
 - Validation: pending new Linux, Windows UCRT64, and Docker workflow runs.
+### Windows UCRT64 link-stage correction
+
+The BFD accessor correction allowed compilation to progress further, but both CI runs for commit `70b1d0a0651101de08db822ebd2d0b7148d8eaa7` failed while linking `eve-xmlpktgen.exe`. The linker reported unresolved Winsock (`WSAStartup`, `WSACleanup`), DbgHelp (`SymInitialize`, `StackWalk64`, etc.), and BFD symbols.
+
+Corrective changes:
+- Removed the MinGW-only BFD stack-symbol implementation and use the already-present Windows DbgHelp symbol path instead. This removes the unnecessary BFD link dependency from stack tracing.
+- Link `ws2_32` for Windows builds and `dbghelp` for non-MSVC Windows builds; MSVC retains `DbgHelp.lib`.
+- Also fixed the early-return path after `SymInitialize` failure so the stack mutex is released.
+
+Commits: `4c6f635e23177c2299c336a24c45bf5f64711834`, `86db8862da512b658ba568194e893485633d82b9`.
+
+Validation is pending fresh CI on the updated branch. The PR was found unexpectedly closed during this check and was reopened immediately; it remains a draft and unmerged.
