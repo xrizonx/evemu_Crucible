@@ -473,16 +473,25 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
     // the dungeon template identifies the actual opposing NPC faction and its
     // first-room NPC type IDs. Later room/gate progression is handled separately.
     bool spawnedFromTemplate = false;
-    if (dungeonID != 0) {
+    {
         Dungeon::Dungeon missionDungeon = {};
-        sDunDataMgr.GetDungeon(missionDungeon, dungeonID);
+        if (dungeonID != 0)
+            sDunDataMgr.GetDungeon(missionDungeon, dungeonID);
+
+        // The imported mission rows in some Crucible data sets have dungeonID=0.
+        // Resolve a real NPC-bearing agent-mission template by faction instead
+        // of requiring the empty legacy dunDungeons/dunRooms tables.
+        if (missionDungeon.rooms.empty())
+            sDunDataMgr.GetRandomMissionDungeon(missionDungeon, factionID);
+
         if (missionDungeon.factionID != 0)
             factionID = missionDungeon.factionID;
         if (factionID == 0)
             factionID = sDataMgr.GetRegionRatFaction(m_system->GetRegionID());
 
+        const uint32 selectedDungeonID = missionDungeon.dungeonID;
         _log(SPAWN__MESSAGE, "Mission %u uses dungeon template %u and faction %u.",
-                offerID, dungeonID, factionID);
+                offerID, selectedDungeonID, factionID);
 
         if (!missionDungeon.rooms.empty()) {
             const Dungeon::Room& firstRoom = missionDungeon.rooms.begin()->second;
@@ -503,13 +512,13 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
                 sDataMgr.GetType(object.typeID, objectType);
                 if (objectType.id == 0) {
                     _log(SPAWN__WARNING, "Mission %u dungeon %u references missing type %u.",
-                            offerID, dungeonID, object.typeID);
+                            offerID, selectedDungeonID, object.typeID);
                     continue;
                 }
                 sDataMgr.GetGroup(objectType.groupID, objectGroup);
                 if (objectGroup.id == 0) {
                     _log(SPAWN__WARNING, "Mission %u dungeon %u type %u references missing group %u.",
-                            offerID, dungeonID, object.typeID, objectType.groupID);
+                            offerID, selectedDungeonID, object.typeID, objectType.groupID);
                     continue;
                 }
 
@@ -566,7 +575,7 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
                 m_bubbles.push_back(pBubble);
                 spawnedFromTemplate = true;
                 _log(SPAWN__MESSAGE, "Mission %u spawned %u NPCs from dungeon %u room %u.",
-                        offerID, spawnNumber, dungeonID, firstRoom.roomID);
+                        offerID, spawnNumber, selectedDungeonID, firstRoom.roomID);
             }
         }
     }
