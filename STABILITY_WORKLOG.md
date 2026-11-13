@@ -195,3 +195,23 @@ Replaced the positional erase with a bounds-safe substring operation and an expl
 
 - Fix commit: `61226c9845f6aa8981ad40edd94f1d4fcef4554b`
 - Validation: pending fresh Windows CI build and user test of the newly packaged ZIP. This is a source-level diagnosis and targeted fix, not yet a verified runtime pass.
+
+
+### Database utilities included in release artifacts
+
+The Windows runtime testing exposed that the repository's SQL directory had only a shell downloader and no Windows database-tool executable in the packaged release. The existing `get_evedbtool.bat` was also downloading from an unrelated/incorrect release path.
+
+Changes made:
+- The Linux CI package now downloads the official EVEDBTool 0.0.6 x86_64 binary into `sql/evedbtool`.
+- The Windows CI package now downloads the official EVEDBTool 0.0.6 Windows executable into `sql/evedbtool.exe`.
+- The Windows server DLL bundling step explicitly excludes the standalone Go database utility, so it is not mistaken for a MinGW server executable.
+- Added `sql/evedb.yaml.example` with a local-only password placeholder; the real `evedb.yaml` remains git-ignored.
+- Replaced the broken Windows downloader with a pinned, checked download of the official 0.0.6 executable.
+- Rewrote `sql/README.md` with Windows/Linux setup, status checks, backup guidance, and a manual SQL migration procedure.
+
+Manual migration safety:
+- Only each migration's `-- +migrate Up` section is executed in filename order; `Down` sections are rollback SQL.
+- `evedbtool skip` is documented only after every pending migration has been manually applied and verified. It records migration versions but does not execute SQL.
+- No database migrations are run automatically by the release workflow or server startup.
+
+Validation status: source and workflow edits are committed; fresh CI and artifact inspection are still required. The packaged Windows binary, YAML config, and migration folder must be confirmed in the resulting ZIP before this is considered release-verified.
