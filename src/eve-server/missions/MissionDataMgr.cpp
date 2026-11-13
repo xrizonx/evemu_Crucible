@@ -261,21 +261,23 @@ void MissionDataMgr::Populate()
     MissionData blockadeTest = MissionData();
     blockadeTest.important = false;
     blockadeTest.storyline = false;
-    blockadeTest.level = 1;
     blockadeTest.typeID = Mission::Type::Encounter;
     blockadeTest.raceID = 0; // faction-independent
-    blockadeTest.range = 1;
     blockadeTest.missionID = kBlockadeSecurityTestMissionID;
     blockadeTest.briefingID = 0;
-    blockadeTest.dungeonID = 0; // resolve a mission room template at acceptance
+    blockadeTest.dungeonID = 0; // resolve an Angel Cartel room template at acceptance
     blockadeTest.rewardISK = 0;
     blockadeTest.bonusISK = 0;
     blockadeTest.name = "The Blockade - Angel Cartel (TEST)";
-    m_missions.emplace(1, blockadeTest);
+    for (uint8 testLevel = 1; testLevel <= 5; ++testLevel) {
+        blockadeTest.level = testLevel;
+        blockadeTest.range = testLevel;
+        m_missions.emplace(testLevel, blockadeTest);
 
-    MissionData importantBlockadeTest = blockadeTest;
-    importantBlockadeTest.important = true;
-    m_missionsImp.emplace(1, importantBlockadeTest);
+        MissionData importantBlockadeTest = blockadeTest;
+        importantBlockadeTest.important = true;
+        m_missionsImp.emplace(testLevel, importantBlockadeTest);
+    }
 
     sLog.Cyan("   MissionDataMgr", "%lu(%lu) Unsorted Mission Data Sets loaded in %.3fms.", m_missions.size(), m_missionsImp.size(), (GetTimeMSeconds() - start));
 
