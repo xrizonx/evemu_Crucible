@@ -187,9 +187,9 @@ private:
     {
         fnis_para& para = *static_cast<fnis_para*>(tpara);
         if(!para.function.empty()) return; // We have got the name. 
-        if(!(bfd_get_section_flags(tabfd, tsec) & SEC_ALLOC)) return; // Allocate space for this section.
-        bfd_vma vma = bfd_get_section_vma(tabfd, tsec);
-        if(para.counter < vma || vma+bfd_get_section_size(tsec) <= para.counter) return;        
+        if(!(bfd_section_flags(tsec) & SEC_ALLOC)) return; // Allocate space for this section.
+        bfd_vma vma = bfd_section_vma(tsec);
+        if(para.counter < vma || vma+bfd_section_size(tsec) <= para.counter) return;        
         const char* function = NULL;
         const char* file = NULL;
         unsigned int line = 0;
