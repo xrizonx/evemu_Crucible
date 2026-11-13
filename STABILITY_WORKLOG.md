@@ -81,3 +81,17 @@ The uploaded Windows CI log shows the full 345-step compile completed and the fa
 - No application code or socket behavior was changed.
 - The same log contains repeated `std::iterator` deprecation warnings from `Buffer.h` and a GCC `-Wstringop-overflow` diagnostic around its generic `memmove`. These warnings are not the linker failure; they are recorded for a separate, behavior-preserving cleanup after the Windows link is verified. No warning suppression or test weakening was added.
 - Validation: fresh CI required; Windows link success is not yet claimed.
+
+
+### Windows UCRT64 runtime packaging correction
+
+The latest Windows workflow now compiles all 345 translation units, links `eve-server.exe`, runs the configured CTest command, and installs the executable. The packaging step then failed because it hard-coded `C:\\msys64\\ucrt64\\bin\\objdump.exe`, which is not the executable location exposed by the hosted runner's MSYS2 setup.
+
+Corrective workflow changes:
+- Explicitly install the UCRT64 binutils package so `objdump.exe` is available.
+- Resolve `objdump.exe` from the runner's command search path rather than assuming a fixed MSYS2 installation directory.
+- Derive the runtime DLL search directory from the resolved executable path, keeping the dependency scan and recursive DLL-copy behavior intact.
+
+- Fix commit: `5bc93bd8a6b525bc20e1679e3de1a0a3fdb23cb8`
+- Validation: pending fresh Windows UCRT64 packaging run. A green Windows artifact is not yet claimed.
+- Latest completed validation before this change: Linux GCC and Docker passed; Windows compile, link, test invocation, and install passed, but packaging failed.
