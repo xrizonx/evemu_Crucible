@@ -55,12 +55,6 @@ void EVETCPConnection::QueueRep( const PyRep* rep, bool compress/*true*/ )
     const Buffer::iterator<uint32> bufLen = pBuffer->end<uint32>();
     pBuffer->ResizeAt( bufLen, 1 );
 
-    if (PACKET_SIZE_LIMIT < pBuffer->size()) {
-        sLog.Error( "Network", "Packet length %u exceeds hardcoded packet length limit %lu.", pBuffer->size(), PACKET_SIZE_LIMIT );
-        SafeDelete( pBuffer );
-        return;
-    }
-
     bool success(false);
     if (compress) {
         success = MarshalDeflate(rep, *pBuffer);
