@@ -70,7 +70,7 @@ jobs:
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-ninja
             mingw-w64-x86_64-boost
-            mingw-w64-x86_64-mariadb-connector-c
+            mingw-w64-x86_64-libmariadbclient
             mingw-w64-x86_64-tinyxml
             mingw-w64-x86_64-utf8cpp
             mingw-w64-x86_64-zlib
