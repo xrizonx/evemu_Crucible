@@ -59,6 +59,23 @@ void DungeonDB::GetArchetypes(DBQueryResult& res)
     _log(DATABASE__ERROR, "Error in GetFactions query: %s", res.error.c_str());
 }
 
+// Mission encounter templates are stored separately from the legacy dunDungeons
+// and dunRooms tables. Load their NPC room objects directly so they can be used
+// without creating or modifying database rows.
+void DungeonDB::GetMissionTemplateData(DBQueryResult& res)
+{
+    if (!sDatabase.RunQuery(res,
+        "SELECT t.dunTemplateID, t.dunTemplateName, 0, t.dunTemplateFactionID, 20, "
+        "t.dunRoomID, t.dunTemplateName, o.objectID, o.typeID, o.groupID, "
+        "o.x, o.y, o.z, o.yaw, o.pitch, o.roll, o.radius "
+        "FROM dunTemplates t "
+        "INNER JOIN dunRoomObjects o ON o.roomID = t.dunRoomID "
+        "INNER JOIN invGroups g ON g.groupID = o.groupID "
+        "WHERE g.categoryID IN (6, 18) "
+        "ORDER BY t.dunTemplateID, o.objectID"))
+        _log(DATABASE__ERROR, "Error in GetMissionTemplateData query: %s", res.error.c_str());
+}
+
 void DungeonDB::GetAllDungeonData(DBQueryResult& res)
 {
     if (!sDatabase.RunQuery(res, "SELECT dunDungeons.dungeonID, "
