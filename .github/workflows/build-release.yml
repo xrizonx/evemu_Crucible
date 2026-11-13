@@ -1,0 +1,94 @@
+name: EVEmu Build and Release
+
+on:
+  push:
+    branches:
+      - master
+      - evemu-crucible-modernization
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  linux:
+    name: Linux GCC build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build zlib1g-dev libmariadb-dev libboost-all-dev libtinyxml-dev libutfcpp-dev
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DCMAKE_INSTALL_PREFIX=stage
+
+      - name: Build
+        run: cmake --build build --parallel 2
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Stage install
+        run: cmake --install build --prefix stage
+
+      - name: Include runtime configuration and SQL
+        run: |
+          mkdir -p stage/share/evemu
+          cp -a sql stage/share/evemu/
+          cp -a utils stage/share/evemu/
+          cp -a config stage/share/evemu/ 2>/dev/null || true
+          printf 'Commit: %s\nBranch: %s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" > stage/BUILD-INFO.txt
+
+      - name: Package Linux build
+        run: tar -czf evemu-crucible-linux-x86_64.tar.gz -C stage .
+
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: evemu-crucible-linux-x86_64
+          path: evemu-crucible-linux-x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  docker:
+    name: Docker image build
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build --pull -t evemu-crucible:ci .
+
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, docker]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download Linux build
+        uses: actions/download-artifact@v4
+        with:
+          name: evemu-crucible-linux-x86_64
+          path: dist
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/evemu-crucible-linux-x86_64.tar.gz
