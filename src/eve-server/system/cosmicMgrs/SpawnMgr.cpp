@@ -480,6 +480,7 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
     }
 
     pBubble->SetMission();
+    const bool blockadeTestMission = (offer.missionID == 65535);
 
     // Mission dungeon metadata is more authoritative than the agent's faction:
     // the dungeon template identifies the actual opposing NPC faction and its
@@ -494,13 +495,19 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
         // Resolve a real NPC-bearing agent-mission template by faction instead
         // of requiring the empty legacy dunDungeons/dunRooms tables.
         if (missionDungeon.rooms.empty()) {
-            if (offer.missionID == 65535) {
+            if (blockadeTestMission) {
                 // The synthetic Blockade test is Angel Cartel content and must
                 // not inherit the issuing agent's empire faction.
                 sDunDataMgr.GetRandomMissionDungeonForGroup(missionDungeon, "Asteroid Angel Cartel");
             } else {
                 sDunDataMgr.GetRandomMissionDungeon(missionDungeon, factionID);
             }
+        }
+
+        if (blockadeTestMission && missionDungeon.rooms.empty()) {
+            _log(SPAWN__ERROR, "Blockade test mission %u has no Angel Cartel first-room template; refusing to spawn a different faction.", offerID);
+            pBubble->SetMission(false);
+            return false;
         }
 
         if (missionDungeon.factionID != 0)
@@ -611,6 +618,12 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
                         offerID, spawnNumber, staticObjectCount, selectedDungeonID, firstRoom.roomID);
             }
         }
+    }
+
+    if (!spawnedFromTemplate && blockadeTestMission) {
+        _log(SPAWN__ERROR, "Blockade test mission %u did not spawn from its Angel Cartel room template.", offerID);
+        pBubble->SetMission(false);
+        return false;
     }
 
     if (!spawnedFromTemplate && !PrepSpawn(pBubble, spawnClass, 0, factionID)) {
