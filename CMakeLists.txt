@@ -72,7 +72,7 @@ SET(CMAKE_CXX_STANDARD_REQUIRED ON)
 SET(CMAKE_CXX_EXTENSIONS ON)
 IF (WIN32)
   # Windows socket and symbol APIs are used by all Windows toolchains.
-  link_libraries(ws2_32)
+  link_libraries(ws2_32 mswsock)
   IF (MSVC)
     SET( CMAKE_CXX_FLAGS "/permissive- -DHAVE_WINDOWS_H -DHAVE_WINSOCK2_H /DEBUG /Zi ${CMAKE_CXX_FLAGS}" )
     link_libraries(DbgHelp.lib)
