@@ -2021,7 +2021,7 @@ bool Client::StartEncounterMission(MissionOffer& offer)
     pBubble = pBeacon->SysBubble();
     if (pBubble == nullptr || !m_system->GetSpawnMgr()->DoSpawnForMission(
             pBubble, m_system->GetRegionID(), offer.range, m_char->itemID(),
-            offer.agentID, offer.offerID, beacon->itemID(), agentFactionID, missionDungeonID)) {
+            offer.agentID, offer.offerID, offer.missionID, beacon->itemID(), agentFactionID, missionDungeonID)) {
         m_system->RemoveEntity(pBeacon);
         beacon->Delete();
         SafeDelete(pBeacon);
