@@ -172,6 +172,10 @@ void EVETCPConnection::DumpBuffer( Buffer* buf, packet_direction packet_directio
         path += "_server_";
     path += ".txt";
     logpacket = fopen(path.c_str(), "w");
+    if (logpacket == nullptr) {
+        sLog.Error("Network", "Unable to open packet log file: %s", path.c_str());
+        return;
+    }
 
     Buffer::iterator<uint8> cur = buf->begin<uint8>();
     for (; cur != buf->end<uint8>(); ++cur) {
