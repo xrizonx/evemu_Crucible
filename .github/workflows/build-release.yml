@@ -103,6 +103,10 @@ jobs:
           $objdumpCommand = Get-Command objdump.exe -ErrorAction Stop
           $objdump = $objdumpCommand.Source
           $dllSource = Split-Path -Parent $objdump
+          $ucrtRoot = Split-Path -Parent $dllSource
+          # Search the complete UCRT64 installation, not only its bin directory:
+          # some MSYS2 packages place runtime DLLs in subdirectories.
+          $availableDlls = @(Get-ChildItem -Path $ucrtRoot -Filter '*.dll' -File -Recurse)
           $seen = @{}
           $queue = @(Get-ChildItem stage -Recurse -File | Where-Object { $_.Extension -in @('.exe', '.dll') })
           while ($queue.Count -gt 0) {
@@ -113,14 +117,26 @@ jobs:
               foreach ($name in $imports) {
                 if (-not $seen.ContainsKey($name)) {
                   $seen[$name] = $true
-                  $candidate = Join-Path $dllSource $name
-                  if (Test-Path $candidate) {
+                  $candidate = $availableDlls | Where-Object { $_.Name -ieq $name } | Select-Object -First 1
+                  if ($null -ne $candidate) {
                     $destination = Join-Path (Resolve-Path stage).Path $name
-                    Copy-Item $candidate $destination -Force
+                    Copy-Item $candidate.FullName $destination -Force
                     if ([IO.Path]::GetExtension($name) -ieq '.dll') { $queue += Get-Item $destination }
                   }
                 }
               }
+            }
+          }
+          # These are required application dependencies; fail packaging rather
+          # than publishing a ZIP that will fail on a clean Windows 11 machine.
+          $requiredRuntimeDlls = @('libtinyxml-0.dll', 'libmariadb.dll', 'libz-1.dll')
+          foreach ($name in $requiredRuntimeDlls) {
+            if (-not (Test-Path (Join-Path (Resolve-Path stage).Path $name))) {
+              $candidate = $availableDlls | Where-Object { $_.Name -ieq $name } | Select-Object -First 1
+              if ($null -eq $candidate) {
+                throw "Required runtime DLL '$name' was not found under '$ucrtRoot'. Check the MSYS2 package installation."
+              }
+              Copy-Item $candidate.FullName (Join-Path (Resolve-Path stage).Path $name) -Force
             }
           }
           Compress-Archive -Path stage\* -DestinationPath evemu-crucible-windows-x86_64.zip -Force
