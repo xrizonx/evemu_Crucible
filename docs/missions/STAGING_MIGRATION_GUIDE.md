@@ -9,6 +9,7 @@ No SQL is executed by this project. The operator runs the reviewed file manually
 ## Files
 
 - `sql/mission_data/001_create_staging_schema.sql`: additive staging DDL.
+- `sql/mission_data/002_seed_research_case.sql`: optional, non-executable The Blockade research placeholder with source links; it contains no guessed NPC/type/room/reward rows.
 - `docs/missions/STAGING_VALIDATION.sql`: read-only compatibility and completeness checks.
 - `sql/mission_data/source_manifest.json`: source policy and provenance.
 - `sql/mission_data/research/`: research observations; not runtime import data.
