@@ -163,6 +163,44 @@ bool DungeonDataMgr::GetRandomMissionDungeon(Dungeon::Dungeon& dungeon, uint32 f
     return true;
 }
 
+
+bool DungeonDataMgr::GetRandomMissionDungeonForGroup(Dungeon::Dungeon& dungeon, const char* groupPrefix)
+{
+    std::vector<Dungeon::Dungeon> candidates;
+    if (groupPrefix == nullptr || groupPrefix[0] == '\\0')
+        return false;
+
+    // The Blockade test must use Angel Cartel room templates even when the
+    // issuing security agent belongs to another empire faction. Require NPCs
+    // in the first room because that is the room instantiated on acceptance.
+    for (const Dungeon::Dungeon& candidate : m_dungeons) {
+        if (candidate.archetypeID != 20 || candidate.rooms.empty())
+            continue;
+
+        const Dungeon::Room& firstRoom = candidate.rooms.begin()->second;
+        bool hasRequestedNPC = false;
+        for (const Dungeon::RoomObject& object : firstRoom.objects) {
+            Inv::GrpData group = {};
+            sDataMgr.GetGroup(object.groupID, group);
+            if (group.id != 0 && group.catID == EVEDB::invCategories::Entity
+                    && group.name.compare(0, strlen(groupPrefix), groupPrefix) == 0) {
+                hasRequestedNPC = true;
+                break;
+            }
+        }
+        if (hasRequestedNPC)
+            candidates.push_back(candidate);
+    }
+
+    if (candidates.empty()) {
+        _log(DUNG__WARNING, "GetRandomMissionDungeonForGroup() - No mission template has first-room NPC groups matching '%s'.", groupPrefix);
+        return false;
+    }
+
+    dungeon = candidates[MakeRandomInt(0, static_cast<uint32>(candidates.size() - 1))];
+    return true;
+}
+
 void DungeonDataMgr::Populate()
 {
     // Populate dungeon datasets from DB
