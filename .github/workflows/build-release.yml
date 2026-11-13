@@ -107,36 +107,50 @@ jobs:
           # Search the complete UCRT64 installation, not only its bin directory:
           # some MSYS2 packages place runtime DLLs in subdirectories.
           $availableDlls = @(Get-ChildItem -Path $ucrtRoot -Filter '*.dll' -File -Recurse)
+          # Windows searches the executable's directory for dependent DLLs.
+          # Do not put runtime libraries only in the ZIP root when binaries live
+          # under bin/ or another install subdirectory.
+          $exeDirs = @(Get-ChildItem stage -Recurse -Filter '*.exe' -File | ForEach-Object { $_.DirectoryName } | Sort-Object -Unique)
+          if ($exeDirs.Count -eq 0) { throw 'No executable was found in the staged Windows installation.' }
           $seen = @{}
-          $queue = @(Get-ChildItem stage -Recurse -File | Where-Object { $_.Extension -in @('.exe', '.dll') })
+          $scanned = @{}
+          $queue = @(Get-ChildItem stage -Recurse -Filter '*.exe' -File)
           while ($queue.Count -gt 0) {
             $current = $queue
             $queue = @()
             foreach ($binary in $current) {
+              if ($scanned.ContainsKey($binary.FullName)) { continue }
+              $scanned[$binary.FullName] = $true
               $imports = & $objdump -p $binary.FullName 2>$null | Select-String 'DLL Name:' | ForEach-Object { ($_ -split 'DLL Name:')[1].Trim() }
               foreach ($name in $imports) {
-                if (-not $seen.ContainsKey($name)) {
-                  $seen[$name] = $true
-                  $candidate = $availableDlls | Where-Object { $_.Name -ieq $name } | Select-Object -First 1
-                  if ($null -ne $candidate) {
-                    $destination = Join-Path (Resolve-Path stage).Path $name
-                    Copy-Item $candidate.FullName $destination -Force
-                    if ([IO.Path]::GetExtension($name) -ieq '.dll') { $queue += Get-Item $destination }
+                $candidate = $availableDlls | Where-Object { $_.Name -ieq $name } | Select-Object -First 1
+                if ($null -ne $candidate) {
+                  foreach ($exeDir in $exeDirs) {
+                    $key = "$exeDir|$name".ToLowerInvariant()
+                    if (-not $seen.ContainsKey($key)) {
+                      $seen[$key] = $true
+                      $destination = Join-Path $exeDir $name
+                      Copy-Item $candidate.FullName $destination -Force
+                      $queue += Get-Item $destination
+                    }
                   }
                 }
               }
             }
           }
-          # These are required application dependencies; fail packaging rather
-          # than publishing a ZIP that will fail on a clean Windows 11 machine.
+          # Require each executable directory to contain these known runtime
+          # dependencies. This checks the actual loader search location.
           $requiredRuntimeDlls = @('libtinyxml-0.dll', 'libmariadb.dll', 'libz-1.dll')
-          foreach ($name in $requiredRuntimeDlls) {
-            if (-not (Test-Path (Join-Path (Resolve-Path stage).Path $name))) {
-              $candidate = $availableDlls | Where-Object { $_.Name -ieq $name } | Select-Object -First 1
-              if ($null -eq $candidate) {
-                throw "Required runtime DLL '$name' was not found under '$ucrtRoot'. Check the MSYS2 package installation."
+          foreach ($exeDir in $exeDirs) {
+            foreach ($name in $requiredRuntimeDlls) {
+              $destination = Join-Path $exeDir $name
+              if (-not (Test-Path $destination)) {
+                $candidate = $availableDlls | Where-Object { $_.Name -ieq $name } | Select-Object -First 1
+                if ($null -eq $candidate) {
+                  throw "Required runtime DLL '$name' was not found under '$ucrtRoot'. Check the MSYS2 package installation."
+                }
+                Copy-Item $candidate.FullName $destination -Force
               }
-              Copy-Item $candidate.FullName (Join-Path (Resolve-Path stage).Path $name) -Force
             }
           }
           Compress-Archive -Path stage\* -DestinationPath evemu-crucible-windows-x86_64.zip -Force

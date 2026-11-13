@@ -147,3 +147,13 @@ Updated the Windows packaging step:
 
 - Fix commit: `bf340ba09a34dbb3e8d17b9d738b821cb21b01db`
 - Validation: fresh Windows packaging workflow pending. The fix is not yet claimed as verified until the build produces a ZIP containing all three DLLs.
+
+
+### Windows runtime DLL placement correction and ServiceDB numeric formatting
+
+A follow-up user test confirmed the runtime DLLs still were not beside `eve-server.exe` after extraction. The earlier scanner copied DLLs to the staging root, which is insufficient when installed executables live in a subdirectory. Packaging now discovers every staged executable directory, places recursively discovered dependencies beside the executables, and verifies the three reported libraries in each executable directory before creating the ZIP.
+
+Also corrected a confirmed undefined-behavior defect in `ServiceDB::ProcessRealChange()`: it passed null pointers to `fcvt()` for required output parameters. Replaced this with a locale-independent fixed two-decimal `std::ostringstream` representation, avoiding the invalid pointers and the non-thread-safe conversion function.
+
+- Changes committed together to avoid unnecessary CI cancellation.
+- Validation remains pending; Windows ZIP contents and both platform builds must be checked before calling this complete.
