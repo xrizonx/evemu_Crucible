@@ -628,7 +628,7 @@ void MissionDataMgr::CreateMissionOffer(uint8 typeID, uint8 level, uint8 raceID,
                 const bool notCompletedStarter = (level != 0)
                     || (std::find(completedStarterMissionIDs.begin(), completedStarterMissionIDs.end(), mission.missionID)
                         == completedStarterMissionIDs.end());
-                if (securityAgent && mission.missionID == kBlockadeSecurityTestMissionID) {
+                if (securityAgent && mission.missionID == Mission::kBlockadeSecurityTestMissionID) {
                     candidates.push_back(mission);
                 } else if (!securityAgent && mission.typeID == Mission::Type::Encounter
                         && raceMatches && notStoryline && notCompletedStarter) {
@@ -648,7 +648,7 @@ void MissionDataMgr::CreateMissionOffer(uint8 typeID, uint8 level, uint8 raceID,
                     const bool notCompletedStarter = (level != 0)
                         || (std::find(completedStarterMissionIDs.begin(), completedStarterMissionIDs.end(), mission.missionID)
                             == completedStarterMissionIDs.end());
-                    if (securityAgent && mission.missionID == kBlockadeSecurityTestMissionID) {
+                    if (securityAgent && mission.missionID == Mission::kBlockadeSecurityTestMissionID) {
                         candidates.push_back(mission);
                     } else if (!securityAgent && mission.typeID == Mission::Type::Encounter
                             && raceMatches && notStoryline && notCompletedStarter) {
