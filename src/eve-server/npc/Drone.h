@@ -77,6 +77,7 @@ public:
     void Launch(ShipSE* pShipSE);           //add drone entity to system
     void Online(ShipSE* pShipSE=nullptr);         //  if nullptr sent, assign to controlling ship
     void Offline();
+    bool ScoopToBay();
     void StateChange();
     //begin idle orbit around assigned ship
     void IdleOrbit(ShipSE* pShipSE=nullptr);
@@ -112,6 +113,7 @@ public:
     void SetTarget(SystemEntity* pSE = nullptr)         { m_targetID = (pSE == nullptr ? 0 : pSE->GetID()); }
 
     ShipSE* GetHomeShip()                               { return m_pShipSE; }
+    SystemManager* GetSystemManager()                    { return m_system; }
 
 protected:
     Client* m_pClient;          //we do not own this

@@ -3,6 +3,14 @@
 This file tracks fixes and maintenance changes made on this fork's `master` branch. Entries describe code changes, not a guarantee that every gameplay path has been manually tested.
 
 
+## Mission completion and briefing follow-up — 2026-11-14
+
+- Strengthened the synthetic Blockade mission's final-hostile detection: the live NPC count in the dedicated mission pocket is now a fallback when stale spawn-registry entries remain.
+- When the last live NPC dies, the remaining registry rows for that mission pocket are cleared and the accepted offer's kill objective is set to its required count, making it eligible for the normal agent turn-in path.
+- Added visible spawn/NPC death diagnostics so mission kill callbacks, bubble IDs, live NPC counts, registry counts, and offer progress can be checked without enabling trace-only categories.
+- Added custom plain-text Blockade briefing content to the agent's offer/view responses and mission briefing response data. This avoids relying solely on the missing synthetic localization IDs.
+- Build and in-game verification are pending; the user's supplied log did not include mission death callback output.
+
 ## Upstream contribution summary — 2026-11-13
 
 This PR proposes the current fork work against `EvEmu-Project/evemu_Crucible:master`. The fork's current integration head is 183 commits ahead of the upstream merge base in GitHub's comparison at the time of the 2026-11-14 review. This count includes the fork's accumulated maintenance history and should not be interpreted as 183 newly reviewed changes in the latest mission/drone slice. This is a grouped summary of the complete proposed change set, not a claim that all gameplay features are finished.
@@ -169,3 +177,56 @@ The synthetic Blockade reward/kill target assignment in `Agent::MakeOffer()` has
 - Added guards for zero-distance/invalid NPC turret targets, missing signature/tracking data and zero falloff when outside optimal range.
 - Adjusted direct station warp-in points to stop beyond the station radius plus the ship's own collision radius and a 5 km clearance. Previously the point was offset by only the station radius, placing the ship at the collision surface and allowing hulls to overlap/bounce on arrival. Normal docking perimeter/approach logic remains unchanged.
 - Validation pending: compile all CI targets, then test railguns against stationary and moving large targets at optimal/falloff, and warp ships of different hull sizes to stations before attempting docking.
+
+
+## 2026-11-14 follow-up — Blockade fleet hull-tier correction
+
+- Corrected the Angel Cartel NPC inventory group mapping after confirming that group 552 is the Battleship group, not Cruiser, and group 576 is the standard Angel Cartel BattleCruiser group.
+- The synthetic 24-ship Blockade fleet now selects 12 frigates from group 550, 4 destroyers from 551, 4 cruisers from 553 and 4 battlecruisers from 576. Battleship group 552 is not part of the composition.
+- Added exact expected group-name validation for each configured group and for each selected type. If static data maps an ID to an unexpected group/class, fleet setup fails rather than spawning that hull.
+- Validation pending: compile/CI and a fresh in-game run. Confirm the fleet contains exactly 12/4/4/4 hulls, with no battleships or larger ships.
+
+
+## 2026-11-14 follow-up — Corrected Angel Cartel destroyer/cruiser group IDs
+
+- Runtime logs showed group 551 is not the Angel Cartel Destroyer group; it resolves to Asteroid Angel Cartel Cruiser. Group 553 resolves to Asteroid Angel Cartel Officer.
+- Corrected the composition to use group 575 for Angel Cartel Destroyers and group 551 for Angel Cartel Cruisers. The other classes remain group 550 Frigate and group 576 BattleCruiser.
+- This excludes the Officer group (553) as well as Battleships (552). Exact expected group-name checks remain in place to prevent another incorrect mapping from spawning.
+- Validation pending: CI and a new mission run; expected composition is 12 frigates, 4 destroyers, 4 cruisers and 4 battlecruisers.
+
+
+## 2026-11-14 follow-up — Blockade briefing presentation and live kill counter
+
+- Refined the synthetic Blockade agent offer and active-mission dialogue into clearly separated sections for the situation, ship-class objectives, combat progress, completion instructions, reward and time limit.
+- Added a live `Kills confirmed: current / required` counter to the agent's active-mission response and mission briefing/objective payload. The displayed value is capped at the required target and uses the persisted mission-offer kill progress.
+- Added explicit `killsDestroyed` and `killsRequired` objective fields for clients that consume the extended mission objective dictionary.
+- Kept the existing 24-ship objective, 120-minute duration, 150,000 ISK reward and turn-in/completion flow unchanged.
+- User has confirmed in-game that the mission can now be turned in after destroying all ships, the reward is issued, and mission text is visible. The presentation/counter update is source-level only at this point; compile and a fresh in-game counter refresh test are still required.
+
+
+## 2026-11-14 follow-up — render mission briefing line breaks correctly
+
+- Fixed the Blockade briefing strings to use actual C++ newline escapes rather than double-escaped backslash-n text. The agent dialog and mission journal should now render paragraphs and headings on separate lines instead of displaying literal `\\n` sequences.
+- Added leading spacing before the mission title so it is visually separated from the agent division heading.
+- This corrects the text serialization/presentation issue; verify in-game after rebuilding the latest branch head.
+
+## 2026-11-14 — Blockade journal response and drone combat follow-up
+
+- Corrected the active Blockade agent conversation path: opening the agent with an accepted synthetic mission now returns the formatted mission text and live kill count instead of the numeric briefing ID `0`.
+- Suppressed the nonexistent synthetic mission title/briefing localization IDs in mission briefing and journal responses. The client now receives the custom title and briefing strings rather than being asked to resolve message ID zero.
+- Kept the kill objective in the normal encounter `kill` objective payload and exposed an explicit completion flag alongside current/required kills.
+- Implemented `entity.CmdEngage` for player-selected drones: validates the active system, locked ship target, drone ownership/control, online state and shared bubble, then directs each selected drone to attack.
+- Improved drone pursuit to use the configured chase-distance envelope rather than dropping targets at the shorter attack-range threshold. Aggressive drones can now retaliate against NPCs that target them; passive drones remain under explicit player control.
+- Validation pending: compile current branch head and test journal display/progress updates, CmdEngage with light/medium/heavy drones against NPCs, pursuit at short and long distances, passive/aggressive behavior, target death, and drone return/scoop behavior.
+
+## 2026-11-14 — Drone combat and recovery lifecycle
+
+- Fixed a critical drone target-acquisition failure: combat drone types that omit `maxAttackTargets` were passing zero to the NPC target manager, which rejected every engage request. The AI now guarantees at least one target slot and a nonzero lock duration.
+- Added safe fallback values for missing drone movement, orbit, pursuit, weapon-range and attack-cycle attributes so incomplete legacy static data does not leave drones with zero ranges or a disabled attack timer.
+- Added a pending-target path: when an engage target is outside immediate drone lock range, the drone approaches and retries target acquisition once in range instead of abandoning the command.
+- Reworked drone hit chance to use transversal velocity and guard missing tracking, signature, optimal-range and falloff attributes. Combat damage now validates base drone damage and multiplier values and emits per-shot diagnostics.
+- Implemented `CmdReturnHome` (return and orbit), `CmdReturnBay` (return, then automatically scoop within 2,500 m) and `CmdAbandonDrone`.
+- Added safe return-to-bay completion in the drone process loop, including drone-bay capacity validation, inventory transfer, bandwidth release, target-lock cleanup and solar-system entity removal.
+- Fixed launch bandwidth validation to happen before moving the item or creating the space entity. Previously an over-bandwidth launch could leave an inert drone in space after the command failed.
+- Pending engage targets are stored as entity IDs and re-resolved through the current solar-system manager each tick, avoiding stale entity pointers when an NPC dies or leaves the system. A new explicit engage order now clears a different stale/locked target before acquiring the new target. Added guards for invalid target state and a valid min/max orbit-speed interval.
+- Validation pending on the latest branch head: Windows/Linux/Docker CI and in-game tests for light/medium/heavy drones, target lock, approach, orbit, damage, target death, return-home, return-to-bay, bay-full failure, abandon and bandwidth rejection.

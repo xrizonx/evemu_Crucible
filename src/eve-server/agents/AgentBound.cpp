@@ -131,8 +131,38 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
                             button2->SetItem(1, new PyInt(Complete));
                         dialog->AddItem(button2);
                     }
-                    agentSays->SetItem(0, new PyInt(offer.briefingID));
-                    agentSays->SetItem(1, new PyInt(offer.characterID));
+                    if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+                        const uint32 killsDestroyed =
+                            (offer.courierTypeID < offer.courierAmount)
+                                ? offer.courierTypeID : offer.courierAmount;
+                        std::string briefing =
+                            "THE BLOCKADE\n"
+                            "ANGEL CARTEL INCURSION\n\n"
+                            "SITUATION\n"
+                            "An Angel Cartel strike force is operating in this system. "
+                            "Destroy every hostile ship and secure the bookmarked mission pocket.\n\n"
+                            "MISSION OBJECTIVES\n"
+                            "- 12 frigates\n"
+                            "- 4 destroyers\n"
+                            "- 4 cruisers\n"
+                            "- 4 battlecruisers\n\n"
+                            "COMBAT PROGRESS\n"
+                            "Kills confirmed: ";
+                        briefing += std::to_string(killsDestroyed);
+                        briefing += " / ";
+                        briefing += std::to_string(offer.courierAmount);
+                        briefing += "\n\nCOMPLETION\n"
+                            "Return to this agent after the pocket is clear.\n\n"
+                            "MISSION REWARD\n"
+                            "150,000 ISK\n"
+                            "TIME LIMIT\n"
+                            "120 minutes from acceptance.";
+                        agentSays->SetItem(0, new PyString(briefing));
+                        agentSays->SetItem(1, PyStatic.NewNone());
+                    } else {
+                        agentSays->SetItem(0, new PyInt(offer.briefingID));
+                        agentSays->SetItem(1, new PyInt(offer.characterID));
+                    }
                 } else {
                     // dialogue data.  if RequestMission is only option, client auto-responds with DoAction(RequestMission optionID)
                     PyTuple* button2 = new PyTuple(2);
@@ -183,8 +213,31 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
                 *   contentID is used for specific char's mission keywords.  we're not using it like there here....
                 */
 
-                agentSays->SetItem(0, new PyInt(offer.briefingID));
-                agentSays->SetItem(1, new PyInt(offer.characterID));
+                if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+                    agentSays->SetItem(0, new PyString(
+                        "\n\nTHE BLOCKADE\n"
+                        "ANGEL CARTEL INCURSION\n\n"
+                        "SITUATION\n"
+                        "Angel Cartel forces have established a hostile presence in this system. "
+                        "Your task is to eliminate the entire strike force and secure the mission pocket.\n\n"
+                        "MISSION OBJECTIVES\n"
+                        "- Destroy 12 frigates\n"
+                        "- Destroy 4 destroyers\n"
+                        "- Destroy 4 cruisers\n"
+                        "- Destroy 4 battlecruisers\n\n"
+                        "COMBAT PROGRESS\n"
+                        "Kills confirmed: 0 / 24\n\n"
+                        "COMPLETION\n"
+                        "Return to this agent once all hostile ships have been destroyed.\n\n"
+                        "MISSION REWARD\n"
+                        "150,000 ISK\n"
+                        "TIME LIMIT\n"
+                        "120 minutes from acceptance."));
+                    agentSays->SetItem(1, PyStatic.NewNone());
+                } else {
+                    agentSays->SetItem(0, new PyInt(offer.briefingID));
+                    agentSays->SetItem(1, new PyInt(offer.characterID));
+                }
 
                 // dialog can also contain mission data.
                 //   set a dialog tuple[1] to dict and fill with MissionBriefingInfo
@@ -204,8 +257,38 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
             case ViewMission: { //1
                 MissionOffer offer = MissionOffer();
                 m_agent->GetOffer(pchar->itemID(), offer);
-                agentSays->SetItem(0, new PyInt(offer.briefingID));
-                agentSays->SetItem(1, new PyInt(offer.characterID));
+                if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+                    const uint32 killsDestroyed =
+                        (offer.courierTypeID < offer.courierAmount)
+                            ? offer.courierTypeID : offer.courierAmount;
+                    std::string briefing =
+                        "THE BLOCKADE\n"
+                        "ANGEL CARTEL INCURSION\n\n"
+                        "SITUATION\n"
+                        "An Angel Cartel strike force is operating in this system. "
+                        "Destroy every hostile ship and secure the bookmarked mission pocket.\n\n"
+                        "MISSION OBJECTIVES\n"
+                        "- 12 frigates\n"
+                        "- 4 destroyers\n"
+                        "- 4 cruisers\n"
+                        "- 4 battlecruisers\n\n"
+                        "COMBAT PROGRESS\n"
+                        "Kills confirmed: ";
+                    briefing += std::to_string(killsDestroyed);
+                    briefing += " / ";
+                    briefing += std::to_string(offer.courierAmount);
+                    briefing += "\n\nCOMPLETION\n"
+                        "Return to this agent after the pocket is clear.\n\n"
+                        "MISSION REWARD\n"
+                        "150,000 ISK\n"
+                        "TIME LIMIT\n"
+                        "120 minutes from acceptance.";
+                    agentSays->SetItem(0, new PyString(briefing));
+                    agentSays->SetItem(1, PyStatic.NewNone());
+                } else {
+                    agentSays->SetItem(0, new PyInt(offer.briefingID));
+                    agentSays->SetItem(1, new PyInt(offer.characterID));
+                }
                 if (offer.stateID < Mission::State::Accepted) {
                     PyTuple* button1 = new PyTuple(2);
                         button1->SetItem(0, new PyInt(Accept));
@@ -460,8 +543,43 @@ PyResult AgentBound::GetMissionBriefingInfo(PyCallArgs &call) {
     PyDict *briefingInfo = new PyDict();
         briefingInfo->SetItemString("ContentID", new PyInt(offer.characterID));
         briefingInfo->SetItemString("Mission Keywords", keywords);
-        briefingInfo->SetItemString("Mission Title ID", new PyInt(offer.missionID));
-        briefingInfo->SetItemString("Mission Briefing ID", new PyInt(offer.briefingID));
+        if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+            // The synthetic mission has no localization message IDs. Returning
+            // integer zero makes the client render the literal "message 0".
+            briefingInfo->SetItemString("Mission Title ID", PyStatic.NewNone());
+            briefingInfo->SetItemString("Mission Briefing ID", PyStatic.NewNone());
+        } else {
+            briefingInfo->SetItemString("Mission Title ID", new PyInt(offer.missionID));
+            briefingInfo->SetItemString("Mission Briefing ID", new PyInt(offer.briefingID));
+        }
+        if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+            const uint32 killsDestroyed =
+                (offer.courierTypeID < offer.courierAmount)
+                    ? offer.courierTypeID : offer.courierAmount;
+            std::string missionBriefing =
+                "ANGEL CARTEL INCURSION\n\n"
+                "SITUATION\n"
+                "An Angel Cartel strike force has established a hostile presence in this system. "
+                "Eliminate the entire force and secure the bookmarked mission pocket.\n\n"
+                "MISSION OBJECTIVES\n"
+                "- 12 frigates\n"
+                "- 4 destroyers\n"
+                "- 4 cruisers\n"
+                "- 4 battlecruisers\n\n"
+                "COMBAT PROGRESS\n"
+                "Kills confirmed: ";
+            missionBriefing += std::to_string(killsDestroyed);
+            missionBriefing += " / ";
+            missionBriefing += std::to_string(offer.courierAmount);
+            missionBriefing += "\n\nCOMPLETION\n"
+                "Return to your agent once all hostile ships have been destroyed.\n\n"
+                "REWARD\n"
+                "150,000 ISK\n\n"
+                "TIME LIMIT\n"
+                "120 minutes from acceptance.";
+            briefingInfo->SetItemString("Mission Title", new PyString("The Blockade - Angel Cartel"));
+            briefingInfo->SetItemString("Mission Briefing", new PyString(missionBriefing));
+        }
         switch(offer.typeID) {
             case Mission::Type::Courier:
                 briefingInfo->SetItemString("Mission Image", sMissionDataMgr.GetCourierRes()); break;
@@ -606,8 +724,13 @@ PyResult AgentBound::GetMissionJournalInfo(PyCallArgs &call, std::optional <PyIn
 
     PyDict* journalInfo = new PyDict();
     journalInfo->SetItemString("contentID", new PyInt(offer.characterID));
-    journalInfo->SetItemString("missionNameID", new PyInt(offer.missionID));
-    journalInfo->SetItemString("briefingTextID", new PyInt(offer.briefingID));
+    if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+        journalInfo->SetItemString("missionNameID", PyStatic.NewNone());
+        journalInfo->SetItemString("briefingTextID", PyStatic.NewNone());
+    } else {
+        journalInfo->SetItemString("missionNameID", new PyInt(offer.missionID));
+        journalInfo->SetItemString("briefingTextID", new PyInt(offer.briefingID));
+    }
     journalInfo->SetItemString("missionState", new PyInt(offer.stateID));
     journalInfo->SetItemString("expirationTime", new PyLong(offer.expiryTime) );
     journalInfo->SetItemString("objectives", GetMissionObjectiveInfo(call.client, offer));
@@ -631,7 +754,39 @@ PyResult AgentBound::GetMissionJournalInfo(PyCallArgs &call, std::optional <PyIn
 PyDict* AgentBound::GetMissionObjectiveInfo(Client* pClient, MissionOffer& offer)
 {
     PyDict* objectiveData = new PyDict();
-    objectiveData->SetItemString("missionTitleID", new PyInt(offer.missionID));
+    objectiveData->SetItemString("missionTitleID",
+        offer.missionID == Mission::kBlockadeSecurityTestMissionID
+            ? PyStatic.NewNone() : new PyInt(offer.missionID));
+    if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+        const uint32 killsDestroyed =
+            (offer.courierTypeID < offer.courierAmount)
+                ? offer.courierTypeID : offer.courierAmount;
+        std::string missionBriefing =
+            "ANGEL CARTEL INCURSION\n\n"
+            "SITUATION\n"
+            "An Angel Cartel strike force has established a hostile presence in this system. "
+            "Eliminate the entire force and secure the bookmarked mission pocket.\n\n"
+            "MISSION OBJECTIVES\n"
+            "- 12 frigates\n"
+            "- 4 destroyers\n"
+            "- 4 cruisers\n"
+            "- 4 battlecruisers\n\n"
+            "COMBAT PROGRESS\n"
+            "Kills confirmed: ";
+        missionBriefing += std::to_string(killsDestroyed);
+        missionBriefing += " / ";
+        missionBriefing += std::to_string(offer.courierAmount);
+        missionBriefing += "\n\nCOMPLETION\n"
+            "Return to your agent once all hostile ships have been destroyed.\n\n"
+            "REWARD\n"
+            "150,000 ISK\n\n"
+            "TIME LIMIT\n"
+            "120 minutes from acceptance.";
+        objectiveData->SetItemString("missionTitle", new PyString("The Blockade - Angel Cartel"));
+        objectiveData->SetItemString("missionBriefing", new PyString(missionBriefing));
+        objectiveData->SetItemString("killsDestroyed", new PyInt(killsDestroyed));
+        objectiveData->SetItemString("killsRequired", new PyInt(offer.courierAmount));
+    }
     objectiveData->SetItemString("contentID", new PyInt(offer.characterID));
     objectiveData->SetItemString("importantStandings", new PyInt(offer.important));     // boolean integer
     // will need to test for this to set correctly.....
@@ -838,7 +993,10 @@ PyTuple* AgentBound::GetMissionObjectives(Client* pClient, MissionOffer& offer)
             PyDict* progress = new PyDict();
                 progress->SetItemString("currentKills", new PyInt(offer.courierTypeID));
                 progress->SetItemString("requiredKills", new PyInt(offer.courierAmount));
-                progress->SetItemString("complete", new PyBool(offer.courierAmount > 0 && offer.courierTypeID >= offer.courierAmount));
+                const bool objectiveComplete =
+                    offer.courierAmount > 0 && offer.courierTypeID >= offer.courierAmount;
+                progress->SetItemString("complete", new PyBool(objectiveComplete));
+                progress->SetItemString("objectiveCompleted", new PyBool(objectiveComplete));
             PyTuple* objData = new PyTuple(3);
                 objData->SetItem(0, new PyInt(offer.destinationOwnerID));
                 objData->SetItem(1, dropoffLocation);

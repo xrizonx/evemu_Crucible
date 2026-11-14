@@ -169,25 +169,62 @@ float TurretFormulas::GetNPCToHit(NPC* pNPC, SystemEntity* pTarget)
 
 float TurretFormulas::GetDroneToHit(DroneSE* pDrone, SystemEntity* pTarget)
 {
-    if (pTarget == nullptr)
-        return 0;
-    float falloff = pDrone->GetSelf()->GetAttribute(AttrFalloff).get_float();
-    float distance = pDrone->DestinyMgr()->GetPosition().distance(pTarget->DestinyMgr()->GetPosition());
-    GVector vector = pTarget->GetVelocity() - pDrone->GetVelocity();
-    float transversalV = vector.length();
-    float a = (transversalV / (distance * pDrone->GetSelf()->GetAttribute(AttrTrackingSpeed).get_float()));
-    float b = (pDrone->GetSelf()->GetAttribute(AttrOptimalSigRadius).get_float() / pTarget->GetSelf()->GetAttribute(AttrSignatureRadius).get_float());
-    float c = pow((a * b), 2);
-    float d = EvE::max(distance - pDrone->GetSelf()->GetAttribute(AttrEntityAttackRange).get_float());
-    float e = pow((d / falloff), 2);
-    float ChanceToHit = pow(0.5, c + e);
-    float rNum = MakeRandomFloat(0.0, 1.0);
-    if (rNum <= sConfig.rates.DroneCritChance)
+    if (pDrone == nullptr || pTarget == nullptr
+        || pDrone->GetSelf().get() == nullptr || pTarget->GetSelf().get() == nullptr
+        || pDrone->DestinyMgr() == nullptr || pTarget->DestinyMgr() == nullptr)
+        return 0.0f;
+
+    InventoryItemRef drone = pDrone->GetSelf();
+    InventoryItemRef target = pTarget->GetSelf();
+    const float distance = static_cast<float>(
+        pDrone->DestinyMgr()->GetPosition().distance(pTarget->DestinyMgr()->GetPosition()));
+    if (distance <= 0.001f)
+        return 0.1f;
+
+    float tracking = drone->GetAttribute(AttrTrackingSpeed).get_float();
+    if (tracking <= 0.0f)
+        tracking = 1.0f;
+
+    float targetSignature = target->GetAttribute(AttrSignatureRadius).get_float();
+    if (targetSignature <= 0.0f)
+        targetSignature = target->GetAttribute(AttrRadius).get_float();
+    if (targetSignature <= 0.0f)
+        targetSignature = 1.0f;
+
+    float signatureResolution = drone->GetAttribute(AttrOptimalSigRadius).get_float();
+    if (signatureResolution <= 0.0f)
+        signatureResolution = targetSignature;
+
+    // Turret tracking is based on transversal velocity, not total relative
+    // velocity. Radial motion toward/away from the drone must not penalize hit chance.
+    GVector lineOfSight(pDrone->GetPosition(), pTarget->GetPosition());
+    lineOfSight.normalize();
+    const GVector relativeVelocity = pTarget->GetVelocity() - pDrone->GetVelocity();
+    const float transversalVelocity = relativeVelocity.crossProduct(lineOfSight).length();
+    const float angularVelocity = transversalVelocity / distance;
+    const float trackingTerm = (angularVelocity / tracking)
+        * (signatureResolution / targetSignature);
+
+    float optimalRange = drone->GetAttribute(AttrEntityAttackRange).get_float();
+    if (optimalRange <= 0.0f)
+        optimalRange = drone->GetAttribute(AttrMaxRange).get_float();
+    float falloff = drone->GetAttribute(AttrFalloff).get_float();
+    if (falloff <= 0.0f)
+        falloff = (optimalRange > 0.0f) ? optimalRange : 1.0f;
+
+    const float rangeExcess = EvE::max(distance - optimalRange);
+    const float trackingPenalty = trackingTerm * trackingTerm;
+    const float falloffPenalty = (rangeExcess / falloff) * (rangeExcess / falloff);
+    const float chanceToHit = static_cast<float>(pow(0.5, trackingPenalty + falloffPenalty));
+    const float roll = MakeRandomFloat(0.0f, 1.0f);
+
+    if (roll <= sConfig.rates.DroneCritChance)
         return 3.0f;
-    if (rNum < ChanceToHit)
-        return (rNum + 0.49);
-    // drones will have a minimum damage instead of zero
-    return 0.1;
+    if (roll < chanceToHit)
+        return roll + 0.49f;
+
+    // Preserve the emulator's minimum-damage rule for combat drones.
+    return 0.1f;
 }
 
 float TurretFormulas::GetSentryToHit(Sentry* pSentry, SystemEntity* pTarget)

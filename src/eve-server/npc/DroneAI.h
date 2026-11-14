@@ -59,7 +59,8 @@ public:
     int8 GetState();
 
     void SetIdle();
-    void Return();
+    void Return(bool returnToBay=false);
+    bool IsScoopRequested() const                       { return m_scoopRequested; }
     void AssignShip(ShipSE* pSE)                        { m_assignedShip = pSE; }
 
 protected:
@@ -89,6 +90,9 @@ private:
 
     DroneSE* m_pDrone;
     ShipSE* m_assignedShip;
+    uint32 m_pendingTargetID;
+    bool m_returnToBay;
+    bool m_scoopRequested;
 
     TurretFormulas m_formula;
 

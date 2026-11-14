@@ -14,6 +14,9 @@
 
 #include "EVEServerConfig.h"
 #include "npc/EntityService.h"
+#include "npc/Drone.h"
+#include "npc/DroneAI.h"
+#include "ship/Ship.h"
 #include "system/SystemManager.h"
 #include "services/ServiceManager.h"
 
@@ -179,8 +182,63 @@ PyResult EntityBound::CmdEngage(PyCallArgs &call, PyList* droneIDs, PyInt* targe
     _log(DRONE__TRACE, "EntityBound::Handle_CmdEngage()");
     call.Dump(DRONE__DUMP);
 
-    call.client->SendNotifyMsg("Drone Control is not implemented yet.");
-    return new PyDict();
+    Client* pClient = call.client;
+    ShipSE* pShipSE = (pClient != nullptr) ? pClient->GetShipSE() : nullptr;
+    if (pClient == nullptr || m_sysMgr == nullptr || pShipSE == nullptr
+        || pClient->SystemMgr() != m_sysMgr || m_sysMgr->GetID() != m_systemID) {
+        if (pClient != nullptr)
+            pClient->SendNotifyMsg("Your active ship is not available in this solar system.");
+        return PyStatic.mtDict();
+    }
+
+    const uint32 targetEntityID = targetID->value();
+    SystemEntity* pTarget = m_sysMgr->GetSE(targetEntityID);
+    if (pTarget == nullptr || pTarget->SysBubble() == nullptr
+        || pTarget->SysBubble() != pShipSE->SysBubble()
+        || (!pTarget->IsNPCSE() && !pTarget->IsShipSE())) {
+        pClient->SendNotifyMsg("Your drones cannot engage that target because it is not a valid ship in your current space.");
+        return PyStatic.mtDict();
+    }
+
+    // The player must have the target locked before issuing an engage command.
+    if (pShipSE->TargetMgr() == nullptr
+        || pShipSE->TargetMgr()->GetTarget(targetEntityID, true) == nullptr) {
+        pClient->SendNotifyMsg("Lock the target first, then order your drones to engage it.");
+        return PyStatic.mtDict();
+    }
+
+    std::vector<uint32> requestedDroneIDs;
+    PyList::const_iterator droneItr = droneIDs->begin();
+    for (size_t index = 0; droneItr != droneIDs->end(); ++droneItr, ++index) {
+        if (!(*droneItr)->IsInt()) {
+            _log(DRONE__WARNING, "CmdEngage: drone ID at index %u is not an integer (%s).",
+                 static_cast<uint32>(index), (*droneItr)->TypeString());
+            return nullptr;
+        }
+        requestedDroneIDs.push_back((*droneItr)->AsInt()->value());
+    }
+
+    uint32 commanded = 0;
+    for (const uint32 droneID : requestedDroneIDs) {
+        SystemEntity* pDroneEntity = m_sysMgr->GetSE(droneID);
+        if (pDroneEntity == nullptr || !pDroneEntity->IsDroneSE())
+            continue;
+
+        DroneSE* pDrone = pDroneEntity->GetDroneSE();
+        if (pDrone == nullptr || !pDrone->IsEnabled()
+            || pDrone->GetOwner() != pClient || pDrone->GetHomeShip() != pShipSE
+            || pDrone->SysBubble() != pShipSE->SysBubble() || pDrone->GetAI() == nullptr)
+            continue;
+
+        pDrone->GetAI()->Target(pTarget);
+        ++commanded;
+        _log(DRONE__MESSAGE, "CmdEngage: ordered drone %s(%u) to engage %s(%u).",
+             pDrone->GetName(), pDrone->GetID(), pTarget->GetName(), pTarget->GetID());
+    }
+
+    if (commanded == 0)
+        pClient->SendNotifyMsg("No active drones under your control were selected.");
+    return PyStatic.mtDict();
 }
 
 PyResult EntityBound::CmdRelinquishControl(PyCallArgs &call, PyList* IDs) {
@@ -287,12 +345,30 @@ PyResult EntityBound::CmdReturnHome(PyCallArgs &call, PyList* droneIDs) {
 */
     call.Dump(DRONE__DUMP);
 
-    //Drone* pDrone = m_sysMgr->GetSE()->GetDroneSE();
-    //pDrone->DestinyMgr()->Orbit(pShipSE, 800);
+    Client* pClient = call.client;
+    ShipSE* pShipSE = (pClient != nullptr) ? pClient->GetShipSE() : nullptr;
+    if (pClient == nullptr || pShipSE == nullptr || m_sysMgr == nullptr
+        || pClient->SystemMgr() != m_sysMgr || m_sysMgr->GetID() != m_systemID)
+        return PyStatic.mtDict();
 
+    uint32 returned = 0;
+    for (PyRep* rep : droneIDs->items) {
+        if (rep == nullptr || !rep->IsInt())
+            continue;
+        SystemEntity* entity = m_sysMgr->GetSE(rep->AsInt()->value());
+        if (entity == nullptr || !entity->IsDroneSE())
+            continue;
+        DroneSE* drone = entity->GetDroneSE();
+        if (drone == nullptr || !drone->IsEnabled() || drone->GetOwner() != pClient
+            || drone->GetHomeShip() != pShipSE || drone->GetAI() == nullptr)
+            continue;
+        drone->GetAI()->Return(false);
+        ++returned;
+    }
 
-    call.client->SendNotifyMsg("Drone Control is not implemented yet.");
-    return new PyDict();
+    if (returned == 0)
+        pClient->SendNotifyMsg("No active drones under your control were selected to return.");
+    return PyStatic.mtDict();
 }
 
 PyResult EntityBound::CmdReturnBay(PyCallArgs &call, PyList* droneIDs) {
@@ -328,21 +404,30 @@ PyResult EntityBound::CmdReturnBay(PyCallArgs &call, PyList* droneIDs) {
     _log(DRONE__TRACE, "EntityBound::Handle_CmdReturnBay()");
     call.Dump(DRONE__DUMP);
 
-    call.client->SendNotifyMsg("Drone Control is not implemented yet.");
+    Client* pClient = call.client;
+    ShipSE* pShipSE = (pClient != nullptr) ? pClient->GetShipSE() : nullptr;
+    if (pClient == nullptr || pShipSE == nullptr || m_sysMgr == nullptr
+        || pClient->SystemMgr() != m_sysMgr || m_sysMgr->GetID() != m_systemID)
+        return PyStatic.mtDict();
 
-    // returns nodeID and timestamp and dict of error msg
-    /*
-    PyDict* dict = new PyDict();
-    PyTuple* tuple = new PyTuple(2);
-        tuple->SetItem(0, new PyString(GetBindStr()));    // node info here
-        tuple->SetItem(1, new PyLong(GetFileTimeNow()));
-    PySubStruct* str = new PySubStruct(new PySubStream(tuple));
-    PyTuple* tuple1 = new PyTuple(2);
-        tuple1->SetItem(0, str);
-        tuple1->SetItem(1, dict);
-    return tuple1;
-    */
-    return new PyDict();
+    uint32 returning = 0;
+    for (PyRep* rep : droneIDs->items) {
+        if (rep == nullptr || !rep->IsInt())
+            continue;
+        SystemEntity* entity = m_sysMgr->GetSE(rep->AsInt()->value());
+        if (entity == nullptr || !entity->IsDroneSE())
+            continue;
+        DroneSE* drone = entity->GetDroneSE();
+        if (drone == nullptr || !drone->IsEnabled() || drone->GetOwner() != pClient
+            || drone->GetHomeShip() != pShipSE || drone->GetAI() == nullptr)
+            continue;
+        drone->GetAI()->Return(true);
+        ++returning;
+    }
+
+    if (returning == 0)
+        pClient->SendNotifyMsg("No active drones under your control were selected to return to the drone bay.");
+    return PyStatic.mtDict();
 }
 
 PyResult EntityBound::CmdAbandonDrone(PyCallArgs &call, PyList* droneIDs) {
@@ -357,8 +442,29 @@ PyResult EntityBound::CmdAbandonDrone(PyCallArgs &call, PyList* droneIDs) {
     _log(DRONE__TRACE, "EntityBound::Handle_CmdAbandonDrone()");
     call.Dump(DRONE__DUMP);
 
-    call.client->SendNotifyMsg("Drone Control is not implemented yet.");
-    return new PyDict();
+    Client* pClient = call.client;
+    if (pClient == nullptr || m_sysMgr == nullptr || pClient->SystemMgr() != m_sysMgr)
+        return PyStatic.mtDict();
+
+    uint32 abandoned = 0;
+    for (PyRep* rep : droneIDs->items) {
+        if (rep == nullptr || !rep->IsInt())
+            continue;
+        SystemEntity* entity = m_sysMgr->GetSE(rep->AsInt()->value());
+        if (entity == nullptr || !entity->IsDroneSE())
+            continue;
+        DroneSE* drone = entity->GetDroneSE();
+        if (drone == nullptr || !drone->IsEnabled() || drone->GetOwner() != pClient)
+            continue;
+        if (drone->GetHomeShip() != nullptr)
+            drone->GetHomeShip()->ScoopDrone(drone);
+        drone->Abandon();
+        ++abandoned;
+    }
+
+    if (abandoned == 0)
+        pClient->SendNotifyMsg("No active drones under your control were selected to abandon.");
+    return PyStatic.mtDict();
 }
 
 PyResult EntityBound::CmdReconnectToDrones(PyCallArgs &call, PyList* droneCandidates) {

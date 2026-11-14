@@ -2787,7 +2787,20 @@ void ShipSE::ApplyBoost(BoostData& bData)
 //{'FullPath': u'UI/Messages', 'messageID': 257802, 'label': u'DronesDroppedBecauseOfBandwidthModificationBody'}(u'The drone control bandwidth of your ship has been modified causing you to lose the ability to control some drones.', None, None)
 
 bool ShipSE::LaunchDrone(InventoryItemRef dRef) {
+    if (dRef.get() == nullptr || GetPilot() == nullptr || m_shipRef.get() == nullptr)
+        return false;
+
     Character* pChar = GetPilot()->GetChar().get();
+    if (pChar == nullptr)
+        return false;
+
+    // Check bandwidth before moving or creating the space entity. The old
+    // order left an inert, launched drone behind when bandwidth was exceeded.
+    EvilNumber load = m_shipRef->GetAttribute(AttrDroneBandwidthLoad);
+    load += dRef->GetAttribute(AttrDroneBandwidthUsed);
+    if (load > m_shipRef->GetAttribute(AttrDroneBandwidth))
+        return false;
+
     sLog.Magenta("ShipSE::LaunchDrone()","%s: Launching drone %u",  pChar->name(), dRef->itemID());
 
     dRef->Move(GetLocationID(), flagNone, true);
@@ -2810,23 +2823,11 @@ bool ShipSE::LaunchDrone(InventoryItemRef dRef) {
     // add drone to launched drone map (whether onlined or not)
     m_drones.emplace(dRef->itemID(), dRef.get());
 
-    /*
-    AttrDroneBandwidth = 1271,     <-- ship attribute  (total)
-    AttrDroneBandwidthUsed = 1272, <-- drone attribute
-    AttrDroneBandwidthLoad = 1273, <-- ship attribute  (current used)
-    */
-    //  if ship doesnt have bandwidth for drone, it will not online after launch (inert)
-    EvilNumber load = m_shipRef->GetAttribute(AttrDroneBandwidthLoad);
-    load += dRef->GetAttribute(AttrDroneBandwidthUsed);
-    if (load <= m_shipRef->GetAttribute(AttrDroneBandwidth)) {
-        pDrone->Online();
-        pDrone->GetAI()->SetIdle();
-        m_shipRef->SetAttribute(AttrDroneBandwidthLoad, load, false); // client dont care
-        return true;
-    }
-    //{'FullPath': u'UI/Messages', 'messageID': 258031, 'label': u'MaxBandwidthExceededBody'}(u"You don't have enough bandwidth to launch {droneName}. You need {bandwidthNeeded} Mbit/s but {droneName} requires {droneBandwidthUsed} Mbit/s.", None, {u'{droneName}': {'conditionalValues': [], 'variableType': 10, 'propertyName': None, 'args': 0, 'kwargs': {}, 'variableName': 'droneName'}, u'{droneBandwidthUsed}': {'conditionalValues': [], 'variableType': 10, 'propertyName': None, 'args': 0, 'kwargs': {}, 'variableName': 'droneBandwidthUsed'}, u'{bandwidthNeeded}': {'conditionalValues': [], 'variableType': 10, 'propertyName': None, 'args': 0, 'kwargs': {}, 'variableName': 'bandwidthNeeded'}})
-    //{'FullPath': u'UI/Messages', 'messageID': 258041, 'label': u'MaxBandwidthExceeded2Body'}(u"You don't have enough bandwidth to launch {droneName}. You need {droneBandwidthUsed} Mbit/s but only have {bandwidthLeft} Mbit/s available.", None, {u'{droneName}': {'conditionalValues': [], 'variableType': 10, 'propertyName': None, 'args': 0, 'kwargs': {}, 'variableName': 'droneName'}, u'{bandwidthLeft}': {'conditionalValues': [], 'variableType': 10, 'propertyName': None, 'args': 0, 'kwargs': {}, 'variableName': 'bandwidthLeft'}, u'{droneBandwidthUsed}': {'conditionalValues': [], 'variableType': 10, 'propertyName': None, 'args': 0, 'kwargs': {}, 'variableName': 'droneBandwidthUsed'}})
-    return false;
+    // Launch only after bandwidth validation succeeded above.
+    pDrone->Online();
+    pDrone->GetAI()->SetIdle();
+    m_shipRef->SetAttribute(AttrDroneBandwidthLoad, load, false);
+    return true;
 }
 
 void ShipSE::ScoopDrone(SystemEntity* pSE) {
