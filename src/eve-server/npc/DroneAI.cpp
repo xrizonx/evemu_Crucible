@@ -21,6 +21,8 @@ DroneAIMgr::DroneAIMgr(DroneSE* who)
 : m_state(DroneAI::State::Idle),
   m_pDrone(who),
   m_assignedShip(nullptr),
+  m_returnToBay(false),
+  m_scoopRequested(false),
   m_mainAttackTimer(0),// dont start timer until we have a target
   m_processTimer(0),
   m_beginFindTarget(0),
@@ -39,10 +41,28 @@ DroneAIMgr::DroneAIMgr(DroneSE* who)
 {
     m_processTimer.Start(5000);     //arbitrary.
 
-    // proximityRange (154) tells us how far we "see"
-
-    if (m_entityAttackRange < 10000)   // most of these are low...under 6k  that sux for targeting
-        m_entityAttackRange *= 3;
+    // Drone static data is inconsistent between legacy and newer types.
+    // Apply safe combat defaults when an attribute is absent/zero so a drone
+    // never gets a zero pursuit range, zero orbit radius or zero weapon cycle.
+    if (m_attackSpeed <= 0.0)
+        m_attackSpeed = 2000.0; // milliseconds
+    if (m_chaseSpeed == 0)
+        m_chaseSpeed = 2000;
+    if (m_cruiseSpeed == 0)
+        m_cruiseSpeed = m_chaseSpeed / 2;
+    if (m_entityAttackRange <= 0.0)
+        m_entityAttackRange = m_entityOrbitRange;
+    if (m_entityAttackRange < 10000.0)
+        m_entityAttackRange *= 3.0;
+    if (m_entityAttackRange <= 0.0)
+        m_entityAttackRange = 5000.0;
+    if (m_entityFlyRange <= 0.0)
+        m_entityFlyRange = m_entityAttackRange;
+    if (m_entityChaseRange <= 0.0)
+        m_entityChaseRange = (m_entityAttackRange > 60000.0)
+            ? m_entityAttackRange : 60000.0;
+    if (m_entityOrbitRange <= 0.0)
+        m_entityOrbitRange = 500.0;
 }
 
 void DroneAIMgr::Process() {
@@ -103,8 +123,13 @@ void DroneAIMgr::Process() {
                 SetIdle();
                 break;
             }
-            if (m_pDrone->GetPosition().distance(m_assignedShip->GetPosition()) < m_entityOrbitRange)
+            if (m_pDrone->GetPosition().distance(m_assignedShip->GetPosition()) <= 2500.0) {
+                if (m_returnToBay) {
+                    m_scoopRequested = true;
+                    return;
+                }
                 SetIdle();
+            }
         } break;
         // not sure how im gonna do these...
         case DroneAI::State::Fleeing:
@@ -139,20 +164,26 @@ int8 DroneAIMgr::GetState() {
     }
 }
 
-void DroneAIMgr::Return() {
+void DroneAIMgr::Return(bool returnToBay) {
     m_assignedShip = m_pDrone->GetHomeShip();
     if (m_assignedShip == nullptr || m_pDrone->DestinyMgr() == nullptr) {
         _log(DRONE__AI_TRACE, "Drone %s(%u): Cannot return; home ship or destiny manager is unavailable.",
              m_pDrone->GetName(), m_pDrone->GetID());
-        m_state = DroneAI::State::Idle;
-        m_mainAttackTimer.Disable();
-        m_beginFindTarget.Disable();
-        m_webifierTimer.Disable();
-        m_warpScramblerTimer.Disable();
+        SetIdle();
         return;
     }
+
+    if (m_pDrone->TargetMgr() != nullptr)
+        m_pDrone->TargetMgr()->ClearAllTargets();
+
+    m_returnToBay = returnToBay;
+    m_scoopRequested = false;
+    m_mainAttackTimer.Disable();
+    m_beginFindTarget.Disable();
+    m_webifierTimer.Disable();
+    m_warpScramblerTimer.Disable();
     m_pDrone->DestinyMgr()->SetMaxVelocity(m_chaseSpeed);
-    m_pDrone->DestinyMgr()->Follow(m_assignedShip, m_entityOrbitRange);
+    m_pDrone->DestinyMgr()->Follow(m_assignedShip, returnToBay ? 1500.0 : m_entityOrbitRange);
     m_state = DroneAI::State::Departing;
     m_pDrone->StateChange();
 }
@@ -164,6 +195,8 @@ void DroneAIMgr::SetIdle() {
     _log(DRONE__AI_TRACE, "Drone %s(%u): SetIdle: returning to idle.",
          m_pDrone->GetName(), m_pDrone->GetID());
     m_state = DroneAI::State::Idle;
+    m_returnToBay = false;
+    m_scoopRequested = false;
 
     // disable ewar timers
     m_webifierTimer.Disable();
@@ -262,7 +295,14 @@ void DroneAIMgr::Target(SystemEntity* pTarget) {
     bool chase = false;
     const double commandRange = (m_entityChaseRange > m_entityAttackRange)
         ? m_entityChaseRange : m_entityAttackRange;
-    if (!m_pDrone->TargetMgr()->StartTargeting(pTarget, m_pDrone->GetSelf()->GetAttribute(AttrScanSpeed).get_uint32(), (uint8)m_pDrone->GetSelf()->GetAttribute(AttrMaxAttackTargets).get_int(), commandRange, chase)) {
+    uint32 maxTargets = m_pDrone->GetSelf()->GetAttribute(AttrMaxAttackTargets).get_uint32();
+    if (maxTargets == 0)
+        maxTargets = 1; // many combat drone types omit this NPC targeting attribute
+    uint32 lockTime = m_pDrone->GetSelf()->GetAttribute(AttrScanSpeed).get_uint32();
+    if (lockTime == 0)
+        lockTime = 1000;
+    if (!m_pDrone->TargetMgr()->StartTargeting(pTarget, static_cast<float>(lockTime),
+                                               static_cast<uint8>(maxTargets), commandRange, chase)) {
         _log(DRONE__AI_TRACE, "Drone %s(%u): Targeting of %s(%u) failed.  Clear Target and Return to Idle.",
              m_pDrone->GetName(), m_pDrone->GetID(), pTarget->GetName(), pTarget->GetID());
         //ClearAllTargets();
@@ -380,7 +420,8 @@ void DroneAIMgr::Attack(SystemEntity* pSE)
             return;
         }
 
-        if (m_pDrone->TargetMgr() != nullptr && m_pDrone->TargetMgr()->CanAttack())
+        if (m_pDrone->TargetMgr() != nullptr
+            && m_pDrone->TargetMgr()->GetTarget(pSE->GetID(), true) != nullptr)
             AttackTarget(pSE);
     }
 }
