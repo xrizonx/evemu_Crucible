@@ -506,7 +506,7 @@ PyResult AgentBound::GetMissionKeywords(PyCallArgs &call, PyInt* contentID) {
     PyDict* keywords = new PyDict();
     keywords->SetItemString("objectiveLocationID", new PyInt(offer.originID));
     keywords->SetItemString("objectiveLocationSystemID", new PyInt(offer.originSystemID));
-    keywords->SetItemString("objectiveTypeID", new PyInt(offer.courierTypeID));
+    keywords->SetItemString("objectiveTypeID", new PyInt(offer.typeID == Mission::Type::Encounter ? 0 : offer.courierTypeID));
     keywords->SetItemString("objectiveQuantity", new PyInt(offer.courierAmount));
     keywords->SetItemString("objectiveDestinationID", new PyInt(offer.destinationID));
     keywords->SetItemString("objectiveDestinationSystemID", new PyInt(offer.destinationSystemID));

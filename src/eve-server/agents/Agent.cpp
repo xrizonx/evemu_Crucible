@@ -124,6 +124,14 @@ bool Agent::MakeOffer(uint32 charID, MissionOffer& offer)
     if (offer.typeID == 0)
         return false;
 
+    // Keep the synthetic Blockade reward and kill objective explicit on the
+    // offer itself so both the briefing and accepted journal show them.
+    if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+        offer.rewardISK = Mission::kBlockadeSecurityTestRewardISK;
+        offer.courierTypeID = 0;
+        offer.courierAmount = Mission::kBlockadeSecurityTestRequiredKills;
+    }
+
     offer.characterID = charID;
     offer.agentID = m_agentID;
     offer.originID = m_agentData.stationID;
@@ -151,14 +159,6 @@ bool Agent::MakeOffer(uint32 charID, MissionOffer& offer)
                 pClient->SendErrorMsg("Internal Server Error. Ref: ServerError 07208.");
             return false;
         }
-    }
-
-    // Apply the synthetic encounter values after the generic encounter setup
-    // above, which intentionally clears courier fields for normal missions.
-    if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
-        offer.rewardISK = Mission::kBlockadeSecurityTestRewardISK;
-        offer.courierTypeID = 0;
-        offer.courierAmount = Mission::kBlockadeSecurityTestRequiredKills;
     }
 
     offer.remoteOfferable = false;
