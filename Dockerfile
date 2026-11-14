@@ -43,6 +43,18 @@ RUN cmake -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_BUILD_TYPE=Debug ..
 RUN make -j$(nproc)
 RUN make install
 
+# Build the patched EVEDBTool with the same Go version used by CI.
+# Keep Go and the source checkout out of the final runtime image.
+FROM --platform=$BUILDPLATFORM golang:1.23-bookworm AS evedbtool-build
+ARG TARGETARCH
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+RUN git clone --quiet --depth 1 --branch 0.0.6 https://github.com/EvEmu-Project/EVEDBTool.git /build/EVEDBTool
+COPY tools/evedbtool/command_seed.go /build/EVEDBTool/command_seed.go
+RUN cd /build/EVEDBTool && CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} \
+    go build -trimpath -ldflags "-s -w -X main.version=evemu-crucible" -o /evedbtool .
+
 # Final runtime image
 FROM base AS app
 
@@ -55,8 +67,8 @@ COPY --from=app-build /app/ /app
 # Add SQL loading tools
 COPY sql/ /src/sql
 
-# Run SQL tool script
-RUN cd /src/sql && ./get_evedbtool.sh
+# Use the CI-patched tool; the runtime image does not need Go or Git.
+COPY --from=evedbtool-build /evedbtool /src/sql/evedbtool
 
 # Expose server ports
 EXPOSE 26000
