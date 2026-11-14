@@ -48,6 +48,7 @@ struct BlockadeTestShip
 {
     uint16 typeID;
     uint16 groupID;
+    const char* expectedGroupName;
 };
 
 static const BlockadeTestShipClass kAngelCartelBlockadeTestMix[] = {
@@ -581,7 +582,7 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
             for (uint8 i = 0; i < shipClass.quantity; ++i) {
                 const uint16 selectedTypeID =
                     candidates[static_cast<size_t>(rand()) % candidates.size()];
-                selectedFleet.push_back({selectedTypeID, shipClass.groupID});
+                selectedFleet.push_back({selectedTypeID, shipClass.groupID, shipClass.expectedGroupName});
             }
         }
 
@@ -605,15 +606,8 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
                 continue;
             }
             sDataMgr.GetGroup(type.groupID, group);
-            const auto expectedClass = std::find_if(
-                std::begin(kAngelCartelBlockadeTestMix),
-                std::end(kAngelCartelBlockadeTestMix),
-                [&ship](const BlockadeTestShipClass& candidate) {
-                    return candidate.groupID == ship.groupID;
-                });
-            if (expectedClass == std::end(kAngelCartelBlockadeTestMix)
-                || group.id == 0 || group.catID != EVEDB::invCategories::Entity
-                || group.name != expectedClass->expectedGroupName) {
+            if (group.id == 0 || group.catID != EVEDB::invCategories::Entity
+                || group.name != ship.expectedGroupName) {
                 _log(SPAWN__ERROR,
                     "Blockade test fleet type %u has invalid NPC group %u.",
                     typeID, type.groupID);
