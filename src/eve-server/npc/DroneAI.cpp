@@ -336,6 +336,11 @@ void DroneAIMgr::Target(SystemEntity* pTarget) {
         SetIdle();
         return;
     }
+    // An explicit engage order replaces the previous target rather than
+    // leaving the drone with a full/stale target list and an idle AI state.
+    if (m_pDrone->TargetMgr()->GetTarget(pTarget->GetID(), false) == nullptr)
+        m_pDrone->TargetMgr()->ClearAllTargets();
+
     bool chase = false;
     const double commandRange = (m_entityChaseRange > m_entityAttackRange)
         ? m_entityChaseRange : m_entityAttackRange;
