@@ -2040,7 +2040,7 @@ bool Client::StartEncounterMission(MissionOffer& offer)
     // The mission journal reads its warp destinations from bookmarks, not
     // directly from destinationID. Use the standard util.KeyVal bookmark
     // structure used by courier objectives so the site appears in the journal.
-    SafeDelete(offer.bookmarks);
+    PySafeDecRef(offer.bookmarks);
     offer.bookmarks = new PyList();
     PyDict* bookmarkData = new PyDict();
     bookmarkData->SetItemString("itemID", new PyInt(beacon->itemID()));
