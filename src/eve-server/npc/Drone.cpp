@@ -245,6 +245,7 @@ void DroneSE::TargetAdded(SystemEntity* who) {
         return;
 
     SetTarget(who);
+    m_AI->TargetAcquired(who);
     StateChange();
 }
 
