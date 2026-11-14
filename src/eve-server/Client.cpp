@@ -2036,6 +2036,30 @@ bool Client::StartEncounterMission(MissionOffer& offer)
     offer.dungeonSolarSystemID = m_system->GetID();
     offer.courierTypeID = 0;
     offer.courierAmount = static_cast<uint16>(pBubble->CountNPCs());
+
+    // The mission journal reads its warp destinations from bookmarks, not
+    // directly from destinationID. Use the standard util.KeyVal bookmark
+    // structure used by courier objectives so the site appears in the journal.
+    SafeDelete(offer.bookmarks);
+    offer.bookmarks = new PyList();
+    PyDict* bookmarkData = new PyDict();
+    bookmarkData->SetItemString("itemID", new PyInt(beacon->itemID()));
+    bookmarkData->SetItemString("typeID", new PyInt(EVEDB::invTypes::CosmicAnomaly));
+    bookmarkData->SetItemString("agentID", new PyInt(offer.agentID));
+    bookmarkData->SetItemString("hint", new PyString(beaconName));
+    bookmarkData->SetItemString("locationType", new PyString("objective.target"));
+    bookmarkData->SetItemString("memo", new PyString(""));
+    bookmarkData->SetItemString("created", new PyLong(GetFileTimeNow()));
+    bookmarkData->SetItemString("locationNumber", new PyInt(0));
+    bookmarkData->SetItemString("flag", PyStatic.NewNone());
+    bookmarkData->SetItemString("locationID", new PyInt(m_system->GetID()));
+    bookmarkData->SetItemString("ownerID", new PyInt(m_char->itemID()));
+    bookmarkData->SetItemString("x", new PyFloat(sitePoint.x));
+    bookmarkData->SetItemString("y", new PyFloat(sitePoint.y));
+    bookmarkData->SetItemString("z", new PyFloat(sitePoint.z));
+    bookmarkData->SetItemString("solarsystemID", new PyInt(m_system->GetID()));
+    offer.bookmarks->AddItem(new PyObject("util.KeyVal", bookmarkData));
+
     return offer.courierAmount > 0;
 }
 
