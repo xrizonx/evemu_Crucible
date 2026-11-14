@@ -135,8 +135,14 @@ bool DungeonDataMgr::GetRandomMissionDungeon(Dungeon::Dungeon& dungeon, uint32 f
         bool hasNPC = false;
         for (const auto& room : candidate.rooms) {
             for (const Dungeon::RoomObject& object : room.second.objects) {
+                // dunRoomObjects.groupID is a dungeon-editor group ID, not
+                // invGroups.groupID. Resolve the NPC category via typeID.
+                Inv::TypeData type = {};
                 Inv::GrpData group = {};
-                sDataMgr.GetGroup(object.groupID, group);
+                sDataMgr.GetType(object.typeID, type);
+                if (type.id == 0)
+                    continue;
+                sDataMgr.GetGroup(type.groupID, group);
                 if (group.id != 0 && IsMissionNPCGroup(group)) {
                     hasNPC = true;
                     break;
