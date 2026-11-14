@@ -958,13 +958,37 @@ PyResult AgentBound::GetEntryPoint(PyCallArgs &call) {
     return nullptr;
 }
 
-PyResult AgentBound::GotoLocation(PyCallArgs &call, PyString* locationType, PyInt* locationNumber, PyInt* referringAgentID) {
+PyResult AgentBound::GotoLocation(PyCallArgs &call, PyString* locationType, PyInt* locationNumber, PyRep* referringAgentID) {
     //sm.StartService('agents').GetAgentMoniker(bookmark.agentID).GotoLocation(bookmark.locationType, bookmark.locationNumber, referringAgentID)
     _log(AGENT__DUMP,  "AgentBound::Handle_GotoLocation() - size=%lli", call.tuple->size());
     call.Dump(AGENT__DUMP);
 
-    // GotoLocation receives the bookmark's string locationType (for example,
-    // objective.target). WarpToLocation performs the actual mission-site warp.
+    // The client sends None for referringAgentID from the mission bookmark.
+    // Resolve the active encounter target here: this is the RPC used by the
+    // journal's "Warp to Location" context-menu action.
+    MissionOffer offer = MissionOffer();
+    if (!m_agent->HasMission(call.client->GetCharacterID(), offer)
+        || offer.stateID != Mission::State::Accepted
+        || offer.typeID != Mission::Type::Encounter
+        || offer.destinationID == 0
+        || offer.destinationSystemID != call.client->GetSystemID()) {
+        call.client->SendErrorMsg("The mission site is not available in this solar system.");
+        return PyStatic.NewNone();
+    }
+
+    ShipSE* pShip = call.client->GetShipSE();
+    if (pShip == nullptr || pShip->DestinyMgr() == nullptr || pShip->SystemMgr() == nullptr) {
+        call.client->SendErrorMsg("Your ship is not ready to warp.");
+        return PyStatic.NewNone();
+    }
+
+    SystemEntity* pTarget = pShip->SystemMgr()->GetSE(offer.destinationID);
+    if (pTarget == nullptr) {
+        call.client->SendErrorMsg("The mission site beacon could not be found. Please contact an administrator.");
+        return PyStatic.NewNone();
+    }
+
+    pShip->DestinyMgr()->WarpTo(pTarget->GetPosition(), 0, false, pTarget);
     return PyStatic.NewNone();
 }
 
