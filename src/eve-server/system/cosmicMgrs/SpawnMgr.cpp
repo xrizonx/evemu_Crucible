@@ -33,12 +33,14 @@ static bool IsMissionNPCGroup(const Inv::GrpData& group)
 }
 
 // Synthetic Blockade mission 65535 uses a 24-ship Angel Cartel fleet.
-// Group IDs are the Angel Cartel NPC frigate/destroyer/cruiser/battlecruiser
-// groups. Type IDs are selected from the installed static-data set at runtime,
-// avoiding stale hard-coded type IDs when the data pack is updated.
+// These are the verified Angel Cartel NPC group IDs. In particular, group
+// 552 is Battleships (not Cruisers), while group 576 is BattleCruisers.
+// Keep the expected group name alongside each ID so a mismatched static-data
+// pack cannot silently introduce a higher hull class into this encounter.
 struct BlockadeTestShipClass
 {
     uint16 groupID;
+    const char* expectedGroupName;
     uint8 quantity;
 };
 
@@ -49,10 +51,10 @@ struct BlockadeTestShip
 };
 
 static const BlockadeTestShipClass kAngelCartelBlockadeTestMix[] = {
-    {550, 12}, // Frigates
-    {551, 4},  // Destroyers
-    {552, 4},  // Cruisers
-    {553, 4}   // Battlecruisers
+    {550, "Asteroid Angel Cartel Frigate", 12},
+    {551, "Asteroid Angel Cartel Destroyer", 4},
+    {553, "Asteroid Angel Cartel Cruiser", 4},
+    {576, "Asteroid Angel Cartel BattleCruiser", 4}
 };
 
 /** @todo  this can be updated to spawn mission, anomaly and deadspace rats.
@@ -554,10 +556,10 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
             Inv::GrpData group = {};
             sDataMgr.GetGroup(shipClass.groupID, group);
             if (group.id == 0 || group.catID != EVEDB::invCategories::Entity
-                || group.name.compare(0, 9, "Asteroid ") != 0) {
+                || group.name != shipClass.expectedGroupName) {
                 _log(SPAWN__ERROR,
-                    "Blockade test fleet group %u is missing or is not an NPC entity group.",
-                    shipClass.groupID);
+                    "Blockade test fleet group %u is missing or is not the expected NPC class (%s).",
+                    shipClass.groupID, shipClass.expectedGroupName);
                 ++failedCount;
                 continue;
             }
@@ -603,8 +605,15 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
                 continue;
             }
             sDataMgr.GetGroup(type.groupID, group);
-            if (group.id == 0 || group.catID != EVEDB::invCategories::Entity
-                || group.name.compare(0, 9, "Asteroid ") != 0) {
+            const auto expectedClass = std::find_if(
+                std::begin(kAngelCartelBlockadeTestMix),
+                std::end(kAngelCartelBlockadeTestMix),
+                [&ship](const BlockadeTestShipClass& candidate) {
+                    return candidate.groupID == ship.groupID;
+                });
+            if (expectedClass == std::end(kAngelCartelBlockadeTestMix)
+                || group.id == 0 || group.catID != EVEDB::invCategories::Entity
+                || group.name != expectedClass->expectedGroupName) {
                 _log(SPAWN__ERROR,
                     "Blockade test fleet type %u has invalid NPC group %u.",
                     typeID, type.groupID);
