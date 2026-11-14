@@ -42,6 +42,12 @@ struct BlockadeTestShipClass
     uint8 quantity;
 };
 
+struct BlockadeTestShip
+{
+    uint16 typeID;
+    uint16 groupID;
+};
+
 static const BlockadeTestShipClass kAngelCartelBlockadeTestMix[] = {
     {550, 12}, // Frigates
     {551, 4},  // Destroyers
@@ -543,7 +549,7 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
 
         std::map<uint16, Inv::TypeData> allTypes;
         sDataMgr.GetTypes(allTypes);
-        std::vector<BlockadeTestShipClass> selectedFleet;
+        std::vector<BlockadeTestShip> selectedFleet;
         for (const BlockadeTestShipClass& shipClass : kAngelCartelBlockadeTestMix) {
             Inv::GrpData group = {};
             sDataMgr.GetGroup(shipClass.groupID, group);
@@ -571,11 +577,9 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
             }
 
             for (uint8 i = 0; i < shipClass.quantity; ++i) {
-                BlockadeTestShipClass selected = shipClass;
-                // Store the selected type ID in the groupID slot temporarily
-                // only while building the local selection list.
-                selected.groupID = candidates[static_cast<size_t>(rand()) % candidates.size()];
-                selectedFleet.push_back(selected);
+                const uint16 selectedTypeID =
+                    candidates[static_cast<size_t>(rand()) % candidates.size()];
+                selectedFleet.push_back({selectedTypeID, shipClass.groupID});
             }
         }
 
@@ -588,8 +592,8 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
             return false;
         }
 
-        for (const BlockadeTestShipClass& ship : selectedFleet) {
-            const uint16 typeID = ship.groupID;
+        for (const BlockadeTestShip& ship : selectedFleet) {
+            const uint16 typeID = ship.typeID;
             Inv::TypeData type = {};
             Inv::GrpData group = {};
             sDataMgr.GetType(typeID, type);
