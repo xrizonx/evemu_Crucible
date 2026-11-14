@@ -131,8 +131,38 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
                             button2->SetItem(1, new PyInt(Complete));
                         dialog->AddItem(button2);
                     }
-                    agentSays->SetItem(0, new PyInt(offer.briefingID));
-                    agentSays->SetItem(1, new PyInt(offer.characterID));
+                    if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+                        const uint32 killsDestroyed =
+                            (offer.courierTypeID < offer.courierAmount)
+                                ? offer.courierTypeID : offer.courierAmount;
+                        std::string briefing =
+                            "THE BLOCKADE\n"
+                            "ANGEL CARTEL INCURSION\n\n"
+                            "SITUATION\n"
+                            "An Angel Cartel strike force is operating in this system. "
+                            "Destroy every hostile ship and secure the bookmarked mission pocket.\n\n"
+                            "MISSION OBJECTIVES\n"
+                            "- 12 frigates\n"
+                            "- 4 destroyers\n"
+                            "- 4 cruisers\n"
+                            "- 4 battlecruisers\n\n"
+                            "COMBAT PROGRESS\n"
+                            "Kills confirmed: ";
+                        briefing += std::to_string(killsDestroyed);
+                        briefing += " / ";
+                        briefing += std::to_string(offer.courierAmount);
+                        briefing += "\n\nCOMPLETION\n"
+                            "Return to this agent after the pocket is clear.\n\n"
+                            "MISSION REWARD\n"
+                            "150,000 ISK\n"
+                            "TIME LIMIT\n"
+                            "120 minutes from acceptance.";
+                        agentSays->SetItem(0, new PyString(briefing));
+                        agentSays->SetItem(1, PyStatic.NewNone());
+                    } else {
+                        agentSays->SetItem(0, new PyInt(offer.briefingID));
+                        agentSays->SetItem(1, new PyInt(offer.characterID));
+                    }
                 } else {
                     // dialogue data.  if RequestMission is only option, client auto-responds with DoAction(RequestMission optionID)
                     PyTuple* button2 = new PyTuple(2);
@@ -513,8 +543,15 @@ PyResult AgentBound::GetMissionBriefingInfo(PyCallArgs &call) {
     PyDict *briefingInfo = new PyDict();
         briefingInfo->SetItemString("ContentID", new PyInt(offer.characterID));
         briefingInfo->SetItemString("Mission Keywords", keywords);
-        briefingInfo->SetItemString("Mission Title ID", new PyInt(offer.missionID));
-        briefingInfo->SetItemString("Mission Briefing ID", new PyInt(offer.briefingID));
+        if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+            // The synthetic mission has no localization message IDs. Returning
+            // integer zero makes the client render the literal "message 0".
+            briefingInfo->SetItemString("Mission Title ID", PyStatic.NewNone());
+            briefingInfo->SetItemString("Mission Briefing ID", PyStatic.NewNone());
+        } else {
+            briefingInfo->SetItemString("Mission Title ID", new PyInt(offer.missionID));
+            briefingInfo->SetItemString("Mission Briefing ID", new PyInt(offer.briefingID));
+        }
         if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
             const uint32 killsDestroyed =
                 (offer.courierTypeID < offer.courierAmount)
@@ -687,8 +724,13 @@ PyResult AgentBound::GetMissionJournalInfo(PyCallArgs &call, std::optional <PyIn
 
     PyDict* journalInfo = new PyDict();
     journalInfo->SetItemString("contentID", new PyInt(offer.characterID));
-    journalInfo->SetItemString("missionNameID", new PyInt(offer.missionID));
-    journalInfo->SetItemString("briefingTextID", new PyInt(offer.briefingID));
+    if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+        journalInfo->SetItemString("missionNameID", PyStatic.NewNone());
+        journalInfo->SetItemString("briefingTextID", PyStatic.NewNone());
+    } else {
+        journalInfo->SetItemString("missionNameID", new PyInt(offer.missionID));
+        journalInfo->SetItemString("briefingTextID", new PyInt(offer.briefingID));
+    }
     journalInfo->SetItemString("missionState", new PyInt(offer.stateID));
     journalInfo->SetItemString("expirationTime", new PyLong(offer.expiryTime) );
     journalInfo->SetItemString("objectives", GetMissionObjectiveInfo(call.client, offer));
@@ -712,7 +754,9 @@ PyResult AgentBound::GetMissionJournalInfo(PyCallArgs &call, std::optional <PyIn
 PyDict* AgentBound::GetMissionObjectiveInfo(Client* pClient, MissionOffer& offer)
 {
     PyDict* objectiveData = new PyDict();
-    objectiveData->SetItemString("missionTitleID", new PyInt(offer.missionID));
+    objectiveData->SetItemString("missionTitleID",
+        offer.missionID == Mission::kBlockadeSecurityTestMissionID
+            ? PyStatic.NewNone() : new PyInt(offer.missionID));
     if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
         const uint32 killsDestroyed =
             (offer.courierTypeID < offer.courierAmount)
@@ -949,7 +993,10 @@ PyTuple* AgentBound::GetMissionObjectives(Client* pClient, MissionOffer& offer)
             PyDict* progress = new PyDict();
                 progress->SetItemString("currentKills", new PyInt(offer.courierTypeID));
                 progress->SetItemString("requiredKills", new PyInt(offer.courierAmount));
-                progress->SetItemString("complete", new PyBool(offer.courierAmount > 0 && offer.courierTypeID >= offer.courierAmount));
+                const bool objectiveComplete =
+                    offer.courierAmount > 0 && offer.courierTypeID >= offer.courierAmount;
+                progress->SetItemString("complete", new PyBool(objectiveComplete));
+                progress->SetItemString("objectiveCompleted", new PyBool(objectiveComplete));
             PyTuple* objData = new PyTuple(3);
                 objData->SetItem(0, new PyInt(offer.destinationOwnerID));
                 objData->SetItem(1, dropoffLocation);
