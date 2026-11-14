@@ -180,7 +180,8 @@ void DroneAIMgr::SetIdle() {
 void DroneAIMgr::SetEngaged(SystemEntity* pTarget) {
     if (pTarget == nullptr || m_pDrone->DestinyMgr() == nullptr)
         return;
-    if (m_state == DroneAI::State::Engaged)
+    if (m_state == DroneAI::State::Engaged
+        && m_pDrone->DestinyMgr()->GetTargetID() == pTarget->GetID())
         return;
     _log(DRONE__AI_TRACE, "Drone %s(%u): SetEngaged: %s(%u) begin engaging.",
          m_pDrone->GetName(), m_pDrone->GetID(), pTarget->GetName(), pTarget->GetID());
