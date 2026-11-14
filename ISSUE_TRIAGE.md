@@ -148,3 +148,25 @@ The run must be checked again after the documentation commit, because a new bran
 **Validation pending**
 - CI/compile must pass on the new head.
 - Start a fresh mission and inspect every spawned hull / spawn log. Expected composition: 12 frigates, 4 destroyers, 4 cruisers, 4 battlecruisers; zero battleships, capitals or other higher-tier hulls.
+
+
+## 2026-11-14 follow-up — Corrected spawn IDs from live log
+
+**Observed runtime errors**
+- Group 551 was rejected as the configured Angel Cartel Destroyer group.
+- Group 553 was rejected as the configured Angel Cartel Cruiser group.
+- The encounter consequently selected only 16/24 ships and aborted.
+
+**Verified static-data mapping**
+- 550 = Asteroid Angel Cartel Frigate
+- 575 = Asteroid Angel Cartel Destroyer
+- 551 = Asteroid Angel Cartel Cruiser
+- 576 = Asteroid Angel Cartel BattleCruiser
+- 552 = Asteroid Angel Cartel Battleship (excluded)
+- 553 = Asteroid Angel Cartel Officer (excluded)
+
+**Fix**
+- Updated the mixed fleet table to use 575 for Destroyers and 551 for Cruisers. Kept the exact group-name/type validation and the battlecruiser ceiling.
+
+**Validation pending**
+- Rebuild and start a fresh mission. Confirm the spawn log reports 24/24 and the fleet contains exactly 12 frigates, 4 destroyers, 4 cruisers and 4 battlecruisers, with no officers, battleships or larger ships.
