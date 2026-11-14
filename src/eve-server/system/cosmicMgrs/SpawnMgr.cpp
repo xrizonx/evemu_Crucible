@@ -32,6 +32,27 @@ static bool IsMissionNPCGroup(const Inv::GrpData& group)
             && group.name.compare(0, 9, "Asteroid ") == 0);
 }
 
+// Explicit inventory-backed fleet for synthetic mission 65535. These are
+// test-only type/group mappings supplied for this branch; they do not modify
+// or depend on official mission or dungeon records.
+struct BlockadeTestShip
+{
+    uint16 typeID;
+    uint16 groupID;
+};
+
+static const BlockadeTestShip kAngelCartelBlockadeTestFleet[] = {
+    {11023, 550}, {10013, 550}, {10019, 550}, {11024, 550},
+    {10015, 550}, {10014, 550}, {10016, 550}, {2372, 550},
+    {11022, 550}, {11021, 550}, {16561, 550}, {16562, 550},
+    {11894, 551}, {22821, 551}, {11026, 551}, {11895, 551},
+    {10017, 551}, {11897, 551}, {11896, 551}, {22820, 551},
+    {11025, 551}, {10018, 551},
+    {22842, 552}, {11898, 552}, {11899, 552}, {22840, 552},
+    {22839, 552}, {22838, 552}, {22843, 552}, {22841, 552},
+    {11927, 552}, {11900, 552}
+};
+
 /** @todo  this can be updated to spawn mission, anomaly and deadspace rats.
  *   change all *roidRat* to *somethingelse* to better explain/describe the maps and how they're used.
  *  add objects for mission, anomaly and deadspace rats as needed to aid in tracking/deleting.
@@ -480,6 +501,123 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
     }
 
     pBubble->SetMission();
+
+    // Mission 65535 is a synthetic test encounter. Spawn the supplied Angel
+    // Cartel inventory types directly so it is independent of incomplete or
+    // unrelated imported mission-dungeon room data.
+    if (missionID == 65535) {
+        const uint32 angelCartelFactionID = 500011;
+        const uint32 angelCartelCorporationID = 1000138;
+        FactionData factionData = FactionData();
+        factionData.allianceID = angelCartelFactionID;
+        factionData.corporationID = angelCartelCorporationID;
+        factionData.factionID = angelCartelFactionID;
+        factionData.ownerID = angelCartelCorporationID;
+
+        uint16 spawnedCount = 0;
+        uint16 failedCount = 0;
+        uint16 fleetNumber = 0;
+        const GPoint center = pBubble->GetCenter();
+        const uint32 fleetSize = sizeof(kAngelCartelBlockadeTestFleet)
+            / sizeof(kAngelCartelBlockadeTestFleet[0]);
+
+        for (const BlockadeTestShip& ship : kAngelCartelBlockadeTestFleet) {
+            Inv::TypeData type = {};
+            Inv::GrpData group = {};
+            sDataMgr.GetType(ship.typeID, type);
+            if (type.id == 0 || type.groupID != ship.groupID) {
+                _log(SPAWN__ERROR,
+                    "Blockade test fleet type %u is missing or has group %u (expected %u).",
+                    ship.typeID, type.groupID, ship.groupID);
+                ++failedCount;
+                continue;
+            }
+            sDataMgr.GetGroup(type.groupID, group);
+            if (group.id == 0 || group.catID != EVEDB::invCategories::Entity) {
+                _log(SPAWN__ERROR,
+                    "Blockade test fleet type %u has invalid Angel Cartel NPC group %u.",
+                    ship.typeID, type.groupID);
+                ++failedCount;
+                continue;
+            }
+
+            ++fleetNumber;
+            GPoint spawnPosition(center);
+            // Spread the test fleet around the pocket centre to avoid stacking
+            // every ship at precisely the same coordinates.
+            spawnPosition.x += MakeRandomFloat(-5000.0f, 5000.0f);
+            spawnPosition.y += MakeRandomFloat(-5000.0f, 5000.0f);
+            spawnPosition.z += MakeRandomFloat(-2500.0f, 2500.0f);
+
+            ItemData itemData(ship.typeID, angelCartelCorporationID,
+                m_system->GetID(), flagNone, "", spawnPosition, type.name.c_str());
+            InventoryItemRef item = sItemFactory.SpawnItem(itemData);
+            if (item.get() == nullptr) {
+                _log(SPAWN__ERROR, "Blockade test fleet failed to create type %u.", ship.typeID);
+                ++failedCount;
+                continue;
+            }
+
+            NPC* pNPC = new NPC(item, m_services, m_system, factionData, this);
+            if (pNPC == nullptr || !pNPC->Load()) {
+                _log(SPAWN__ERROR, "Blockade test fleet failed to load NPC type %u.", ship.typeID);
+                if (pNPC != nullptr)
+                    pNPC->Delete();
+                else
+                    item->Delete();
+                ++failedCount;
+                continue;
+            }
+
+            m_system->AddNPC(pNPC);
+            pNPC->DestinyMgr()->SetPosition(spawnPosition);
+
+            SpawnEntry entry = SpawnEntry();
+            entry.enabled = false;
+            entry.groupID = ship.groupID;
+            entry.itemID = item->itemID();
+            entry.total = 1;
+            entry.number = fleetNumber;
+            entry.typeID = ship.typeID;
+            entry.spawnID = m_spawnID;
+            entry.corpID = angelCartelCorporationID;
+            entry.factionID = angelCartelFactionID;
+            entry.spawnClass = spawnClass;
+            entry.spawnGroup = GetSpawnGroup(spawnClass);
+            entry.level = missionLevel;
+            entry.stamp = 0;
+            m_spawns.emplace(pBubble->GetID(), entry);
+            ++spawnedCount;
+        }
+
+        if (spawnedCount == 0) {
+            _log(SPAWN__ERROR, "Blockade test mission %u spawned no Angel Cartel NPCs (%u failed).",
+                offerID, failedCount);
+            pBubble->SetMission(false);
+            return false;
+        }
+
+        ++m_spawnID;
+        m_bubbles.push_back(pBubble);
+        const uint32 npcCount = pBubble->CountNPCs();
+        if (npcCount == 0 || npcCount > 65535) {
+            m_spawns.erase(pBubble->GetID());
+            m_bubbles.pop_back();
+            pBubble->SetMission(false);
+            pBubble->SetSpawned(false);
+            return false;
+        }
+
+        pBubble->SetMissionData(characterID, agentID, offerID, beaconID,
+            static_cast<uint16>(npcCount));
+        pBubble->SetSpawned(true);
+        _log(SPAWN__MESSAGE,
+            "Blockade test mission %u spawned %u/%u Angel Cartel NPCs (faction %u, corporation %u; %u failed).",
+            offerID, spawnedCount, fleetSize, angelCartelFactionID,
+            angelCartelCorporationID, failedCount);
+        return true;
+    }
+
     const bool blockadeTestMission = (missionID == 65535);
 
     // Mission dungeon metadata is more authoritative than the agent's faction:
