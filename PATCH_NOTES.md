@@ -143,3 +143,12 @@ The synthetic mission's special reward and kill target were being assigned befor
 ### Integration and upstream review status
 
 The Blockade encounter, two-hour timer, reward/completion and drone combat changes are consolidated in PR #11. The earlier fork PRs #8, #9 and #10 describe overlapping slices of this same work and should be closed as superseded only after the integration PR is merged. An upstream contribution PR is a separate review/merge path; merging into this fork's `master` does not itself merge anything into `EvEmu-Project/evemu_Crucible`.
+
+
+## 2026-11-14 follow-up — final Blockade objective completion
+
+A follow-up review found that the mission pocket's final-spawn cleanup and the mission-offer progress update were coupled only through the normal per-kill credit branch. If the final NPC death arrived without a resolvable player client/killer ID, the spawn entry was removed and the pocket became empty, but the offer could retain an incomplete kill counter. The final-spawn path now independently checks whether the mission spawn registry is empty and, for the matching accepted offer, persists progress at the required target. The Complete action and journal completion status use that persisted offer state. Normal per-kill progress remains capped at the required target.
+
+The synthetic Blockade reward/kill target assignment in `Agent::MakeOffer()` has also been moved to after generic Encounter initialization, which resets courier fields. This ensures the offered mission itself carries its objective and reward rather than relying only on the acceptance-time pocket setup.
+
+**Verification status:** source-level path corrected; automated build validation pending for the new commit. A live 24-kill run must still confirm 24/24 journal progress, Complete action availability, successful turn-in, 150,000 ISK wallet journal credit and encounter-site cleanup. Do not mark this as gameplay-verified until that test is performed.
