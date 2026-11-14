@@ -53,8 +53,8 @@ struct BlockadeTestShip
 
 static const BlockadeTestShipClass kAngelCartelBlockadeTestMix[] = {
     {550, "Asteroid Angel Cartel Frigate", 12},
-    {551, "Asteroid Angel Cartel Destroyer", 4},
-    {553, "Asteroid Angel Cartel Cruiser", 4},
+    {575, "Asteroid Angel Cartel Destroyer", 4},
+    {551, "Asteroid Angel Cartel Cruiser", 4},
     {576, "Asteroid Angel Cartel BattleCruiser", 4}
 };
 
