@@ -245,7 +245,14 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
 
                 offer.stateID = Mission::State::Accepted;
                 offer.dateAccepted = GetFileTimeNow();
-                offer.expiryTime = GetFileTimeNow() + (30 * m_agent->GetLevel() * EvE::Time::Minute);
+                // The synthetic Blockade test mission is Level 0, so the normal
+                // level-based formula would give it no time to complete.
+                // Give this combat test a full two hours after acceptance.
+                const uint32 missionDurationMinutes =
+                    (offer.missionID == Mission::kBlockadeSecurityTestMissionID)
+                        ? 120
+                        : (30 * m_agent->GetLevel());
+                offer.expiryTime = GetFileTimeNow() + (missionDurationMinutes * EvE::Time::Minute);
                 if (offer.typeID != Mission::Type::Encounter && offer.courierTypeID) {
                     sItemFactory.SetUsingClient(call.client);
                     ItemData data(offer.courierTypeID, pchar->itemID(), locTemp, flagNone, offer.courierAmount);

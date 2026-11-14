@@ -91,6 +91,8 @@ struct CourierData {
 };
 
 namespace Mission {
+    // Synthetic Level 0 Blockade encounter used for combat testing.
+    constexpr uint16 kBlockadeSecurityTestMissionID = 65535;
     namespace State {
         enum {
             Allocated   = 0,    // also listed as 'Offered' in some places
