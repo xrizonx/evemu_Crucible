@@ -55,6 +55,9 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: '1.23.x'
+          # EVEDBTool is cloned into RUNNER_TEMP; this repository has no go.mod.
+          # Disable setup-go's automatic cache lookup to avoid a missing go.mod warning.
+          cache: false
       - name: Build patched EVEDBTool Linux x86_64 binary
         run: |
           git clone --quiet --depth 1 --branch 0.0.6 https://github.com/EvEmu-Project/EVEDBTool.git "$RUNNER_TEMP/EVEDBTool"
@@ -145,6 +148,9 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: '1.23.x'
+          # EVEDBTool is cloned into RUNNER_TEMP; this repository has no go.mod.
+          # Disable setup-go's automatic cache lookup to avoid a missing go.mod warning.
+          cache: false
       - name: Build patched EVEDBTool Windows x86_64 binary
         shell: pwsh
         run: |
