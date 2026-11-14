@@ -24,5 +24,42 @@ minVolume, duration, solarSystemID, jumps)
   FROM tStations, invTypes inner join invGroups USING (groupID)
   WHERE invTypes.published = 1
   AND invGroups.categoryID IN (4, 5, 6, 7, 8, 9, 16, 17, 18, 22, 23, 24, 25, 32, 34, 35, 39, 40, 41, 42, 43, 46);
+
+-- Officer, Deadspace, Faction and Storyline equipment. Do not restrict this
+-- to category 7: special meta-group equipment can exist in other categories.
+INSERT INTO mktOrders
+    (typeID, ownerID, regionID, stationID, price, volEntered, volRemaining,
+     issued, minVolume, duration, solarSystemID, jumps)
+SELECT
+    it.typeID,
+    stations.corporationID,
+    stations.regionID,
+    stations.stationId,
+    CASE
+        WHEN it.basePrice IS NULL OR it.basePrice <= 0 THEN 100
+        WHEN stations.security <= 0 THEN it.basePrice
+        ELSE it.basePrice / stations.security
+    END,
+    10,
+    10,
+    132478179209572976,
+    1,
+    250,
+    stations.solarSystemID,
+    1
+FROM tStations AS stations
+CROSS JOIN invTypes AS it
+INNER JOIN invMetaTypes AS imt ON imt.typeID = it.typeID
+INNER JOIN invMetaGroups AS mg ON mg.metaGroupID = imt.metaGroupID
+WHERE LOWER(COALESCE(mg.metaGroupName, '')) IN
+    ('officer', 'deadspace', 'faction', 'storyline')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM mktOrders AS existing
+      WHERE existing.stationID = stations.stationId
+        AND existing.typeID = it.typeID
+        AND existing.bid = 0
+  );
+
 UPDATE mktOrders SET price = 100 WHERE price = 0;
 
