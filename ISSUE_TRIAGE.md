@@ -177,3 +177,13 @@ The run must be checked again after the documentation commit, because a new bran
 
 **Validation pending**
 - Rebuild and start a fresh mission. Confirm the spawn log reports 24/24 and the fleet contains exactly 12 frigates, 4 destroyers, 4 cruisers and 4 battlecruisers, with no officers, battleships or larger ships.
+
+
+## 2026-11-14 — Blockade mission text and kill-counter polish
+
+- [x] User-confirmed gameplay: all hostile ships destroyed, mission turn-in succeeds, and the reward is issued.
+- [x] User-confirmed agent mission text is now visible.
+- [x] Refined Blockade offer/active-mission wording with structured sections and ship-class objective breakdown.
+- [x] Added persisted kill progress as a live `current / required` counter in the agent response and mission briefing/objective data.
+- [ ] Build the latest branch head on Windows, Linux and Docker CI.
+- [ ] In-game verify that the counter updates after each kill (for example 0/24, 1/24, 12/24, 24/24), and that the mission remains turn-in ready at 24/24.
