@@ -258,7 +258,12 @@ void DroneAIMgr::SetEngaged(SystemEntity* pTarget) {
     //   not sure of the actual orbit speed of npc's, but their 'cruise speed' seems a bit slow.
     //   this sets orbit speed between cruise speed and quarter of max speed (whether mwb or ab)
     //   this will also enable this npc to have a variable speed, instead of fixed upon creation.
-    m_pDrone->DestinyMgr()->SetMaxVelocity(MakeRandomFloat(m_cruiseSpeed, (m_chaseSpeed /4)));
+    const uint32 orbitSpeedQuarter = m_chaseSpeed / 4;
+    const uint32 orbitSpeedMin = (m_cruiseSpeed < orbitSpeedQuarter)
+        ? m_cruiseSpeed : orbitSpeedQuarter;
+    const uint32 orbitSpeedMax = (m_cruiseSpeed > orbitSpeedQuarter)
+        ? m_cruiseSpeed : orbitSpeedQuarter;
+    m_pDrone->DestinyMgr()->SetMaxVelocity(MakeRandomFloat(orbitSpeedMin, orbitSpeedMax));
     m_pDrone->DestinyMgr()->Orbit(pTarget, m_entityOrbitRange);  //try to get inside orbit range
     m_state = DroneAI::State::Engaged;
     m_pDrone->StateChange();
