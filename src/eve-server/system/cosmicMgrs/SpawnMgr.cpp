@@ -563,8 +563,6 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
                 _log(SPAWN__ERROR, "Blockade test fleet failed to load NPC type %u.", ship.typeID);
                 if (pNPC != nullptr)
                     pNPC->Delete();
-                else
-                    item->Delete();
                 ++failedCount;
                 continue;
             }
