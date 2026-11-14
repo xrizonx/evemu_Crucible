@@ -57,9 +57,9 @@ jobs:
           go-version: '1.23.x'
       - name: Build patched EVEDBTool Linux x86_64 binary
         run: |
-          git clone --quiet --depth 1 --branch 0.0.6 https://github.com/EvEmu-Project/EVEDBTool.git tools/evedbtool-upstream
-          cp tools/evedbtool/command_seed.go tools/evedbtool-upstream/command_seed.go
-          cd tools/evedbtool-upstream
+          git clone --quiet --depth 1 --branch 0.0.6 https://github.com/EvEmu-Project/EVEDBTool.git "$RUNNER_TEMP/EVEDBTool"
+          cp tools/evedbtool/command_seed.go "$RUNNER_TEMP/EVEDBTool/command_seed.go"
+          cd "$RUNNER_TEMP/EVEDBTool"
           go version
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=evemu-crucible" -o "$GITHUB_WORKSPACE/sql/evedbtool" .
           test -s "$GITHUB_WORKSPACE/sql/evedbtool"
@@ -148,9 +148,10 @@ jobs:
       - name: Build patched EVEDBTool Windows x86_64 binary
         shell: pwsh
         run: |
-          git clone --quiet --depth 1 --branch 0.0.6 https://github.com/EvEmu-Project/EVEDBTool.git tools/evedbtool-upstream
-          Copy-Item tools/evedbtool/command_seed.go tools/evedbtool-upstream/command_seed.go
-          Push-Location tools/evedbtool-upstream
+          $toolSource = Join-Path $env:RUNNER_TEMP "EVEDBTool"
+          git clone --quiet --depth 1 --branch 0.0.6 https://github.com/EvEmu-Project/EVEDBTool.git $toolSource
+          Copy-Item tools/evedbtool/command_seed.go (Join-Path $toolSource "command_seed.go")
+          Push-Location $toolSource
           $env:CGO_ENABLED = "0"
           $env:GOOS = "windows"
           $env:GOARCH = "amd64"
