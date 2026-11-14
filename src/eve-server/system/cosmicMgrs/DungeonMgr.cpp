@@ -182,6 +182,11 @@ bool DungeonDataMgr::GetRandomMissionDungeonForGroup(Dungeon::Dungeon& dungeon, 
     uint32 validTypeCount = 0;
     uint32 entityGroupCount = 0;
     uint32 matchingGroupCount = 0;
+    // Capture real static-data names/IDs from loaded room objects. This is
+    // diagnostic only: selection remains strict until the actual data proves
+    // which inventory groups represent the requested faction.
+    std::string entityGroupSamples;
+    uint32 entityGroupSampleCount = 0;
 
     // The Blockade test must use Angel Cartel room templates even when the
     // issuing security agent belongs to another empire faction. Require NPCs
@@ -207,8 +212,17 @@ bool DungeonDataMgr::GetRandomMissionDungeonForGroup(Dungeon::Dungeon& dungeon, 
             sDataMgr.GetGroup(type.groupID, group);
             if (group.id == 0)
                 continue;
-            if (group.catID == EVEDB::invCategories::Entity)
+            if (group.catID == EVEDB::invCategories::Entity) {
                 ++entityGroupCount;
+                if (entityGroupSampleCount < 30
+                        && entityGroupSamples.find(group.name) == std::string::npos) {
+                    if (!entityGroupSamples.empty())
+                        entityGroupSamples += "; ";
+                    entityGroupSamples += std::to_string(group.id) + ":" + group.name
+                        + " [type " + std::to_string(type.id) + " " + type.name + "]";
+                    ++entityGroupSampleCount;
+                }
+            }
             if (group.catID == EVEDB::invCategories::Entity
                     && group.name.compare(0, std::strlen(groupPrefix), groupPrefix) == 0) {
                 ++matchingGroupCount;
@@ -227,6 +241,8 @@ bool DungeonDataMgr::GetRandomMissionDungeonForGroup(Dungeon::Dungeon& dungeon, 
             "Mission template selection failed for group '%s': loaded templates=%u, first-room objects=%u, valid types=%u, Entity groups=%u, matching groups=%u.",
             groupPrefix, missionTemplateCount, firstRoomObjectCount, validTypeCount,
             entityGroupCount, matchingGroupCount);
+        _log(SPAWN__ERROR, "Mission Entity group samples (up to 30): %s",
+            entityGroupSamples.empty() ? "<none>" : entityGroupSamples.c_str());
         return false;
     }
 
