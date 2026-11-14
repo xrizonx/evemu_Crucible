@@ -881,10 +881,31 @@ void DestinyManager::MoveObject() {
             }
         } else if (m_tractored or m_tractorPause) {
             ;   // do nothing here.  this is to remove error reporting from next line.
+        } else if (m_userSpeedFraction > 0.0001f) {
+            // GOTO NPCs can retain a commanded cruise speed without an
+            // acceleration/deceleration transition. Treat that as steady
+            // movement instead of reporting an invalid movement state.
+            m_activeSpeedFraction = m_userSpeedFraction;
+            m_timeFraction = 1.0f;
+            move = "at constant speed, going";
+        } else if (m_activeSpeedFraction > 0.0001f || m_prevSpeedFraction > 0.0001f) {
+            // A speed fraction remains, but its transition flag was lost.
+            // Re-enter the normal deceleration path rather than snapping the
+            // entity to a stop or emitting an error every destiny tick.
+            m_prevSpeedFraction = (m_activeSpeedFraction > m_prevSpeedFraction)
+                ? m_activeSpeedFraction : m_prevSpeedFraction;
+            m_prevSpeed = m_maxShipSpeed * m_prevSpeedFraction;
+            m_accel = false;
+            m_decel = true;
+            m_shipAccelTime = m_shipMaxAccelTime * m_prevSpeedFraction;
+            m_moveTime = GetTimeMSeconds();
+            m_timeFraction = 0.0f;
+            return;
         } else {
-            sLog.Error("Destiny::MoveObject()", "%s(%u) - move checks are not set right. Acc:%s, Dec:%s, Turn:%s, Tic:%u, Tractored:%s, TractorPause:%s", \
-                    mySE->GetName(), mySE->GetID(), (m_accel ? "True" : "False"), (m_decel ? "True" : "False"), (m_turning ? "True" : "False"), \
-                    m_turnTic, (m_tractored ? "True" : "False"), (m_tractorPause ? "True" : "False"));
+            // No movement was requested and no speed remains. This is an
+            // idle GOTO entity; normalize its destiny state to STOP.
+            Halt();
+            return;
         }
 
         speed = (m_maxShipSpeed * m_activeSpeedFraction);
