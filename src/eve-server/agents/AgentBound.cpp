@@ -185,7 +185,7 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
 
                 if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
                     agentSays->SetItem(0, new PyString(
-                        "THE BLOCKADE\n"
+                        "\n\nTHE BLOCKADE\n"
                         "ANGEL CARTEL INCURSION\n\n"
                         "SITUATION\n"
                         "Angel Cartel forces have established a hostile presence in this system. "
