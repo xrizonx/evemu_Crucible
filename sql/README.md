@@ -10,7 +10,7 @@ The `sql/` directory is included in the Windows and Linux release packages. It c
 - Schema changes: `migrations/`
 - Base database files: `base/`
 
-The release workflow downloads EVEDBTool 0.0.6 from the official [EVEDBTool release](https://github.com/EvEmu-Project/EVEDBTool/releases/tag/0.0.6). The tool is not built from this repository's C++ sources.
+The release workflow builds EVEDBTool from the upstream 0.0.6 source and replaces its market-seed command with the maintained implementation in `tools/evedbtool/command_seed.go`. Both Windows and Linux packages therefore contain the same patched market-seeding behaviour.
 
 ## Configure the database tool
 
@@ -39,6 +39,38 @@ chmod +x ./evedbtool
 ```
 
 Run `status` first. It reports which migration files are recorded in the database migration table. Do not run `install` against an existing server database.
+
+## Configure and reseed the market
+
+The `seed-regions` and `seed-saturation` settings in `evedb.yaml` control which regions are seeded and the percentage of stations selected in each region. The default is Derelik at 80%; add region names or numeric region IDs to seed additional regions.
+
+The patched `seed` command generates SQL from the same market rules as the repository's market seed scripts:
+
+- Published market items are seeded across the selected stations.
+- Charge/ammunition category items receive 550,000 units; other standard items receive 550.
+- Officer, Deadspace, Faction and Storyline modules receive 10 units each where no sell order already exists.
+- Prices are guarded against null/zero base prices and zero/negative station security.
+- A normal first seed uses the existing `SEED_MARKET` migration marker. To explicitly rebuild the configured regional markets, use `-force`.
+
+Windows PowerShell (from the `sql` directory):
+
+```powershell
+.\evedbtool.exe seed -dryrun
+.\evedbtool.exe seed -force -dryrun
+# After reviewing the SQL, backing up the DB, and stopping the server:
+.\evedbtool.exe seed -force
+```
+
+Linux:
+
+```sh
+./evedbtool seed -dryrun
+./evedbtool seed -force -dryrun
+# After reviewing the SQL, backing up the DB, and stopping the server:
+./evedbtool seed -force
+```
+
+**Important:** `seed -force` deletes existing NPC corporation sell orders in the configured regions for the market item categories managed by the seed, then rebuilds them at a newly selected station set. It retains player-owned orders. It is a destructive market refresh: stop the server and take a verified database backup first. Always inspect `-dryrun` output before applying it. Each forced run is recorded under a unique seed-migration ID so it can be repeated on demand.
 
 ## Applying migrations manually with a SQL client
 
