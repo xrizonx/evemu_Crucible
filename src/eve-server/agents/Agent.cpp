@@ -46,7 +46,7 @@ bool NormalizeBlockadeTestOffer(MissionOffer& offer)
         offer.rewardISK = Mission::kBlockadeSecurityTestRewardISK;
         changed = true;
     }
-    if (offer.courierAmount != Mission::kBlockadeSecurityTestRequiredKills) {
+    if (offer.courierAmount == 0) {
         offer.courierAmount = Mission::kBlockadeSecurityTestRequiredKills;
         changed = true;
     }
