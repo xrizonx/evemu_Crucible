@@ -872,12 +872,28 @@ void DestinyManager::MoveObject() {
                 // decel for turn
                 move = "decelerating for turn";
             }
-            if (m_prevSpeedFraction) {
+            if (m_prevSpeedFraction > 0.0001f) {
                 // asf = psf - (psf - usf) * tf
                 m_activeSpeedFraction = m_prevSpeedFraction - (m_prevSpeedFraction - m_userSpeedFraction) * m_timeFraction;
             } else {
-                // this should never hit....should not have decel w/o previous speed
-                sLog.Warning("Destiny::MoveObject()", "decel = true, but psf = 0.");
+                // Recover a lost previous-speed fraction from the current or
+                // commanded speed. Restart the deceleration clock so a stale
+                // timestamp cannot snap an NPC to a stop on this same tick.
+                const float recoverableSpeed = (m_activeSpeedFraction > m_userSpeedFraction)
+                    ? m_activeSpeedFraction : m_userSpeedFraction;
+                if (recoverableSpeed > 0.0001f) {
+                    m_prevSpeedFraction = recoverableSpeed;
+                    m_prevSpeed = m_maxShipSpeed * recoverableSpeed;
+                    m_shipAccelTime = m_shipMaxAccelTime * recoverableSpeed;
+                    m_moveTime = GetTimeMSeconds();
+                    m_timeFraction = 0.0f;
+                    return;
+                }
+
+                // There is no remaining speed to decelerate. Normalize the
+                // orphaned transition instead of warning on every destiny tick.
+                Halt();
+                return;
             }
         } else if (m_tractored or m_tractorPause) {
             ;   // do nothing here.  this is to remove error reporting from next line.
