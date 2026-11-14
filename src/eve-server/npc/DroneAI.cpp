@@ -506,17 +506,31 @@ void DroneAIMgr::AttackTarget(SystemEntity* pTarget) {
                                              pTarget->GetID(),
                                              0,guid,1,1,1,m_attackSpeed,0,gfxID);
 
+    const float hitQuality = m_formula.GetDroneToHit(m_pDrone, pTarget);
     Damage d(m_pDrone,
              m_pDrone->GetSelf(),
              m_pDrone->GetKinetic(),
              m_pDrone->GetThermal(),
              m_pDrone->GetEM(),
              m_pDrone->GetExplosive(),
-             m_formula.GetDroneToHit(m_pDrone, pTarget),
+             hitQuality,
              EVEEffectID::targetAttack
             );
 
-    d *= m_pDrone->GetSelf()->GetAttribute(AttrDamageMultiplier).get_float();
+    float damageMultiplier = m_pDrone->GetSelf()->GetAttribute(AttrDamageMultiplier).get_float();
+    if (damageMultiplier <= 0.0f)
+        damageMultiplier = 1.0f;
+
+    if (d.GetTotal() <= 0.0f) {
+        _log(DRONE__WARNING, "Drone %s(%u): Cannot damage %s(%u); drone damage attributes are all zero.",
+             m_pDrone->GetName(), m_pDrone->GetID(), pTarget->GetName(), pTarget->GetID());
+        return;
+    }
+
+    d *= damageMultiplier;
+    _log(DRONE__MESSAGE, "Drone %s(%u): Firing on %s(%u), base %.2f, multiplier %.2f, hit quality %.2f.",
+         m_pDrone->GetName(), m_pDrone->GetID(), pTarget->GetName(), pTarget->GetID(),
+         d.GetTotal(), damageMultiplier, hitQuality);
     // ApplyDamage() applies the global damageRate to every damage source.
     // Applying it here as well squared the configured rate for drone attacks.
     pTarget->ApplyDamage(d);
