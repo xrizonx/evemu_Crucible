@@ -202,3 +202,10 @@ The synthetic Blockade reward/kill target assignment in `Agent::MakeOffer()` has
 - Added explicit `killsDestroyed` and `killsRequired` objective fields for clients that consume the extended mission objective dictionary.
 - Kept the existing 24-ship objective, 120-minute duration, 150,000 ISK reward and turn-in/completion flow unchanged.
 - User has confirmed in-game that the mission can now be turned in after destroying all ships, the reward is issued, and mission text is visible. The presentation/counter update is source-level only at this point; compile and a fresh in-game counter refresh test are still required.
+
+
+## 2026-11-14 follow-up — render mission briefing line breaks correctly
+
+- Fixed the Blockade briefing strings to use actual C++ newline escapes rather than double-escaped backslash-n text. The agent dialog and mission journal should now render paragraphs and headings on separate lines instead of displaying literal `\\n` sequences.
+- Added leading spacing before the mission title so it is visually separated from the agent division heading.
+- This corrects the text serialization/presentation issue; verify in-game after rebuilding the latest branch head.
