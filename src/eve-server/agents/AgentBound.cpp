@@ -183,8 +183,19 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
                 *   contentID is used for specific char's mission keywords.  we're not using it like there here....
                 */
 
-                agentSays->SetItem(0, new PyInt(offer.briefingID));
-                agentSays->SetItem(1, new PyInt(offer.characterID));
+                if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+                    agentSays->SetItem(0, new PyString(
+                        "THE BLOCKADE - ANGEL CARTEL\\n\\n"
+                        "Angel Cartel forces have established a hostile presence in this system. "
+                        "Warp to the mission site and destroy all 24 hostile ships: 12 frigates, "
+                        "4 destroyers, 4 cruisers and 4 battlecruisers.\\n\\n"
+                        "Return to this agent after the pocket is clear to claim the mission reward. "
+                        "Reward: 150,000 ISK. Time limit: 120 minutes."));
+                    agentSays->SetItem(1, PyStatic.NewNone());
+                } else {
+                    agentSays->SetItem(0, new PyInt(offer.briefingID));
+                    agentSays->SetItem(1, new PyInt(offer.characterID));
+                }
 
                 // dialog can also contain mission data.
                 //   set a dialog tuple[1] to dict and fill with MissionBriefingInfo
@@ -204,8 +215,25 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
             case ViewMission: { //1
                 MissionOffer offer = MissionOffer();
                 m_agent->GetOffer(pchar->itemID(), offer);
-                agentSays->SetItem(0, new PyInt(offer.briefingID));
-                agentSays->SetItem(1, new PyInt(offer.characterID));
+                if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+                    std::string briefing =
+                        "THE BLOCKADE - ANGEL CARTEL\\n\\n"
+                        "Destroy all 24 hostile ships at the bookmarked mission site: "
+                        "12 frigates, 4 destroyers, 4 cruisers and 4 battlecruisers. "
+                        "Return to this agent when the pocket is clear. Reward: 150,000 ISK.";
+                    if (offer.stateID == Mission::State::Accepted) {
+                        briefing += "\\n\\nObjective progress: ";
+                        briefing += std::to_string(offer.courierTypeID);
+                        briefing += "/";
+                        briefing += std::to_string(offer.courierAmount);
+                        briefing += " hostile ships destroyed.";
+                    }
+                    agentSays->SetItem(0, new PyString(briefing));
+                    agentSays->SetItem(1, PyStatic.NewNone());
+                } else {
+                    agentSays->SetItem(0, new PyInt(offer.briefingID));
+                    agentSays->SetItem(1, new PyInt(offer.characterID));
+                }
                 if (offer.stateID < Mission::State::Accepted) {
                     PyTuple* button1 = new PyTuple(2);
                         button1->SetItem(0, new PyInt(Accept));
@@ -462,6 +490,14 @@ PyResult AgentBound::GetMissionBriefingInfo(PyCallArgs &call) {
         briefingInfo->SetItemString("Mission Keywords", keywords);
         briefingInfo->SetItemString("Mission Title ID", new PyInt(offer.missionID));
         briefingInfo->SetItemString("Mission Briefing ID", new PyInt(offer.briefingID));
+        if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+            briefingInfo->SetItemString("Mission Title", new PyString("The Blockade - Angel Cartel"));
+            briefingInfo->SetItemString("Mission Briefing", new PyString(
+                "Angel Cartel forces have established a hostile presence in this system. "
+                "Warp to the bookmarked site and destroy all 24 hostile ships: 12 frigates, "
+                "4 destroyers, 4 cruisers and 4 battlecruisers. Return to this agent after "
+                "the pocket is clear. Reward: 150,000 ISK. Time limit: 120 minutes."));
+        }
         switch(offer.typeID) {
             case Mission::Type::Courier:
                 briefingInfo->SetItemString("Mission Image", sMissionDataMgr.GetCourierRes()); break;
