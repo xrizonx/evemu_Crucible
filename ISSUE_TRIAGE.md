@@ -114,3 +114,19 @@ The run must be checked again after the documentation commit, because a new bran
 - CI on the updated head must pass.
 - In-game test must confirm all four classes spawn, every kill advances progress, the journal reaches the actual spawn count, the agent exposes Complete, turn-in credits 150,000 ISK once, and the mission pocket is cleaned up.
 - If the test still fails, capture the SpawnMgr::SpawnKilled::Mission, Mission offer progress, and NPC::Killed log lines from a fresh mission run; these will distinguish missing death callbacks from offer lookup/persistence failures.
+
+
+## 2026-11-14 follow-up — railgun misses and station warp-in bumping
+
+**Railgun/turret diagnosis**
+- Both player and NPC turret formulas used the magnitude of full relative velocity as transversal speed. This incorrectly included radial velocity along the line of sight; EVE turret tracking should use only perpendicular relative velocity.
+- Updated both formulas to use `|relativeVelocity × normalizedLineOfSight|`, then angular velocity = transversal / range. Added safe handling for zero range, invalid NPC target state, missing signature/tracking values and zero falloff outside optimal.
+
+**Station warp-in diagnosis**
+- `BeyonceBound::CmdWarpToStuff` previously offset a station warp point by exactly the station radius. It omitted the player's ship radius and a safety margin, leaving the hull at the station collision surface.
+- Station warp-in now adds the ship collision radius plus 5 km beyond the station radius. This affects the warp-in point only; docking range and normal approach behavior are unchanged.
+
+**Validation pending**
+- CI must pass before merge.
+- Test railguns at optimal and falloff against stationary/approaching/receding targets and targets with transverse motion.
+- Warp frigates, cruisers and battleships to station and verify no collision bounce; separately confirm docking approach still completes within the normal perimeter.
