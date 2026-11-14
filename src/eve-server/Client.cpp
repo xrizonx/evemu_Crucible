@@ -1994,14 +1994,17 @@ bool Client::StartEncounterMission(MissionOffer& offer)
     ItemData beaconData(EVEDB::invTypes::CosmicAnomaly, m_char->itemID(), m_system->GetID(),
                         flagNone, beaconName.c_str(), sitePoint);
     sItemFactory.SetUsingClient(this);
-    InventoryItemRef beacon = sItemFactory.SpawnItem(beaconData);
+    CelestialObjectRef beacon = sItemFactory.SpawnWormhole(beaconData);
     sItemFactory.UnsetUsingClient();
     if (beacon.get() == nullptr)
         return false;
 
     beacon->SetCustomInfo("mission");
     beacon->SaveItem();
-    CelestialSE* pBeacon = new CelestialSE(beacon, m_system->GetServiceMgr(), m_system);
+    // Mission sites use the Cosmic Anomaly group and must be represented by
+    // AnomalySE so the client receives the anomaly-specific slim item and
+    // destiny representation (rather than a generic celestial object).
+    AnomalySE* pBeacon = new AnomalySE(beacon, m_system->GetServiceMgr(), m_system);
     if (pBeacon == nullptr) {
         beacon->Delete();
         return false;
