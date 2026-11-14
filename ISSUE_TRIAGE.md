@@ -97,3 +97,20 @@ The run must be checked again after the documentation commit, because a new bran
 **Validation still required:** CI for the new head, then live acceptance and 24 NPC kills. Confirm the journal reaches 24/24, the agent's Complete action appears, turn-in marks the offer completed, exactly 150,000 ISK is credited, and the site is removed. Source inspection is not a substitute for this end-to-end test.
 
 **PR overlap:** PR #10 contains the older timer-only implementation and conflicts/overlaps with the consolidated PR #11 on `EVE_Missions.h`, `AgentBound.cpp`, and `MissionDataMgr.cpp`. Keep #10 open only until #11 is merged; then close #10 as superseded rather than merging the divergent branch independently.
+
+
+## 2026-11-14 follow-up — Blockade still not completing after pocket clear
+
+**Reported symptom**
+- The player reports that clearing every hostile ship still does not complete the combat mission.
+
+**Revised diagnosis and fix**
+- The prior completion fallback still depended on SystemBubble::RecordMissionKill(killerID) accepting a player character ID. NPC::Killed() deliberately passes zero when the damage source cannot be resolved to an online player Client, which can occur with drone/assist damage.
+- Mission kill objectives are pocket-owned kill-all objectives. SystemBubble::RecordMissionKill() now counts every NPC death reported by the mission SpawnMgr, independent of kill-credit resolution, and remains capped at the required count.
+- The final spawn-registry-empty fallback remains in place to persist the objective at the required count after the final hostile is removed.
+- The 24-ship test fleet is now mixed: 12 frigates, 4 destroyers, 4 cruisers and 4 battlecruisers, with ship types resolved dynamically from the installed Angel Cartel NPC static-data groups.
+
+**Still to validate**
+- CI on the updated head must pass.
+- In-game test must confirm all four classes spawn, every kill advances progress, the journal reaches the actual spawn count, the agent exposes Complete, turn-in credits 150,000 ISK once, and the mission pocket is cleaned up.
+- If the test still fails, capture the SpawnMgr::SpawnKilled::Mission, Mission offer progress, and NPC::Killed log lines from a fresh mission run; these will distinguish missing death callbacks from offer lookup/persistence failures.
