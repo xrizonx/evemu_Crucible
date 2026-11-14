@@ -204,19 +204,24 @@ void DroneAIMgr::CheckDistance(SystemEntity* pSE)
         return;
     }
     //rewrote distance checks for correct logic this time
-    double dist = m_pDrone->GetPosition().distance(pSE->GetPosition());
-    if (dist > m_entityAttackRange) {
-        _log(DRONE__AI_TRACE, "Drone %s(%u): CheckDistance: %s(%u) is too far away (%u).  Return to Idle.",
-             m_pDrone->GetName(), m_pDrone->GetID(), pSE->GetName(), pSE->GetID(), dist);
-        if (m_state != DroneAI::State::Idle) {
-            // target is no longer in npc's "sight range".  unlock target and return to idle.
-            //   should we do anything else here?  search for another target?  wander around?
+    const double dist = m_pDrone->GetPosition().distance(pSE->GetPosition());
+    // EntityChaseMaxDistance is the outer pursuit envelope. EntityAttackRange
+    // remains a fallback for drone types with incomplete static attributes.
+    const double maxChaseRange = (m_entityChaseRange > m_entityAttackRange)
+        ? m_entityChaseRange : m_entityAttackRange;
+    if (dist > maxChaseRange) {
+        _log(DRONE__AI_TRACE, "Drone %s(%u): CheckDistance: %s(%u) is outside chase range (%.0f m > %.0f m).",
+             m_pDrone->GetName(), m_pDrone->GetID(), pSE->GetName(), pSE->GetID(), dist, maxChaseRange);
+        if (m_state != DroneAI::State::Idle)
             ClearTarget(pSE);
-        }
         return;
-    } else if (dist < m_entityFlyRange) { //within weapon max (and within falloff)
-        SetEngaged(pSE); //engage and orbit
-    } else if (dist < m_entityAttackRange) { // locked target, but outside current weapon envelope
+    }
+
+    if (dist <= m_entityFlyRange) {
+        SetEngaged(pSE); // inside the weapon envelope: orbit and attack
+    } else {
+        // Keep pursuing a valid, player-designated target until it enters the
+        // weapon envelope instead of dropping it at EntityAttackRange.
         if (m_state != DroneAI::State::Approaching || !m_pDrone->DestinyMgr()->IsFollowing()) {
             m_pDrone->DestinyMgr()->SetMaxVelocity(m_chaseSpeed);
             m_pDrone->DestinyMgr()->Follow(pSE, m_entityFlyRange);
@@ -254,7 +259,9 @@ void DroneAIMgr::Target(SystemEntity* pTarget) {
         return;
     }
     bool chase = false;
-    if (!m_pDrone->TargetMgr()->StartTargeting(pTarget, m_pDrone->GetSelf()->GetAttribute(AttrScanSpeed).get_uint32(), (uint8)m_pDrone->GetSelf()->GetAttribute(AttrMaxAttackTargets).get_int(), m_entityAttackRange, chase)) {
+    const double commandRange = (m_entityChaseRange > m_entityAttackRange)
+        ? m_entityChaseRange : m_entityAttackRange;
+    if (!m_pDrone->TargetMgr()->StartTargeting(pTarget, m_pDrone->GetSelf()->GetAttribute(AttrScanSpeed).get_uint32(), (uint8)m_pDrone->GetSelf()->GetAttribute(AttrMaxAttackTargets).get_int(), commandRange, chase)) {
         _log(DRONE__AI_TRACE, "Drone %s(%u): Targeting of %s(%u) failed.  Clear Target and Return to Idle.",
              m_pDrone->GetName(), m_pDrone->GetID(), pTarget->GetName(), pTarget->GetID());
         //ClearAllTargets();
@@ -279,6 +286,16 @@ void DroneAIMgr::Targeted(SystemEntity* pAgressor) {
     }
     _log(DRONE__AI_TRACE, "Drone %s(%u): Targeted by %s(%u) while %s.",
                 m_pDrone->GetName(), m_pDrone->GetID(), pAgressor->GetName(), pAgressor->GetID(), GetStateName(m_state).c_str());
+
+    // Aggressive drones retaliate against NPCs that actively target them.
+    // Passive drones remain under explicit player command.
+    if (m_state == DroneAI::State::Idle && pAgressor->IsNPCSE()
+        && m_pDrone->GetSelf().get() != nullptr
+        && m_pDrone->GetSelf()->GetAttribute(AttrDroneIsAgressive).get_bool()) {
+        Target(pAgressor);
+        return;
+    }
+
     switch(m_state) {
         case DroneAI::State::Idle: {
         } break;
