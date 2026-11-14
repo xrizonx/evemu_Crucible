@@ -51,11 +51,19 @@ jobs:
         run: ctest --test-dir build --output-on-failure
       - name: Install
         run: cmake --install build --prefix stage
-      - name: Download matching EVEDBTool Linux x86_64 binary
+      - name: Set up Go for EVEDBTool
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.x'
+      - name: Build patched EVEDBTool Linux x86_64 binary
         run: |
-          curl --fail --location --retry 3 --output sql/evedbtool https://github.com/EvEmu-Project/EVEDBTool/releases/download/0.0.6/evedbtool
-          test -s sql/evedbtool
-          chmod +x sql/evedbtool
+          git clone --quiet --depth 1 --branch 0.0.6 https://github.com/EvEmu-Project/EVEDBTool.git tools/evedbtool-upstream
+          cp tools/evedbtool/command_seed.go tools/evedbtool-upstream/command_seed.go
+          cd tools/evedbtool-upstream
+          go version
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=evemu-crucible" -o "$GITHUB_WORKSPACE/sql/evedbtool" .
+          test -s "$GITHUB_WORKSPACE/sql/evedbtool"
+          chmod +x "$GITHUB_WORKSPACE/sql/evedbtool"
       - name: Add runtime files and package
         run: |
           mkdir -p stage/share/evemu
@@ -120,13 +128,24 @@ jobs:
       - name: Install
         shell: msys2 {0}
         run: cmake --install build --prefix stage
-      - name: Download matching EVEDBTool Windows x86_64 binary
+      - name: Set up Go for EVEDBTool
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.x'
+      - name: Build patched EVEDBTool Windows x86_64 binary
         shell: pwsh
         run: |
-          $url = "https://github.com/EvEmu-Project/EVEDBTool/releases/download/0.0.6/evedbtool.exe"
-          Invoke-WebRequest -Uri $url -OutFile "sql/evedbtool.exe"
+          git clone --quiet --depth 1 --branch 0.0.6 https://github.com/EvEmu-Project/EVEDBTool.git tools/evedbtool-upstream
+          Copy-Item tools/evedbtool/command_seed.go tools/evedbtool-upstream/command_seed.go
+          Push-Location tools/evedbtool-upstream
+          $env:CGO_ENABLED = "0"
+          $env:GOOS = "windows"
+          $env:GOARCH = "amd64"
+          go version
+          go build -trimpath -ldflags "-s -w -X main.version=evemu-crucible" -o "$env:GITHUB_WORKSPACE/sql/evedbtool.exe" .
+          Pop-Location
           if (!(Test-Path "sql/evedbtool.exe") -or (Get-Item "sql/evedbtool.exe").Length -lt 1000000) {
-            throw "EVEDBTool download is missing or unexpectedly small."
+            throw "Patched EVEDBTool build is missing or unexpectedly small."
           }
           Get-FileHash "sql/evedbtool.exe" -Algorithm SHA256 | Format-List
       - name: Bundle UCRT64 runtime DLLs beside executables
