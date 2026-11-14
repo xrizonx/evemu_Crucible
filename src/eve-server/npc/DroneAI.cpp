@@ -214,7 +214,7 @@ void DroneAIMgr::CheckDistance(SystemEntity* pSE)
     } else if (dist < m_entityFlyRange) { //within weapon max (and within falloff)
         SetEngaged(pSE); //engage and orbit
     } else if (dist < m_entityAttackRange) { // locked target, but outside current weapon envelope
-        if (m_state != DroneAI::State::Approaching || m_pDrone->DestinyMgr()->GetState() != Ball::Mode::FOLLOW) {
+        if (m_state != DroneAI::State::Approaching || !m_pDrone->DestinyMgr()->IsFollowing()) {
             m_pDrone->DestinyMgr()->SetMaxVelocity(m_chaseSpeed);
             m_pDrone->DestinyMgr()->Follow(pSE, m_entityFlyRange);
             m_state = DroneAI::State::Approaching;
@@ -236,6 +236,12 @@ void DroneAIMgr::ClearTargets() {
 void DroneAIMgr::ClearAllTargets() {
     m_pDrone->TargetMgr()->ClearAllTargets();
     //m_pDrone->TargetMgr()->OnTarget(nullptr, TargMgr::Mode::Clear, TargMgr::Msg::ClientReq);
+}
+
+void DroneAIMgr::TargetAcquired(SystemEntity* pTarget) {
+    if (pTarget == nullptr || m_pDrone == nullptr)
+        return;
+    CheckDistance(pTarget);
 }
 
 void DroneAIMgr::Target(SystemEntity* pTarget) {
