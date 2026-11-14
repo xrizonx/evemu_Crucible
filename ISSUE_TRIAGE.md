@@ -4,6 +4,13 @@ Last reviewed: 2026-11-13
 Working branch: `master`  
 Source tracker: [EvEmu-Project/evemu_Crucible/issues](https://github.com/EvEmu-Project/evemu_Crucible/issues)
 
+## 2026-11-14 — Blockade mission completion / text
+
+- **Open / needs runtime verification:** the user reports the mission remains incomplete after clearing all hostiles. The mission kill handler previously considered the objective complete only when the per-bubble spawn registry became empty. A live-NPC-count fallback now detects the final death and clears stale registry rows for the dedicated mission pocket.
+- **Open / needs runtime verification:** the synthetic mission used `briefingID = 0` and a synthetic title ID, leaving the client without localized offer text. Added explicit plain-text briefing and objective descriptions to the agent offer/view and briefing response paths.
+- Added visible NPC-death and spawn-manager diagnostic messages. Use the next runtime log to confirm the final NPC callback, bubble count, and persisted offer progress.
+- CI compilation and a fresh in-game test are still required; do not mark this fixed until the journal reaches 24/24 and the agent offers Complete.
+
 ## Scope
 
 The upstream tracker currently exposes **128 open issue/PR records** across two API pages (100 + 28). The API's issue listing also includes pull requests. This is an inventory of the open records, not a claim that all 128 have received a full source-level audit. The items below are the subset inspected in detail or selected for follow-up.
