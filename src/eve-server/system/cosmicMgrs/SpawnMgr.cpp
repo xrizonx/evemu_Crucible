@@ -486,9 +486,17 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
                                   uint32 characterID, uint32 agentID, uint32 offerID, uint16 missionID,
                                   uint32 beaconID, uint32 factionID, uint32 dungeonID)
 {
+    _log(SPAWN__MESSAGE,
+        "SpawnMgr::DoSpawnForMission() - offer %u mission %u level %u character %u agent %u beacon %u faction %u dungeon %u bubble %u.",
+        offerID, missionID, missionLevel, characterID, agentID, beaconID, factionID,
+        dungeonID, (pBubble != nullptr ? pBubble->GetID() : 0));
     if (pBubble == nullptr || !IsRegionID(regionID)
-        || characterID == 0 || agentID == 0 || offerID == 0)
+        || characterID == 0 || agentID == 0 || offerID == 0) {
+        _log(SPAWN__ERROR,
+            "SpawnMgr::DoSpawnForMission() - rejected invalid arguments for offer %u mission %u (region %u).",
+            offerID, missionID, regionID);
         return false;
+    }
 
     uint8 spawnClass = Spawn::Class::Easy;
     switch (missionLevel) {
