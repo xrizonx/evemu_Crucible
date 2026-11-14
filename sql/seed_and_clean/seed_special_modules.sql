@@ -20,19 +20,12 @@ CREATE TEMPORARY TABLE IF NOT EXISTS tSpecialModuleStations (
 );
 TRUNCATE TABLE tSpecialModuleStations;
 
-SELECT ROUND(COUNT(stationID) * @saturation)
-INTO @stationLimit
-FROM staStations
-WHERE regionID = @regionid;
-
-SET @stationIndex = 0;
 INSERT INTO tSpecialModuleStations
     (stationId, solarSystemID, regionID, corporationID, security)
 SELECT stationID, solarSystemID, regionID, corporationID, security
 FROM staStations
-WHERE (@stationIndex := @stationIndex + 1) <= @stationLimit
-  AND regionID = @regionid
-ORDER BY RAND();
+WHERE regionID = @regionid
+  AND RAND() < @saturation;
 
 -- Rare modules: 10 units per selected station and item.
 INSERT INTO mktOrders
