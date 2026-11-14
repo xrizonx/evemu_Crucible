@@ -195,3 +195,31 @@ The run must be checked again after the documentation commit, because a new bran
 - [x] Replaced double-escaped sequences with proper C++ newline escapes throughout the custom Blockade briefing strings.
 - [x] Added spacing before the mission title to separate it from the agent division label.
 - [ ] Rebuild and confirm that headings, paragraphs and kill counter render with real line breaks in the EVE client.
+
+## 2026-11-14 follow-up — Blockade journal objective and drone combat
+
+**Blockade symptoms**
+- The accepted mission's first agent-conversation response showed a literal message ID `0` because the `actionID == 0` path still returned `offer.briefingID` as an integer.
+- The synthetic mission has no localized title or briefing message IDs. The journal and briefing response still exposed those missing IDs, including briefing ID zero, even though custom text was supplied through the objective dictionary.
+- The journal kill objective uses the normal encounter payload. The live counter is persisted in the encounter offer's `courierTypeID` field and the required count in `courierAmount`; the mission pocket kill callback updates the offer and sends a modified-mission notification. The objective response now also supplies an explicit objective-completed flag.
+
+**Fix pushed**
+- Return the formatted, dynamic Blockade briefing from the initial active-agent conversation as well as the View Mission action.
+- Return `None` for synthetic title/briefing localization IDs in the journal and briefing response, avoiding attempts to resolve nonexistent message IDs.
+- Preserve the standard encounter `kill` objective structure and expose completion state in its progress dictionary.
+
+**Drone combat root cause**
+- `entity.CmdEngage` was a stub that always sent “Drone Control is not implemented yet”; it never invoked the existing `DroneAIMgr::Target` implementation.
+- The drone AI also used the shorter attack-range value as its outer target/pursuit limit, despite already caching a separate chase-distance attribute. This caused otherwise valid commands to be dropped before the drone could approach.
+- `DroneAIMgr::Targeted` did not react to incoming NPC aggression, even when the drone's aggressive setting was enabled.
+
+**Fix pushed**
+- Implemented CmdEngage with validation for current system, player-locked target, valid ship target, selected drone ownership, home ship, online status and bubble membership.
+- Route each valid selected drone through its existing targeting/AI path.
+- Use the chase-distance envelope for target acquisition and pursuit, retaining the weapon envelope for orbit/attack.
+- Enable NPC retaliation only for drones configured as aggressive; passive drones still require an explicit engage command.
+
+**Validation pending**
+- Fresh compile/CI is required; no successful build is claimed yet.
+- In game, confirm journal shows the mission title and `0/24` initially, increments after each NPC death, displays the objective, and reaches `24/24`.
+- Test CmdEngage with multiple owned drones against a locked NPC target; verify they approach, orbit and apply damage. Also test invalid/unlocked targets, drones owned by another pilot, offline drones, aggressive retaliation, and passive behavior.
