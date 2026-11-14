@@ -164,6 +164,7 @@ public:
     void GetAllEntities(std::map< uint32, SystemEntity* >& into) const; // this one gets all entities regardless of visibility
     /* for targeting purposes */
     void GetPlayers(std::vector<Client*> &into) const;
+    const std::map<uint32, Client*>& GetPlayers() const { return m_players; }
     /* for scanning */
     void GetEntityVec(std::vector<SystemEntity*> &into) const;
     SystemEntity* GetRandomEntity();
