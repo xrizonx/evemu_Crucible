@@ -130,3 +130,21 @@ The run must be checked again after the documentation commit, because a new bran
 - CI must pass before merge.
 - Test railguns at optimal and falloff against stationary/approaching/receding targets and targets with transverse motion.
 - Warp frigates, cruisers and battleships to station and verify no collision bounce; separately confirm docking approach still completes within the normal perimeter.
+
+
+## 2026-11-14 follow-up — Blockade fleet spawning battleships
+
+**Reported symptom**
+- User observed battleships in the synthetic Blockade fleet. The highest permitted class is battlecruiser.
+
+**Root cause**
+- The configured NPC group IDs were incorrectly labelled: Angel Cartel group 552 is Battleships, while group 553 is Cruisers and group 576 is BattleCruisers. The old table therefore selected battleships for the four intended cruiser slots and did not use the correct battlecruiser group.
+
+**Fix pushed to integration branch**
+- Corrected the fleet group mapping to 550 Frigate (12), 551 Destroyer (4), 553 Cruiser (4), and 576 BattleCruiser (4).
+- Group 552 (Battleship) is explicitly excluded.
+- Added exact group-name validation both when loading candidate group types and immediately before creating each NPC. An unexpected group mapping now aborts fleet setup rather than admitting battleships or another unintended class.
+
+**Validation pending**
+- CI/compile must pass on the new head.
+- Start a fresh mission and inspect every spawned hull / spawn log. Expected composition: 12 frigates, 4 destroyers, 4 cruisers, 4 battlecruisers; zero battleships, capitals or other higher-tier hulls.
