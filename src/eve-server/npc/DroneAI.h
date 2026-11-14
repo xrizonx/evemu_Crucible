@@ -90,6 +90,7 @@ private:
 
     DroneSE* m_pDrone;
     ShipSE* m_assignedShip;
+    SystemEntity* m_pendingTarget;
     bool m_returnToBay;
     bool m_scoopRequested;
 
