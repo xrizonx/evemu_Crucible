@@ -109,7 +109,7 @@ public:
     bool IsEnabled()                                    { return m_online; }
 
     void AssignShip(ShipSE* pSE)                        { m_AI->AssignShip(pSE); }
-    void SetTarget(SystemEntity* pSE = nullptr)         { (pSE == nullptr ? 0 : m_targetID = pSE->GetID()); }
+    void SetTarget(SystemEntity* pSE = nullptr)         { m_targetID = (pSE == nullptr ? 0 : pSE->GetID()); }
 
     ShipSE* GetHomeShip()                               { return m_pShipSE; }
 

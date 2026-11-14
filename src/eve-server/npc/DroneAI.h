@@ -49,6 +49,7 @@ public:
     void Process();
 
     void Target(SystemEntity *by_who);
+    void TargetAcquired(SystemEntity *pTarget);
     void Targeted(SystemEntity *by_who);
     void TargetLost(SystemEntity *by_who);
 
