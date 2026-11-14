@@ -80,3 +80,20 @@ The run must be checked again after the documentation commit, because a new bran
 - PR #11 is the consolidated integration PR and is the merge candidate after all required CI jobs pass.
 - PR #8 (24-frigate encounter/reward), PR #9 (drone combat), and PR #10 (120-minute timer) overlap with the consolidated PR #11. Keep them open until #11 is successfully merged, then close them as superseded with a link to #11; do not independently merge duplicate branches.
 - The fork's issue tracker API is disabled in repository metadata (`has_issues=false`), so this Markdown triage file is the maintained progress tracker for this fork. The upstream issue tracker is separate and is not being marked closed by these changes.
+
+
+## 2026-11-14 follow-up — mission fails to complete after last NPC
+
+**Reported symptom:** Player destroys all hostile NPCs in the Blockade pocket, but the mission remains incomplete / Complete is not offered.
+
+**Code-path finding:** `SpawnMgr::SpawnKilled()` removed the final mission spawn entry and cleaned up the pocket, while offer progress was only persisted inside `RecordMissionKill(killerID)` success. A final NPC death without a resolvable player Client/killer ID could therefore leave the offer's persisted kill progress below its required count even though the mission spawn registry was empty.
+
+**Fix committed on integration branch:**
+- Determine whether the final mission spawn entry has been removed independently of per-kill credit.
+- When the mission pocket has no remaining spawn entries, find the matching accepted offer by character, agent and offer ID and persist its kill progress to the required objective count.
+- Keep ordinary kill progress capped at the target and send the normal mission update to the online character.
+- Move the synthetic Blockade reward/24-kill objective initialization after the generic Encounter reset in `Agent::MakeOffer()`.
+
+**Validation still required:** CI for the new head, then live acceptance and 24 NPC kills. Confirm the journal reaches 24/24, the agent's Complete action appears, turn-in marks the offer completed, exactly 150,000 ISK is credited, and the site is removed. Source inspection is not a substitute for this end-to-end test.
+
+**PR overlap:** PR #10 contains the older timer-only implementation and conflicts/overlaps with the consolidated PR #11 on `EVE_Missions.h`, `AgentBound.cpp`, and `MissionDataMgr.cpp`. Keep #10 open only until #11 is merged; then close #10 as superseded rather than merging the divergent branch independently.
