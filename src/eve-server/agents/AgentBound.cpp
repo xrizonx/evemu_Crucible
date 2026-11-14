@@ -958,12 +958,14 @@ PyResult AgentBound::GetEntryPoint(PyCallArgs &call) {
     return nullptr;
 }
 
-PyResult AgentBound::GotoLocation(PyCallArgs &call, PyInt* locationType, PyInt* locationNumber, PyInt* referringAgentID) {
+PyResult AgentBound::GotoLocation(PyCallArgs &call, PyString* locationType, PyInt* locationNumber, PyInt* referringAgentID) {
     //sm.StartService('agents').GetAgentMoniker(bookmark.agentID).GotoLocation(bookmark.locationType, bookmark.locationNumber, referringAgentID)
     _log(AGENT__DUMP,  "AgentBound::Handle_GotoLocation() - size=%lli", call.tuple->size());
     call.Dump(AGENT__DUMP);
 
-    return nullptr;
+    // GotoLocation receives the bookmark's string locationType (for example,
+    // objective.target). WarpToLocation performs the actual mission-site warp.
+    return PyStatic.NewNone();
 }
 
 PyResult AgentBound::WarpToLocation(PyCallArgs &call, PyString* locationType, PyInt* locationNumber, PyFloat* warpRange, PyBool* fleet, PyInt* referringAgentID) {
