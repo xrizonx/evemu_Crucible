@@ -587,7 +587,8 @@ PyResult Command_giveallskills(Client* who, CommandDB* db, EVEServiceManager &se
     if (character.get()) {
         CommandDB::charSkillStates skillList;
         // Query Database to get the list of those skills, not trained to 5 (either not injected yet or having level up to 4)
-        CommandDB::NotFullyLearnedSkillList(skillList, ownerID);
+        if (!CommandDB::NotFullyLearnedSkillList(skillList, ownerID))
+            throw CustomError ("Unable to retrieve the character skill list; no skills were changed.");
 
         SkillRef skill;
         uint16 skillID;
@@ -596,6 +597,8 @@ PyResult Command_giveallskills(Client* who, CommandDB* db, EVEServiceManager &se
             skillID = cur.first;
             if (cur.second >= 0) {  // the same check as character->HasSkill(skillID)
                 skill = character->GetCharSkillRef(skillID);
+                if (skill.get() == nullptr)
+                    throw CustomError ("Character skill %u was listed in the database but could not be loaded.", skillID);
                 skill->SetAttribute(AttrSkillLevel, level);
                 skill->SetAttribute(AttrSkillPoints, skill->GetSPForLevel(level));
                 character->RemoveFromQueue(skill);
@@ -607,7 +610,7 @@ PyResult Command_giveallskills(Client* who, CommandDB* db, EVEServiceManager &se
                 skill = sItemFactory.SpawnSkill(idata);
 
                 if (skill.get() == nullptr)
-                    throw CustomError ("Unable to create item of type %s.", skill->typeID());
+                    throw CustomError ("Unable to create skill item for type ID %u.", skillID);
 
                 skill->SetAttribute(AttrSkillLevel, level);
                 skill->SetAttribute(AttrSkillPoints, skill->GetSPForLevel(level));
@@ -616,17 +619,18 @@ PyResult Command_giveallskills(Client* who, CommandDB* db, EVEServiceManager &se
                 skill->Move(ownerID, flagSkill, true);
             }
 
+            const uint32 skillPoints = skill->GetSPForLevel(level);
             OnAdminSkillChange oasc;
             oasc.skillItemID = skill->itemID();
             oasc.skillTypeID = skillID;
-            oasc.newSP = skill->GetSPForLevel(level);
+            oasc.newSP = skillPoints;
             PyTuple* tmp = oasc.Encode();
             pTarget->QueueDestinyEvent(&tmp);
 
             //  save gm skill gift in history  -allan
             //  maybe not for this....WAAAAYYY  to much DB traffic for this.
             character->SaveSkillHistory(EvESkill::Event::GMGift, Win32TimeNow(), ownerID, skillID, level, \
-            skill->GetAttribute(AttrSkillPoints).get_double());
+            skillPoints);
         }
         // END LOOP
         // pTarget->SendErrorMsg("You need to relog for skills to get saved and show in character sheet.");
