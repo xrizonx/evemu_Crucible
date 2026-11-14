@@ -168,8 +168,14 @@ bool DungeonDataMgr::GetRandomMissionDungeon(Dungeon::Dungeon& dungeon, uint32 f
 bool DungeonDataMgr::GetRandomMissionDungeonForGroup(Dungeon::Dungeon& dungeon, const char* groupPrefix)
 {
     std::vector<Dungeon::Dungeon> candidates;
-    if (groupPrefix == nullptr || groupPrefix[0] == '\\0')
+    if (groupPrefix == nullptr || groupPrefix[0] == '\0')
         return false;
+
+    uint32 missionTemplateCount = 0;
+    uint32 firstRoomObjectCount = 0;
+    uint32 validTypeCount = 0;
+    uint32 entityGroupCount = 0;
+    uint32 matchingGroupCount = 0;
 
     // The Blockade test must use Angel Cartel room templates even when the
     // issuing security agent belongs to another empire faction. Require NPCs
@@ -178,21 +184,28 @@ bool DungeonDataMgr::GetRandomMissionDungeonForGroup(Dungeon::Dungeon& dungeon, 
         if (candidate.archetypeID != 20 || candidate.rooms.empty())
             continue;
 
+        ++missionTemplateCount;
         const Dungeon::Room& firstRoom = candidate.rooms.begin()->second;
+        firstRoomObjectCount += static_cast<uint32>(firstRoom.objects.size());
         bool hasRequestedNPC = false;
         for (const Dungeon::RoomObject& object : firstRoom.objects) {
             // dunRoomObjects.groupID is the dungeon editor's room-object
             // grouping (dunGroups), not necessarily invGroups.groupID.
-            // Resolve the inventory group through the object's typeID, exactly
-            // as the mission spawner does when deciding whether it is an NPC.
+            // Resolve the inventory group through the object's typeID.
             Inv::TypeData type = {};
             Inv::GrpData group = {};
             sDataMgr.GetType(object.typeID, type);
             if (type.id == 0)
                 continue;
+            ++validTypeCount;
             sDataMgr.GetGroup(type.groupID, group);
-            if (group.id != 0 && group.catID == EVEDB::invCategories::Entity
+            if (group.id == 0)
+                continue;
+            if (group.catID == EVEDB::invCategories::Entity)
+                ++entityGroupCount;
+            if (group.catID == EVEDB::invCategories::Entity
                     && group.name.compare(0, std::strlen(groupPrefix), groupPrefix) == 0) {
+                ++matchingGroupCount;
                 hasRequestedNPC = true;
                 break;
             }
@@ -202,10 +215,15 @@ bool DungeonDataMgr::GetRandomMissionDungeonForGroup(Dungeon::Dungeon& dungeon, 
     }
 
     if (candidates.empty()) {
-        _log(DUNG__WARNING, "GetRandomMissionDungeonForGroup() - No mission template has first-room NPC groups matching '%s'.", groupPrefix);
+        _log(DUNG__WARNING,
+            "GetRandomMissionDungeonForGroup() - No template matched '%s'. Loaded mission templates=%u, first-room objects=%u, valid types=%u, Entity groups=%u, matching groups=%u.",
+            groupPrefix, missionTemplateCount, firstRoomObjectCount, validTypeCount,
+            entityGroupCount, matchingGroupCount);
         return false;
     }
 
+    _log(DUNG__MESSAGE, "GetRandomMissionDungeonForGroup() - Matched %u of %u mission templates for '%s'.",
+        static_cast<uint32>(candidates.size()), missionTemplateCount, groupPrefix);
     dungeon = candidates[MakeRandomInt(0, static_cast<uint32>(candidates.size() - 1))];
     return true;
 }
