@@ -187,3 +187,11 @@ The run must be checked again after the documentation commit, because a new bran
 - [x] Added persisted kill progress as a live `current / required` counter in the agent response and mission briefing/objective data.
 - [ ] Build the latest branch head on Windows, Linux and Docker CI.
 - [ ] In-game verify that the counter updates after each kill (for example 0/24, 1/24, 12/24, 24/24), and that the mission remains turn-in ready at 24/24.
+
+
+## 2026-11-14 — Blockade briefing newline rendering
+
+- [x] Root cause identified: the briefing source used double-escaped newline sequences, so the client displayed literal `\\n` characters.
+- [x] Replaced double-escaped sequences with proper C++ newline escapes throughout the custom Blockade briefing strings.
+- [x] Added spacing before the mission title to separate it from the agent division label.
+- [ ] Rebuild and confirm that headings, paragraphs and kill counter render with real line breaks in the EVE client.
