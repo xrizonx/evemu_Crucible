@@ -27,7 +27,7 @@ FROM staStations
 WHERE regionID = @regionid
   AND RAND() < @saturation;
 
--- Rare modules: 10 units per selected station and item.
+-- Rare Officer, Deadspace, Faction and Storyline equipment: 10 units per selected station and item.
 INSERT INTO mktOrders
     (typeID, ownerID, regionID, stationID, price, volEntered, volRemaining,
      issued, minVolume, duration, solarSystemID, jumps)
@@ -56,8 +56,7 @@ INNER JOIN invMetaTypes AS imt
     ON it.typeID = imt.typeID
 INNER JOIN invMetaGroups AS mg
     ON imt.metaGroupID = mg.metaGroupID
-WHERE ig.categoryID = 7
-  AND LOWER(COALESCE(mg.metaGroupName, '')) IN
+WHERE LOWER(COALESCE(mg.metaGroupName, '')) IN
       ('officer', 'deadspace', 'faction', 'storyline')
   AND NOT EXISTS (
       SELECT 1
@@ -81,7 +80,6 @@ WHERE regionID = @regionid
       INNER JOIN invGroups AS ig ON it.groupID = ig.groupID
       INNER JOIN invMetaTypes AS imt ON it.typeID = imt.typeID
       INNER JOIN invMetaGroups AS mg ON imt.metaGroupID = mg.metaGroupID
-      WHERE ig.categoryID = 7
-        AND LOWER(COALESCE(mg.metaGroupName, '')) IN
+      WHERE LOWER(COALESCE(mg.metaGroupName, '')) IN
             ('officer', 'deadspace', 'faction', 'storyline')
   );
