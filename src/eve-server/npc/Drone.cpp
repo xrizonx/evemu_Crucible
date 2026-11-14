@@ -212,7 +212,7 @@ bool DroneSE::ScoopToBay() {
     ShipSE* homeShip = m_pShipSE;
     homeShip->ScoopDrone(this);
     m_system->RemoveEntity(this);
-    SafeDelete(this);
+    delete this;
     return true;
 }
 
