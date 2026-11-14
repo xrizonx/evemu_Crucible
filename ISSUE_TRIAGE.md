@@ -49,3 +49,84 @@ The search-result projection mismatch, defensive DB result conversion, and DB ro
 5. Test gameplay separately; compilation alone does not close a gameplay bug.
 6. Never run destructive migrations or reset the user's live database as part of issue triage.
 7. Update [PATCH_NOTES.md](PATCH_NOTES.md) after each committed fix and record its verification status here.
+
+
+## 2026-11-14 progress update — Blockade encounter and drone combat
+
+The following work is implemented on `combat-mission-drone-integration` and consolidated in [fork PR #11](https://github.com/xrizonx/evemu_Crucible/pull/11). This is a progress record for this fork; it does not change or close upstream issue records.
+
+| Work item | Implementation/progress | Evidence and remaining verification |
+|---|---|---|
+| Synthetic Blockade encounter fleet | Expanded the Angel Cartel group 550 test pocket to 24 frigates. | User confirmed 24 ships spawn, move and fire in-game. |
+| Kill objective | Explicit 24-kill target; initialized after generic Encounter setup; objective progress remains separate from objective type metadata. | Source path and payload corrected. Still verify the journal counter increments to 24/24 in a live client session. |
+| 120-minute mission duration | Special 120-minute accepted duration for synthetic mission 65535 only. | User confirmed the journal now reflects 120 minutes. Other mission timers remain unchanged. |
+| Reward persistence | 150,000 ISK reward stored through mission offer updates; old open synthetic offers with missing reward are normalized. | Source/SQL path corrected. Wallet credit still needs an end-to-end live turn-in check. |
+| Completion and turn-in | Complete action is gated by required kills; existing agent completion flow pays reward and removes the encounter site/offer. | Source-level path reviewed. Verify Complete unlock, successful turn-in, wallet journal entry and site cleanup in-game. |
+| Encounter kill target source | Offer target is derived from the mission pocket's required-kill value, not a generic NPC count. | Source-level correction; verify target against the spawned encounter. |
+| Drone combat | Removed duplicate global damage scaling; improved lock-complete activation, approach/engage transitions, invalid target cleanup, target-loss handling and client state/target synchronization. | CI build is the current automated check; dedicated server-side drone AI unit coverage is not present. Gameplay regression testing remains required. |
+
+### CI snapshot for the integrated code
+
+Workflow [#43593340656](https://github.com/xrizonx/evemu_Crucible/actions/runs/43593340656), head `b527d20d17d7dff570ad0dd7b001042593f20589`:
+
+- Docker image build: passed.
+- Linux GCC build/test invocation/package: passed.
+- Windows 64-bit UCRT64 GCC: still running at the time of this update; the final matrix is not yet fully green.
+
+The run must be checked again after the documentation commit, because a new branch head triggers a new validation run. A green compile is not a substitute for the live mission turn-in and drone gameplay checks above.
+
+### Fork PR housekeeping
+
+- PR #11 is the consolidated integration PR and is the merge candidate after all required CI jobs pass.
+- PR #8 (24-frigate encounter/reward), PR #9 (drone combat), and PR #10 (120-minute timer) overlap with the consolidated PR #11. Keep them open until #11 is successfully merged, then close them as superseded with a link to #11; do not independently merge duplicate branches.
+- The fork's issue tracker API is disabled in repository metadata (`has_issues=false`), so this Markdown triage file is the maintained progress tracker for this fork. The upstream issue tracker is separate and is not being marked closed by these changes.
+
+
+## 2026-11-14 follow-up — mission fails to complete after last NPC
+
+**Reported symptom:** Player destroys all hostile NPCs in the Blockade pocket, but the mission remains incomplete / Complete is not offered.
+
+**Code-path finding:** `SpawnMgr::SpawnKilled()` removed the final mission spawn entry and cleaned up the pocket, while offer progress was only persisted inside `RecordMissionKill(killerID)` success. A final NPC death without a resolvable player Client/killer ID could therefore leave the offer's persisted kill progress below its required count even though the mission spawn registry was empty.
+
+**Fix committed on integration branch:**
+- Determine whether the final mission spawn entry has been removed independently of per-kill credit.
+- When the mission pocket has no remaining spawn entries, find the matching accepted offer by character, agent and offer ID and persist its kill progress to the required objective count.
+- Keep ordinary kill progress capped at the target and send the normal mission update to the online character.
+- Move the synthetic Blockade reward/24-kill objective initialization after the generic Encounter reset in `Agent::MakeOffer()`.
+
+**Validation still required:** CI for the new head, then live acceptance and 24 NPC kills. Confirm the journal reaches 24/24, the agent's Complete action appears, turn-in marks the offer completed, exactly 150,000 ISK is credited, and the site is removed. Source inspection is not a substitute for this end-to-end test.
+
+**PR overlap:** PR #10 contains the older timer-only implementation and conflicts/overlaps with the consolidated PR #11 on `EVE_Missions.h`, `AgentBound.cpp`, and `MissionDataMgr.cpp`. Keep #10 open only until #11 is merged; then close #10 as superseded rather than merging the divergent branch independently.
+
+
+## 2026-11-14 follow-up — Blockade still not completing after pocket clear
+
+**Reported symptom**
+- The player reports that clearing every hostile ship still does not complete the combat mission.
+
+**Revised diagnosis and fix**
+- The prior completion fallback still depended on SystemBubble::RecordMissionKill(killerID) accepting a player character ID. NPC::Killed() deliberately passes zero when the damage source cannot be resolved to an online player Client, which can occur with drone/assist damage.
+- Mission kill objectives are pocket-owned kill-all objectives. SystemBubble::RecordMissionKill() now counts every NPC death reported by the mission SpawnMgr, independent of kill-credit resolution, and remains capped at the required count.
+- The final spawn-registry-empty fallback remains in place to persist the objective at the required count after the final hostile is removed.
+- The 24-ship test fleet is now mixed: 12 frigates, 4 destroyers, 4 cruisers and 4 battlecruisers, with ship types resolved dynamically from the installed Angel Cartel NPC static-data groups.
+
+**Still to validate**
+- CI on the updated head must pass.
+- In-game test must confirm all four classes spawn, every kill advances progress, the journal reaches the actual spawn count, the agent exposes Complete, turn-in credits 150,000 ISK once, and the mission pocket is cleaned up.
+- If the test still fails, capture the SpawnMgr::SpawnKilled::Mission, Mission offer progress, and NPC::Killed log lines from a fresh mission run; these will distinguish missing death callbacks from offer lookup/persistence failures.
+
+
+## 2026-11-14 follow-up — railgun misses and station warp-in bumping
+
+**Railgun/turret diagnosis**
+- Both player and NPC turret formulas used the magnitude of full relative velocity as transversal speed. This incorrectly included radial velocity along the line of sight; EVE turret tracking should use only perpendicular relative velocity.
+- Updated both formulas to use `|relativeVelocity × normalizedLineOfSight|`, then angular velocity = transversal / range. Added safe handling for zero range, invalid NPC target state, missing signature/tracking values and zero falloff outside optimal.
+
+**Station warp-in diagnosis**
+- `BeyonceBound::CmdWarpToStuff` previously offset a station warp point by exactly the station radius. It omitted the player's ship radius and a safety margin, leaving the hull at the station collision surface.
+- Station warp-in now adds the ship collision radius plus 5 km beyond the station radius. This affects the warp-in point only; docking range and normal approach behavior are unchanged.
+
+**Validation pending**
+- CI must pass before merge.
+- Test railguns at optimal and falloff against stationary/approaching/receding targets and targets with transverse motion.
+- Warp frigates, cruisers and battleships to station and verify no collision bounce; separately confirm docking approach still completes within the normal perimeter.

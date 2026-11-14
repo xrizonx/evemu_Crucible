@@ -32,22 +32,27 @@ static bool IsMissionNPCGroup(const Inv::GrpData& group)
             && group.name.compare(0, 9, "Asteroid ") == 0);
 }
 
-// Explicit inventory-backed fleet for synthetic mission 65535. These are
-// test-only type/group mappings supplied for this branch; they do not modify
-// or depend on official mission or dungeon records.
+// Synthetic Blockade mission 65535 uses a 24-ship Angel Cartel fleet.
+// Group IDs are the Angel Cartel NPC frigate/destroyer/cruiser/battlecruiser
+// groups. Type IDs are selected from the installed static-data set at runtime,
+// avoiding stale hard-coded type IDs when the data pack is updated.
+struct BlockadeTestShipClass
+{
+    uint16 groupID;
+    uint8 quantity;
+};
+
 struct BlockadeTestShip
 {
     uint16 typeID;
     uint16 groupID;
 };
 
-static const BlockadeTestShip kAngelCartelBlockadeTestFleet[] = {
-    {11023, 550}, {10013, 550}, {10019, 550}, {11024, 550},
-    {10015, 550}, {10014, 550}, {10016, 550}, {2372, 550},
-    {11022, 550}, {11021, 550}, {16561, 550}, {16562, 550},
-    {11023, 550}, {10013, 550}, {10019, 550}, {11024, 550},
-    {10015, 550}, {10014, 550}, {10016, 550}, {2372, 550},
-    {11022, 550}, {11021, 550}, {16561, 550}, {16562, 550}
+static const BlockadeTestShipClass kAngelCartelBlockadeTestMix[] = {
+    {550, 12}, // Frigates
+    {551, 4},  // Destroyers
+    {552, 4},  // Cruisers
+    {553, 4}   // Battlecruisers
 };
 
 /** @todo  this can be updated to spawn mission, anomaly and deadspace rats.
@@ -316,24 +321,42 @@ void SpawnMgr::SpawnKilled(SystemBubble* pBubble, uint32 itemID, uint32 killerID
         _log(SPAWN__DEPOP, "SpawnMgr::SpawnKilled::Mission - NPC %u killed by character %u.", itemID, killerID);
         RemoveSpawn(pBubble->GetID(), itemID);
 
-        if (pBubble->RecordMissionKill(killerID)) {
+        const bool missionKillRecorded = pBubble->RecordMissionKill();
+        const bool allMissionNPCsDestroyed = (m_spawns.count(pBubble->GetID()) == 0);
+
+        // The last hostile must always close the objective. Some kill sources
+        // can arrive here without a resolvable player Client/killerID, which
+        // means RecordMissionKill() intentionally declines the ordinary
+        // per-kill increment. Once the mission's spawn registry is empty,
+        // there are no remaining required hostiles, so persist the objective
+        // as complete instead of leaving the journal permanently incomplete.
+        if (missionKillRecorded || allMissionNPCsDestroyed) {
             Agent* pAgent = sEntityList.GetAgent(pBubble->GetMissionAgentID());
             MissionOffer offer = MissionOffer();
             if (pAgent != nullptr
                 && pAgent->HasMission(pBubble->GetMissionCharacterID(), offer)
                 && offer.offerID == pBubble->GetMissionOfferID()
-                && offer.stateID == Mission::State::Accepted) {
-                offer.courierTypeID = pBubble->GetMissionKills();
+                && offer.stateID == Mission::State::Accepted
+                && offer.courierAmount > 0) {
+                offer.courierTypeID = (allMissionNPCsDestroyed
+                    || pBubble->GetMissionKills() >= offer.courierAmount
+                    ? offer.courierAmount : pBubble->GetMissionKills());
                 pAgent->UpdateOffer(pBubble->GetMissionCharacterID(), offer);
                 Client* pClient = sEntityList.FindClientByCharID(pBubble->GetMissionCharacterID());
                 if (pClient != nullptr)
                     pAgent->SendMissionUpdate(pClient, "modified");
-                _log(SPAWN__MESSAGE, "Mission offer %u progress: %u/%u hostile ships destroyed.",
-                        offer.offerID, offer.courierTypeID, offer.courierAmount);
+                _log(SPAWN__MESSAGE,
+                    "Mission offer %u progress: %u/%u hostile ships destroyed%s.",
+                    offer.offerID, offer.courierTypeID, offer.courierAmount,
+                    allMissionNPCsDestroyed ? " (all mission spawns cleared)" : "");
+            } else {
+                _log(SPAWN__WARNING,
+                    "Mission pocket %u has no remaining NPC spawns, but its accepted offer %u could not be updated.",
+                    pBubble->GetID(), pBubble->GetMissionOfferID());
             }
         }
 
-        if (m_spawns.count(pBubble->GetID()) == 0) {
+        if (allMissionNPCsDestroyed) {
             auto bubbleItr = std::find(m_bubbles.begin(), m_bubbles.end(), pBubble);
             if (bubbleItr != m_bubbles.end())
                 m_bubbles.erase(bubbleItr);
@@ -523,25 +546,68 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
         uint16 failedCount = 0;
         uint16 fleetNumber = 0;
         const GPoint center = pBubble->GetCenter();
-        const uint32 fleetSize = sizeof(kAngelCartelBlockadeTestFleet)
-            / sizeof(kAngelCartelBlockadeTestFleet[0]);
 
-        for (const BlockadeTestShip& ship : kAngelCartelBlockadeTestFleet) {
+        std::map<uint16, Inv::TypeData> allTypes;
+        sDataMgr.GetTypes(allTypes);
+        std::vector<BlockadeTestShip> selectedFleet;
+        for (const BlockadeTestShipClass& shipClass : kAngelCartelBlockadeTestMix) {
+            Inv::GrpData group = {};
+            sDataMgr.GetGroup(shipClass.groupID, group);
+            if (group.id == 0 || group.catID != EVEDB::invCategories::Entity
+                || group.name.compare(0, 9, "Asteroid ") != 0) {
+                _log(SPAWN__ERROR,
+                    "Blockade test fleet group %u is missing or is not an NPC entity group.",
+                    shipClass.groupID);
+                ++failedCount;
+                continue;
+            }
+
+            std::vector<uint16> candidates;
+            for (const auto& typeEntry : allTypes) {
+                if (typeEntry.second.groupID == shipClass.groupID
+                    && typeEntry.second.id != 0)
+                    candidates.push_back(typeEntry.first);
+            }
+            if (candidates.empty()) {
+                _log(SPAWN__ERROR,
+                    "Blockade test fleet group %u (%s) has no available NPC ship types.",
+                    shipClass.groupID, group.name.c_str());
+                ++failedCount;
+                continue;
+            }
+
+            for (uint8 i = 0; i < shipClass.quantity; ++i) {
+                const uint16 selectedTypeID =
+                    candidates[static_cast<size_t>(rand()) % candidates.size()];
+                selectedFleet.push_back({selectedTypeID, shipClass.groupID});
+            }
+        }
+
+        const uint32 fleetSize = 24;
+        if (selectedFleet.size() != fleetSize) {
+            _log(SPAWN__ERROR,
+                "Blockade test fleet composition incomplete: selected %u of %u ships (%u group errors).",
+                static_cast<uint32>(selectedFleet.size()), fleetSize, failedCount);
+            pBubble->SetMission(false);
+            return false;
+        }
+
+        for (const BlockadeTestShip& ship : selectedFleet) {
+            const uint16 typeID = ship.typeID;
             Inv::TypeData type = {};
             Inv::GrpData group = {};
-            sDataMgr.GetType(ship.typeID, type);
-            if (type.id == 0 || type.groupID != ship.groupID) {
-                _log(SPAWN__ERROR,
-                    "Blockade test fleet type %u is missing or has group %u (expected %u).",
-                    ship.typeID, type.groupID, ship.groupID);
+            sDataMgr.GetType(typeID, type);
+            if (type.id == 0) {
+                _log(SPAWN__ERROR, "Blockade test fleet selected missing NPC type %u.", typeID);
                 ++failedCount;
                 continue;
             }
             sDataMgr.GetGroup(type.groupID, group);
-            if (group.id == 0 || group.catID != EVEDB::invCategories::Entity) {
+            if (group.id == 0 || group.catID != EVEDB::invCategories::Entity
+                || group.name.compare(0, 9, "Asteroid ") != 0) {
                 _log(SPAWN__ERROR,
-                    "Blockade test fleet type %u has invalid Angel Cartel NPC group %u.",
-                    ship.typeID, type.groupID);
+                    "Blockade test fleet type %u has invalid NPC group %u.",
+                    typeID, type.groupID);
                 ++failedCount;
                 continue;
             }
@@ -554,18 +620,18 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
             spawnPosition.y += MakeRandomFloat(-5000.0f, 5000.0f);
             spawnPosition.z += MakeRandomFloat(-2500.0f, 2500.0f);
 
-            ItemData itemData(ship.typeID, angelCartelCorporationID,
+            ItemData itemData(typeID, angelCartelCorporationID,
                 m_system->GetID(), flagNone, "", spawnPosition, type.name.c_str());
             InventoryItemRef item = sItemFactory.SpawnItem(itemData);
             if (item.get() == nullptr) {
-                _log(SPAWN__ERROR, "Blockade test fleet failed to create type %u.", ship.typeID);
+                _log(SPAWN__ERROR, "Blockade test fleet failed to create type %u.", typeID);
                 ++failedCount;
                 continue;
             }
 
             NPC* pNPC = new NPC(item, m_services, m_system, factionData, this);
             if (pNPC == nullptr || !pNPC->Load()) {
-                _log(SPAWN__ERROR, "Blockade test fleet failed to load NPC type %u.", ship.typeID);
+                _log(SPAWN__ERROR, "Blockade test fleet failed to load NPC type %u.", typeID);
                 if (pNPC != nullptr)
                     pNPC->Delete();
                 ++failedCount;
@@ -577,11 +643,11 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
 
             SpawnEntry entry = SpawnEntry();
             entry.enabled = false;
-            entry.groupID = ship.groupID;
+            entry.groupID = type.groupID;
             entry.itemID = item->itemID();
             entry.total = 1;
             entry.number = fleetNumber;
-            entry.typeID = ship.typeID;
+            entry.typeID = typeID;
             entry.spawnID = m_spawnID;
             entry.corpID = angelCartelCorporationID;
             entry.factionID = angelCartelFactionID;

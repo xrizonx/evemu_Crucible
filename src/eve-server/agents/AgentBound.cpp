@@ -245,13 +245,14 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
 
                 offer.stateID = Mission::State::Accepted;
                 offer.dateAccepted = GetFileTimeNow();
-                // The synthetic Blockade test is a larger 24-frigate encounter.
-                // Give it a two-hour completion window; retain the legacy scaling
-                // for all other mission templates.
-                const uint32 missionTimeLimit = (offer.missionID == 65535)
-                    ? (120 * EvE::Time::Minute)
-                    : (30 * m_agent->GetLevel() * EvE::Time::Minute);
-                offer.expiryTime = GetFileTimeNow() + missionTimeLimit;
+                // The synthetic Blockade test mission is Level 0, so the normal
+                // level-based formula would give it no time to complete.
+                // Give this combat test a full two hours after acceptance.
+                const uint32 missionDurationMinutes =
+                    (offer.missionID == Mission::kBlockadeSecurityTestMissionID)
+                        ? Mission::kBlockadeSecurityTestDurationMinutes
+                        : (30 * m_agent->GetLevel());
+                offer.expiryTime = GetFileTimeNow() + (missionDurationMinutes * EvE::Time::Minute);
                 if (offer.typeID != Mission::Type::Encounter && offer.courierTypeID) {
                     sItemFactory.SetUsingClient(call.client);
                     ItemData data(offer.courierTypeID, pchar->itemID(), locTemp, flagNone, offer.courierAmount);
@@ -505,7 +506,7 @@ PyResult AgentBound::GetMissionKeywords(PyCallArgs &call, PyInt* contentID) {
     PyDict* keywords = new PyDict();
     keywords->SetItemString("objectiveLocationID", new PyInt(offer.originID));
     keywords->SetItemString("objectiveLocationSystemID", new PyInt(offer.originSystemID));
-    keywords->SetItemString("objectiveTypeID", new PyInt(offer.courierTypeID));
+    keywords->SetItemString("objectiveTypeID", new PyInt(offer.typeID == Mission::Type::Encounter ? 0 : offer.courierTypeID));
     keywords->SetItemString("objectiveQuantity", new PyInt(offer.courierAmount));
     keywords->SetItemString("objectiveDestinationID", new PyInt(offer.destinationID));
     keywords->SetItemString("objectiveDestinationSystemID", new PyInt(offer.destinationSystemID));

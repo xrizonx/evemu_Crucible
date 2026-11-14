@@ -33,6 +33,27 @@
 #include "agents/AgentDB.h"
 #include "../Client.h"
 #include "../fleet/FleetService.h"
+
+namespace {
+
+bool NormalizeBlockadeTestOffer(MissionOffer& offer)
+{
+    if (offer.missionID != Mission::kBlockadeSecurityTestMissionID)
+        return false;
+
+    bool changed = false;
+    if (offer.rewardISK != Mission::kBlockadeSecurityTestRewardISK) {
+        offer.rewardISK = Mission::kBlockadeSecurityTestRewardISK;
+        changed = true;
+    }
+    if (offer.courierAmount == 0) {
+        offer.courierAmount = Mission::kBlockadeSecurityTestRequiredKills;
+        changed = true;
+    }
+    return changed;
+}
+
+} // namespace
 #include "../system/SystemManager.h"
 #include "../standing/StandingMgr.h"
 #include "corporation/LPService.h"
@@ -132,6 +153,15 @@ bool Agent::MakeOffer(uint32 charID, MissionOffer& offer)
         }
     }
 
+    // Generic Encounter setup above clears courier fields. Restore the
+    // synthetic Blockade's reward and required-kill target only after that
+    // reset so the offer/briefing never advertises an empty objective.
+    if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+        offer.rewardISK = Mission::kBlockadeSecurityTestRewardISK;
+        offer.courierTypeID = 0;
+        offer.courierAmount = Mission::kBlockadeSecurityTestRequiredKills;
+    }
+
     offer.remoteOfferable = false;
     offer.remoteCompletable = false;
     offer.rewardLP = LPService::GetLPReward(offer.missionID, m_agentData.solarSystemID,
@@ -168,6 +198,10 @@ bool Agent::HasMission(uint32 charID, MissionOffer& offer)
 {
     std::map<uint32, MissionOffer>::iterator itr = m_offers.find(charID);
     if (itr != m_offers.end()) {
+        if (NormalizeBlockadeTestOffer(itr->second)) {
+            MissionDB::UpdateMissionOffer(itr->second);
+            sMissionDataMgr.UpdateMissionData(charID, itr->second);
+        }
         offer = itr->second;
         return true;
     }
@@ -178,6 +212,10 @@ void Agent::GetOffer(uint32 charID, MissionOffer& offer)
 {
     std::map<uint32, MissionOffer>::iterator itr = m_offers.find(charID);
     if (itr != m_offers.end()) {
+        if (NormalizeBlockadeTestOffer(itr->second)) {
+            MissionDB::UpdateMissionOffer(itr->second);
+            sMissionDataMgr.UpdateMissionData(charID, itr->second);
+        }
         offer = itr->second;
     } else {
         _log(AGENT__WARNING, "Agent::GetOffer() - offer not found for characterID %u", charID);

@@ -81,9 +81,11 @@ public:
         m_missionKillsRequired = killsRequired;
         m_mission = true;
     }
-    bool RecordMissionKill(uint32 killerID) {
-        // Any player or player-controlled drone can assist in a mission pocket.
-        if (!m_mission || killerID == 0 || m_missionKills >= m_missionKillsRequired)
+    bool RecordMissionKill() {
+        // The mission pocket owns this kill objective. Count every NPC death
+        // reported by SpawnMgr, regardless of whether the damage source can
+        // be resolved to an online player Client (e.g. drones or other assists).
+        if (!m_mission || m_missionKills >= m_missionKillsRequired)
             return false;
         ++m_missionKills;
         return true;

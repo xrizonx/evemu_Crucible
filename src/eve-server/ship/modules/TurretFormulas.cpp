@@ -46,14 +46,14 @@ float TurretFormulas::GetToHit(ShipItemRef shipRef, TurretModule* pMod, SystemEn
         return 0;
     _log(DAMAGE__TRACE, "Turret::GetToHit - distance:%.2f, range:%u, falloff:%u", distance, range, falloff);
 
-    // calculate transversal from other data
-    /* i have had problems finding exact data for transversal velocity
-     * ideas/data taken from https://wiki.eveuniversity.org/Velocity
-     * The transversal velocity is computed by subtracting the two velocity vectors from one another, and then finding the length of the vector.
-     * angular velocity = transversal velocity / distance
-     */
-    GVector vector = pTarget->GetVelocity() - sourceSE->GetVelocity();
-    float transversalV = vector.length();
+    // Turret tracking uses angular velocity, not total relative speed.
+    // Remove the radial component by taking the cross product of relative
+    // velocity with the normalized line-of-sight vector. Motion directly
+    // toward/away from the shooter must not reduce tracking chance.
+    GVector lineOfSight(sourceSE->GetPosition(), targetDestiny->GetPosition());
+    lineOfSight.normalize();
+    GVector relativeVelocity = pTarget->GetVelocity() - sourceSE->GetVelocity();
+    float transversalV = relativeVelocity.crossProduct(lineOfSight).length();
     float angularVel = transversalV / distance;
     float targSig = targetSelf->GetAttribute(AttrSignatureRadius).get_float();
     if (targSig < 0.01f)
@@ -110,18 +110,30 @@ float TurretFormulas::GetToHit(ShipItemRef shipRef, TurretModule* pMod, SystemEn
 
 float TurretFormulas::GetNPCToHit(NPC* pNPC, SystemEntity* pTarget)
 {
-    if (pTarget == nullptr)
+    if (pNPC == nullptr || pNPC->GetAIMgr() == nullptr
+        || pNPC->DestinyMgr() == nullptr || pTarget == nullptr
+        || pTarget->DestinyMgr() == nullptr || pTarget->GetSelf().get() == nullptr)
         return 0;
+
     uint16 sigRes = pNPC->GetAIMgr()->GetSigRes();
     uint16 range = pNPC->GetAIMgr()->GetOptimalRange();
     uint32 falloff = pNPC->GetAIMgr()->GetFalloff();
+
     float distance = pNPC->DestinyMgr()->GetPosition().distance(pTarget->DestinyMgr()->GetPosition());
+    if (distance <= 0.001f)
+        return 0;
     float trackSpeed = pNPC->GetAIMgr()->GetTrackingSpeed();
     float targSig = pTarget->GetSelf()->GetAttribute(AttrSignatureRadius).get_float();
+    if (targSig < 0.01f)
+        targSig = pTarget->GetSelf()->GetAttribute(AttrRadius).get_uint32() / 10.0f;
+    if (targSig <= 0.0f || sigRes == 0 || trackSpeed <= 0.0f)
+        return 0;
     _log(DAMAGE__TRACE_NPC, "NPC::GetToHit - distance:%.2f, range:%u, falloff:%u", distance, range, falloff);
 
-    GVector vector = pTarget->GetVelocity() - pNPC->GetVelocity();
-    float transversalV = vector.length();
+    GVector lineOfSight(pNPC->DestinyMgr()->GetPosition(), pTarget->DestinyMgr()->GetPosition());
+    lineOfSight.normalize();
+    GVector relativeVelocity = pTarget->GetVelocity() - pNPC->GetVelocity();
+    float transversalV = relativeVelocity.crossProduct(lineOfSight).length();
     float angularVel = transversalV / distance;
     _log(DAMAGE__TRACE_NPC, "NPC::GetToHit - transversalV:%.3f, angularVel:%.3f tracking:%.3f, targetSig:%.1f, sigRes:%u", \
                 transversalV, angularVel, trackSpeed, targSig, sigRes);
@@ -135,7 +147,9 @@ float TurretFormulas::GetNPCToHit(NPC* pNPC, SystemEntity* pTarget)
     }
     float c = pow((a * b), 2);
     float d = EvE::max(distance - range);
-    float e = pow((d / falloff), 2);
+    if (d > 0.0f && falloff == 0)
+        return 0;
+    float e = (d > 0.0f) ? pow((d / falloff), 2) : 0.0f;
     float x = pow(0.5, c);
     float y = pow(0.5, e);
     float ChanceToHit = x * y;

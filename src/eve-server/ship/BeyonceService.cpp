@@ -559,10 +559,20 @@ PyResult BeyonceBound::CmdWarpToStuff(PyCallArgs &call, PyString* type, PyRep* i
             warpToPoint.y += ((radius * 1.3f) - 7500);
             warpToPoint.z -= ((radius + 500000) * std::sin(radius));
         }
-        if (radius < 90000) {
-            // this will include stations (max station radius 60km)
+        if (pSE->IsStationSE()) {
+            // Warp-to-station previously stopped exactly at the station's
+            // collision surface. The ship's own radius was ignored, so large
+            // hulls could overlap the station on arrival and visibly bounce.
+            // Leave a small clearance beyond both collision radii. Docking
+            // still uses the normal 2,500m perimeter and approach handling.
             GVector vectorFromOrigin(call.client->GetShipSE()->GetPosition(), warpToPoint);
-            vectorFromOrigin.normalize();   //we now have a direction
+            vectorFromOrigin.normalize();
+            const double clearance = radius
+                + call.client->GetShipSE()->GetRadius() + 5000.0;
+            warpToPoint -= (vectorFromOrigin * clearance);
+        } else if (radius < 90000) {
+            GVector vectorFromOrigin(call.client->GetShipSE()->GetPosition(), warpToPoint);
+            vectorFromOrigin.normalize();
             GPoint stopPoint = (vectorFromOrigin * radius);
             warpToPoint -= stopPoint;
         }

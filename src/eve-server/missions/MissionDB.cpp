@@ -78,11 +78,11 @@ void MissionDB::UpdateMissionOffer(MissionOffer& data)
     DBerror err;
     if (!sDatabase.RunQuery(err,
         "UPDATE agtOffers SET stateID = %u, dateAccepted = %f, dateCompleted = %f, expiryTime = %f, "
-        "courierTypeID = %u, courierAmount = %u, destinationID = %u, destinationTypeID = %u, "
+        "courierTypeID = %u, courierAmount = %u, rewardISK = %u, destinationID = %u, destinationTypeID = %u, "
         "destinationOwnerID = %u, destinationSystemID = %u, dungeonLocationID = %u, dungeonSolarSystemID = %u "
         "WHERE offerID = %u",
         data.stateID, data.dateAccepted, data.dateCompleted, data.expiryTime,
-        data.courierTypeID, data.courierAmount, data.destinationID, data.destinationTypeID,
+        data.courierTypeID, data.courierAmount, data.rewardISK, data.destinationID, data.destinationTypeID,
         data.destinationOwnerID, data.destinationSystemID, data.dungeonLocationID,
         data.dungeonSolarSystemID, data.offerID))
     {
