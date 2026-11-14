@@ -288,11 +288,10 @@ void NPCAIMgr::Process() {
     switch(m_state) {
         case NPCAI::State::Idle: {
             if (m_beginFindTarget.Check()) {
-                std::vector<Client*> clientVec;
-                clientVec.clear();
                 DestinyManager* pDestiny(nullptr);
-                m_npc->SysBubble()->GetPlayers(clientVec); // what about player drones?  yes...later
-                for (auto cur : clientVec) {
+                const auto& players = m_npc->SysBubble()->GetPlayers();
+                for (const auto& player : players) {
+                    Client* cur = player.second;
                     if (cur->IsInvul())
                         continue;
                     if (cur->GetShipSE() == nullptr)
