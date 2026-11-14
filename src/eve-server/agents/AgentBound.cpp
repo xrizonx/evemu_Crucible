@@ -668,6 +668,13 @@ PyDict* AgentBound::GetMissionObjectiveInfo(Client* pClient, MissionOffer& offer
 {
     PyDict* objectiveData = new PyDict();
     objectiveData->SetItemString("missionTitleID", new PyInt(offer.missionID));
+    if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+        objectiveData->SetItemString("missionTitle", new PyString("The Blockade - Angel Cartel"));
+        objectiveData->SetItemString("missionBriefing", new PyString(
+            "Destroy all 24 hostile ships at the bookmarked mission site: "
+            "12 frigates, 4 destroyers, 4 cruisers and 4 battlecruisers. "
+            "Return to this agent when the pocket is clear. Reward: 150,000 ISK."));
+    }
     objectiveData->SetItemString("contentID", new PyInt(offer.characterID));
     objectiveData->SetItemString("importantStandings", new PyInt(offer.important));     // boolean integer
     // will need to test for this to set correctly.....
