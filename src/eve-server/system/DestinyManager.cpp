@@ -2651,8 +2651,14 @@ Battleships 0.155
     m_massMKg = m_mass / 1000000; //changes mass from Kg to milliKg (10^-6)
 
     // this will catch speeds/needs for all ships (player and npc), and is easier to do here.
-    if (sRef->HasAttribute(AttrWarpSpeedMultiplier))
-        m_shipWarpSpeed = sRef->GetAttribute(AttrWarpSpeedMultiplier).get_float();
+    // Dogma stores warpSpeedMultiplier as a factor of the standard 3 AU/s
+    // base speed. Destiny warp packets need the effective AU/s value (x10),
+    // not the raw dogma factor. Prefer the live attribute and fall back to
+    // the type default when the item attribute map has no explicit entry.
+    const float warpSpeedMultiplier = sRef->HasAttribute(AttrWarpSpeedMultiplier)
+        ? sRef->GetAttribute(AttrWarpSpeedMultiplier).get_float()
+        : sRef->GetDefaultAttribute(AttrWarpSpeedMultiplier).get_float();
+    m_shipWarpSpeed = 3.0f * warpSpeedMultiplier;
     if (sRef->HasAttribute(AttrInetia))
         m_shipInertia = sRef->GetAttribute(AttrInetia).get_float();
     if (sRef->HasAttribute(AttrMaxVelocity))
