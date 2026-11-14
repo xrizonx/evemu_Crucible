@@ -95,7 +95,8 @@ void DroneAIMgr::Process() {
     if (m_pendingTargetID != 0) {
         SystemManager* system = m_pDrone->GetSystemManager();
         SystemEntity* pending = (system != nullptr) ? system->GetSE(m_pendingTargetID) : nullptr;
-        if (pending->SysBubble() == nullptr || pending->SysBubble() != m_pDrone->SysBubble()
+        if (pending == nullptr || pending->SysBubble() == nullptr
+            || pending->SysBubble() != m_pDrone->SysBubble()
             || pending->DestinyMgr() == nullptr) {
             m_pendingTargetID = 0;
             SetIdle();
