@@ -5,7 +5,7 @@ This file tracks fixes and maintenance changes made on this fork's `master` bran
 
 ## Upstream contribution summary — 2026-11-13
 
-This PR proposes the current fork work against `EvEmu-Project/evemu_Crucible:master`. The fork is 58 commits ahead of the upstream merge base at preparation time. This is a grouped summary of the complete proposed change set, not a claim that all gameplay features are finished.
+This PR proposes the current fork work against `EvEmu-Project/evemu_Crucible:master`. The fork's current integration head is 183 commits ahead of the upstream merge base in GitHub's comparison at the time of the 2026-11-14 review. This count includes the fork's accumulated maintenance history and should not be interpreted as 183 newly reviewed changes in the latest mission/drone slice. This is a grouped summary of the complete proposed change set, not a claim that all gameplay features are finished.
 
 ### Mission system — implemented foundation; combat encounter work in progress
 
