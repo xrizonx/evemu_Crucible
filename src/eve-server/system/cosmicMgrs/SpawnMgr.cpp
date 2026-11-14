@@ -334,8 +334,8 @@ void SpawnMgr::SpawnKilled(SystemBubble* pBubble, uint32 itemID, uint32 killerID
                 && offer.stateID == Mission::State::Accepted
                 && offer.courierAmount > 0) {
                 offer.courierTypeID = (allMissionNPCsDestroyed
-                    ? offer.courierAmount
-                    : std::min<uint16>(pBubble->GetMissionKills(), offer.courierAmount));
+                    || pBubble->GetMissionKills() >= offer.courierAmount
+                    ? offer.courierAmount : pBubble->GetMissionKills());
                 pAgent->UpdateOffer(pBubble->GetMissionCharacterID(), offer);
                 Client* pClient = sEntityList.FindClientByCharID(pBubble->GetMissionCharacterID());
                 if (pClient != nullptr)
