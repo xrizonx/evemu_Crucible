@@ -2650,14 +2650,37 @@ Battleships 0.155
     m_mass = sRef->GetAttribute(AttrMass).get_float();
     m_massMKg = m_mass / 1000000; //changes mass from Kg to milliKg (10^-6)
 
-    // this will catch speeds/needs for all ships (player and npc), and is easier to do here.
-    // Dogma stores warpSpeedMultiplier as a factor of the standard 3 AU/s
-    // base speed. Destiny warp packets need the effective AU/s value (x10),
-    // not the raw dogma factor. Prefer the live attribute and fall back to
-    // the type default when the item attribute map has no explicit entry.
-    const float warpSpeedMultiplier = sRef->HasAttribute(AttrWarpSpeedMultiplier)
-        ? sRef->GetAttribute(AttrWarpSpeedMultiplier).get_float()
-        : sRef->GetDefaultAttribute(AttrWarpSpeedMultiplier).get_float();
+    // Ship warp speed is type-specific: dogma attribute 600 is the ship's
+    // warp-speed multiplier, applied to the Crucible-era 3 AU/s baseline.
+    // A persisted/live value near zero is invalid for a normal ship and was
+    // producing values such as 0.10 AU/s. Recover from the immutable type
+    // default so every hull uses its own database value rather than a
+    // hard-coded per-ship speed.
+    const float liveWarpSpeedMultiplier =
+        sRef->GetAttribute(AttrWarpSpeedMultiplier).get_float();
+    const float typeWarpSpeedMultiplier =
+        sRef->GetDefaultAttribute(AttrWarpSpeedMultiplier).get_float();
+    float warpSpeedMultiplier = liveWarpSpeedMultiplier;
+    if (liveWarpSpeedMultiplier <= 0.1f && typeWarpSpeedMultiplier > 0.1f) {
+        _log(
+            DESTINY__ERROR,
+            "Destiny::UpdateShipVariables(): %s(%u) has invalid live warpSpeedMultiplier %.6f; using type default %.6f.",
+            mySE->GetName(),
+            mySE->GetID(),
+            liveWarpSpeedMultiplier,
+            typeWarpSpeedMultiplier
+        );
+        warpSpeedMultiplier = typeWarpSpeedMultiplier;
+    }
+    if (warpSpeedMultiplier <= 0.0f) {
+        _log(
+            DESTINY__ERROR,
+            "Destiny::UpdateShipVariables(): %s(%u) has no valid warpSpeedMultiplier; using dogma default 3.0.",
+            mySE->GetName(),
+            mySE->GetID()
+        );
+        warpSpeedMultiplier = 3.0f;
+    }
     m_shipWarpSpeed = 3.0f * warpSpeedMultiplier;
     if (sRef->HasAttribute(AttrInetia))
         m_shipInertia = sRef->GetAttribute(AttrInetia).get_float();
