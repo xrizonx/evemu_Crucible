@@ -49,3 +49,34 @@ The search-result projection mismatch, defensive DB result conversion, and DB ro
 5. Test gameplay separately; compilation alone does not close a gameplay bug.
 6. Never run destructive migrations or reset the user's live database as part of issue triage.
 7. Update [PATCH_NOTES.md](PATCH_NOTES.md) after each committed fix and record its verification status here.
+
+
+## 2026-11-14 progress update — Blockade encounter and drone combat
+
+The following work is implemented on `combat-mission-drone-integration` and consolidated in [fork PR #11](https://github.com/xrizonx/evemu_Crucible/pull/11). This is a progress record for this fork; it does not change or close upstream issue records.
+
+| Work item | Implementation/progress | Evidence and remaining verification |
+|---|---|---|
+| Synthetic Blockade encounter fleet | Expanded the Angel Cartel group 550 test pocket to 24 frigates. | User confirmed 24 ships spawn, move and fire in-game. |
+| Kill objective | Explicit 24-kill target; initialized after generic Encounter setup; objective progress remains separate from objective type metadata. | Source path and payload corrected. Still verify the journal counter increments to 24/24 in a live client session. |
+| 120-minute mission duration | Special 120-minute accepted duration for synthetic mission 65535 only. | User confirmed the journal now reflects 120 minutes. Other mission timers remain unchanged. |
+| Reward persistence | 150,000 ISK reward stored through mission offer updates; old open synthetic offers with missing reward are normalized. | Source/SQL path corrected. Wallet credit still needs an end-to-end live turn-in check. |
+| Completion and turn-in | Complete action is gated by required kills; existing agent completion flow pays reward and removes the encounter site/offer. | Source-level path reviewed. Verify Complete unlock, successful turn-in, wallet journal entry and site cleanup in-game. |
+| Encounter kill target source | Offer target is derived from the mission pocket's required-kill value, not a generic NPC count. | Source-level correction; verify target against the spawned encounter. |
+| Drone combat | Removed duplicate global damage scaling; improved lock-complete activation, approach/engage transitions, invalid target cleanup, target-loss handling and client state/target synchronization. | CI build is the current automated check; dedicated server-side drone AI unit coverage is not present. Gameplay regression testing remains required. |
+
+### CI snapshot for the integrated code
+
+Workflow [#43593340656](https://github.com/xrizonx/evemu_Crucible/actions/runs/43593340656), head `b527d20d17d7dff570ad0dd7b001042593f20589`:
+
+- Docker image build: passed.
+- Linux GCC build/test invocation/package: passed.
+- Windows 64-bit UCRT64 GCC: still running at the time of this update; the final matrix is not yet fully green.
+
+The run must be checked again after the documentation commit, because a new branch head triggers a new validation run. A green compile is not a substitute for the live mission turn-in and drone gameplay checks above.
+
+### Fork PR housekeeping
+
+- PR #11 is the consolidated integration PR and is the merge candidate after all required CI jobs pass.
+- PR #8 (24-frigate encounter/reward), PR #9 (drone combat), and PR #10 (120-minute timer) overlap with the consolidated PR #11. Keep them open until #11 is successfully merged, then close them as superseded with a link to #11; do not independently merge duplicate branches.
+- The fork's issue tracker API is disabled in repository metadata (`has_issues=false`), so this Markdown triage file is the maintained progress tracker for this fork. The upstream issue tracker is separate and is not being marked closed by these changes.
