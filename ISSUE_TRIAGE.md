@@ -223,3 +223,31 @@ The run must be checked again after the documentation commit, because a new bran
 - Fresh compile/CI is required; no successful build is claimed yet.
 - In game, confirm journal shows the mission title and `0/24` initially, increments after each NPC death, displays the objective, and reaches `24/24`.
 - Test CmdEngage with multiple owned drones against a locked NPC target; verify they approach, orbit and apply damage. Also test invalid/unlocked targets, drones owned by another pilot, offline drones, aggressive retaliation, and passive behavior.
+
+## 2026-11-14 follow-up — drone combat and recovery lifecycle
+
+**Confirmed code-level blockers**
+- `DroneAIMgr::Target()` passed the drone's `maxAttackTargets` attribute directly to the NPC target manager. When static data omitted the attribute, the value was zero; the target manager rejects a target whenever current target count is greater than or equal to the limit. This prevented the drone from acquiring any target.
+- The AI treated a target outside immediate lock range as a hard failure, despite the target manager indicating that the drone should approach. There was no retained target ID/retry path.
+- Missing/zero static attributes could produce zero attack, orbit, chase or fly ranges and a zero weapon cycle.
+- The old drone hit-chance calculation used total relative velocity instead of transversal velocity and divided by unguarded tracking/signature/falloff values.
+- `CmdReturnHome`, `CmdReturnBay` and `CmdAbandonDrone` were still stubs that always reported drone control was not implemented.
+- `ShipSE::LaunchDrone()` moved and spawned a drone before checking bandwidth. A failed bandwidth check could leave an inert drone entity in space.
+
+**Fix pushed**
+- Clamp drone target capacity to at least one and provide a safe nonzero target-lock duration.
+- Supply conservative fallback values for incomplete drone static attributes.
+- Retain distant engage targets by entity ID, approach them, resolve them safely through the current system manager and retry target locking when they enter range.
+- Use transversal velocity in the drone tracking formula and guard invalid/missing tracking, signature, optimal-range and falloff values.
+- Validate damage attributes and damage multiplier before applying damage; emit a combat log entry for each drone firing cycle and a warning if the drone has no base damage configured.
+- Implement return-home/orbit, return-to-bay/automatic scoop within 2,500 m, and abandon commands.
+- Complete bay recovery after the AI tick, validate bay capacity, transfer the drone item, release bandwidth, clear target locks and remove the drone entity.
+- Validate bandwidth before launch side effects, preventing failed launches from leaving inert entities.
+
+**Validation still required**
+- Latest branch head must pass Windows, Linux and Docker CI.
+- In-game test light, medium and heavy combat drones separately against NPCs. Confirm target lock, approach from outside weapon range, orbit, firing effects, shield/armor/hull damage and target death.
+- Test multiple drones on one target and target switching after death.
+- Test return-home and verify drones orbit the ship without disappearing.
+- Test return-to-bay at close and long range; verify automatic travel, scoop, inventory transfer, drone count and bandwidth reduction.
+- Test a full drone bay, bandwidth overrun, abandoned drones and offline/foreign drones. No runtime success is claimed until these tests are performed.
