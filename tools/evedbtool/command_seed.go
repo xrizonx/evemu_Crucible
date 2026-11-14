@@ -284,11 +284,12 @@ CLEANUP
 -- Materialize existing sell orders for the selected stations once. The primary
 -- key makes the repeated station/type existence checks cheap, instead of
 -- running a correlated lookup against the full mktOrders table per candidate.
-CREATE TEMPORARY TABLE tExistingSellOrders (
+CREATE TEMPORARY TABLE IF NOT EXISTS tExistingSellOrders (
     stationID INT NOT NULL,
     typeID INT NOT NULL,
     PRIMARY KEY (stationID, typeID)
 ) ENGINE=InnoDB;
+TRUNCATE TABLE tExistingSellOrders;
 
 INSERT IGNORE INTO tExistingSellOrders (stationID, typeID)
 SELECT existing.stationID, existing.typeID
