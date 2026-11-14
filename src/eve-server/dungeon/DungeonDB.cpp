@@ -66,18 +66,16 @@ void DungeonDB::GetArchetypes(DBQueryResult& res)
 // entry/container objects for these templates in this data set.
 void DungeonDB::GetMissionTemplateData(DBQueryResult& res)
 {
+    // The dungeonEditor migration (20211118111620) deliberately flattens
+    // dunRoomData + dunGroupData into dunRoomObjects, then drops the source
+    // tables. Read the flattened table used by the live database schema.
     if (!sDatabase.RunQuery(res,
         "SELECT t.dunTemplateID, t.dunTemplateName, 0, t.dunTemplateFactionID, 20, "
-        "t.dunRoomID, t.dunTemplateName, gd.dunGroupID, gd.typeID, gd.groupID, "
-        "COALESCE(rd.x, 0) + COALESCE(gd.x, 0), "
-        "COALESCE(rd.y, 0) + COALESCE(gd.y, 0), "
-        "COALESCE(rd.z, 0) + COALESCE(gd.z, 0), "
-        "0, 0, 0, 0 "
+        "t.dunRoomID, t.dunTemplateName, o.objectID, o.typeID, o.groupID, "
+        "o.x, o.y, o.z, o.yaw, o.pitch, o.roll, o.radius "
         "FROM dunTemplates t "
-        "INNER JOIN dunRoomData rd ON rd.dunRoomID = t.dunRoomID "
-        "INNER JOIN dunGroupData gd ON gd.dunGroupID = rd.dunGroupID "
-        "WHERE gd.typeID IS NOT NULL AND gd.typeID <> 0 "
-        "ORDER BY t.dunTemplateID, gd.dunGroupID, gd.typeID"))
+        "INNER JOIN dunRoomObjects o ON o.roomID = t.dunRoomID "
+        "ORDER BY t.dunTemplateID, o.objectID"))
         _log(DATABASE__ERROR, "Error in GetMissionTemplateData query: %s", res.error.c_str());
 }
 
