@@ -112,6 +112,18 @@ func (c *SeedCommand) Run(args []string) int {
 	} else {
 		log.Info("Successfully applied market seed to ", len(regionArray), " configured region(s).")
 	}
+
+	// Force runs use a unique timestamped migration ID. Retain only the latest
+	// successful force marker so seed_migrations does not grow indefinitely.
+	// This also removes stale IDs left by earlier EVEDBTool versions.
+	if force {
+		result, cleanupErr := db.Exec("DELETE FROM seed_migrations WHERE LEFT(id, 12) = 'SEED_MARKET_' AND id <> ?", migrationID)
+		if cleanupErr != nil {
+			log.Warn("Market seed succeeded, but old force migration markers could not be cleaned up: ", cleanupErr)
+		} else if removed, rowsErr := result.RowsAffected(); rowsErr == nil && removed > 0 {
+			log.Info("Removed ", removed, " obsolete market seed migration marker(s).")
+		}
+	}
 	return 0
 }
 
@@ -251,12 +263,12 @@ SET @regionid = RVAL;
 SET @saturation = SVAL;
 
 CREATE TEMPORARY TABLE IF NOT EXISTS tStations (
-    stationId INT,
+    stationId INT NOT NULL PRIMARY KEY,
     solarSystemID INT,
     regionID INT,
     corporationID INT,
     security FLOAT
-);
+) ENGINE=InnoDB;
 TRUNCATE TABLE tStations;
 
 -- Select each station independently so the configured saturation works
@@ -268,6 +280,23 @@ WHERE regionID = @regionid
   AND RAND() < @saturation;
 
 CLEANUP
+
+-- Materialize existing sell orders for the selected stations once. The primary
+-- key makes the repeated station/type existence checks cheap, instead of
+-- running a correlated lookup against the full mktOrders table per candidate.
+CREATE TEMPORARY TABLE IF NOT EXISTS tExistingSellOrders (
+    stationID INT NOT NULL,
+    typeID INT NOT NULL,
+    PRIMARY KEY (stationID, typeID)
+) ENGINE=InnoDB;
+TRUNCATE TABLE tExistingSellOrders;
+
+INSERT IGNORE INTO tExistingSellOrders (stationID, typeID)
+SELECT existing.stationID, existing.typeID
+FROM tStations AS stations
+INNER JOIN mktOrders AS existing
+    ON existing.stationID = stations.stationId
+WHERE existing.bid = 0;
 
 -- Standard published market items, including 550,000 units of charges/ammunition.
 INSERT INTO mktOrders
@@ -293,14 +322,20 @@ SELECT
 FROM tStations AS stations
 CROSS JOIN invTypes AS it
 INNER JOIN invGroups AS ig ON it.groupID = ig.groupID
+LEFT JOIN tExistingSellOrders AS existing
+    ON existing.stationID = stations.stationId
+   AND existing.typeID = it.typeID
 WHERE it.published = 1
   AND ig.categoryID IN (4, 5, 6, 7, 8, 9, 16, 17, 18, 22, 23, 24, 25, 32, 34, 35, 39, 40, 41, 42, 43, 46)
-  AND NOT EXISTS (
-      SELECT 1 FROM mktOrders AS existing
-      WHERE existing.stationID = stations.stationId
-        AND existing.typeID = it.typeID
-        AND existing.bid = 0
-  );
+  AND existing.stationID IS NULL;
+
+-- Add newly seeded orders to the lookup table before considering rare modules.
+INSERT IGNORE INTO tExistingSellOrders (stationID, typeID)
+SELECT existing.stationID, existing.typeID
+FROM tStations AS stations
+INNER JOIN mktOrders AS existing
+    ON existing.stationID = stations.stationId
+WHERE existing.bid = 0;
 
 -- Officer, Deadspace, Faction and Storyline modules.
 INSERT INTO mktOrders
@@ -328,14 +363,12 @@ CROSS JOIN invTypes AS it
 INNER JOIN invGroups AS ig ON it.groupID = ig.groupID
 INNER JOIN invMetaTypes AS imt ON it.typeID = imt.typeID
 INNER JOIN invMetaGroups AS mg ON imt.metaGroupID = mg.metaGroupID
+LEFT JOIN tExistingSellOrders AS existing
+    ON existing.stationID = stations.stationId
+   AND existing.typeID = it.typeID
 WHERE ig.categoryID = 7
   AND LOWER(COALESCE(mg.metaGroupName, '')) IN ('officer', 'deadspace', 'faction', 'storyline')
-  AND NOT EXISTS (
-      SELECT 1 FROM mktOrders AS existing
-      WHERE existing.stationID = stations.stationId
-        AND existing.typeID = it.typeID
-        AND existing.bid = 0
-  );
+  AND existing.stationID IS NULL;
 `
 
 	replacer := strings.NewReplacer(
