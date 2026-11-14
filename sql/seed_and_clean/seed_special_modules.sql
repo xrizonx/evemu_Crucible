@@ -47,10 +47,12 @@ LEFT JOIN invMetaTypes AS imt
     ON it.typeID = imt.typeID
 LEFT JOIN invMetaGroups AS mg
     ON imt.metaGroupID = mg.metaGroupID
-WHERE it.published = 1
-   OR LOWER(COALESCE(mg.metaGroupName, '')) IN
-      ('officer', 'deadspace', 'faction', 'storyline')
-AND ig.categoryID = 7
+WHERE ig.categoryID = 7
+  AND (
+      it.published = 1
+      OR LOWER(COALESCE(mg.metaGroupName, '')) IN
+         ('officer', 'deadspace', 'faction', 'storyline')
+  )
 AND NOT EXISTS (
     SELECT 1
     FROM mktOrders AS existing
