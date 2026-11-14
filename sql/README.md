@@ -10,7 +10,7 @@ The `sql/` directory is included in the Windows and Linux release packages. It c
 - Schema changes: `migrations/`
 - Base database files: `base/`
 
-The release workflow builds EVEDBTool from the upstream 0.0.6 source and replaces its market-seed command with the maintained implementation in `tools/evedbtool/command_seed.go`. Both Windows and Linux packages therefore contain the same patched market-seeding behaviour.
+The release workflow builds EVEDBTool from the upstream 0.0.6 source and replaces its market-seed command with the maintained implementation in `tools/evedbtool/command_seed.go`. Both Windows and Linux packages therefore contain the same patched market-seeding behaviour. The standalone `get_evedbtool.bat` and `get_evedbtool.sh` scripts do the same source build locally and require Git plus Go 1.23 or newer.
 
 ## Configure the database tool
 
