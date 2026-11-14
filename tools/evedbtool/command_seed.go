@@ -91,6 +91,10 @@ func (c *SeedCommand) Run(args []string) int {
 	}
 
 	migrate.SetTable("seed_migrations")
+	// This dedicated seed history may contain IDs from older EVEDBTool builds.
+	// Each force run uses a unique ID and only moves forward; do not block it
+	// because a legacy seed ID is absent from this in-memory migration source.
+	migrate.SetIgnoreUnknown(true)
 	migrations, err := buildSeedMigrations(db, migrationID, seedQueries)
 	if err != nil {
 		log.Error("Unable to prepare market seed migration history: ", err)
