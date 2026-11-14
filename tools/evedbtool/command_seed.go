@@ -251,8 +251,7 @@ WHERE oldOrder.regionID = @regionid
           INNER JOIN invGroups AS rareGroup ON rareType.groupID = rareGroup.groupID
           INNER JOIN invMetaTypes AS metaType ON rareType.typeID = metaType.typeID
           INNER JOIN invMetaGroups AS metaGroup ON metaType.metaGroupID = metaGroup.metaGroupID
-          WHERE rareGroup.categoryID = 7
-            AND LOWER(COALESCE(metaGroup.metaGroupName, '')) IN ('officer', 'deadspace', 'faction', 'storyline')
+          WHERE LOWER(COALESCE(metaGroup.metaGroupName, '')) IN ('officer', 'deadspace', 'faction', 'storyline')
       )
   );
 `
@@ -366,8 +365,7 @@ INNER JOIN invMetaGroups AS mg ON imt.metaGroupID = mg.metaGroupID
 LEFT JOIN tExistingSellOrders AS existing
     ON existing.stationID = stations.stationId
    AND existing.typeID = it.typeID
-WHERE ig.categoryID = 7
-  AND LOWER(COALESCE(mg.metaGroupName, '')) IN ('officer', 'deadspace', 'faction', 'storyline')
+WHERE LOWER(COALESCE(mg.metaGroupName, '')) IN ('officer', 'deadspace', 'faction', 'storyline')
   AND existing.stationID IS NULL;
 `
 

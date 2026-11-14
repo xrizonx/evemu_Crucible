@@ -48,7 +48,7 @@ The patched `seed` command generates SQL from the same market rules as the repos
 
 - Published market items are seeded across the selected stations.
 - Charge/ammunition category items receive 550,000 units; other standard items receive 550.
-- Officer, Deadspace, Faction and Storyline modules receive 10 units each where no sell order already exists.
+- Officer, Deadspace, Faction and Storyline meta-group equipment receive 10 units each where no sell order already exists, regardless of inventory category.
 - Prices are guarded against null/zero base prices and zero/negative station security.
 - A normal first seed uses the existing `SEED_MARKET` migration marker. To explicitly rebuild the configured regional markets, use `-force`.
 
