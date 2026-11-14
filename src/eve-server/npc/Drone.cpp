@@ -207,6 +207,9 @@ void DroneSE::Abandon() {
  */
 
 void DroneSE::StateChange() {
+    if (m_bubble == nullptr)
+        return;
+
     //OnDroneStateChange(droneID, ownerID, controllerID, activityState, droneTypeID, controllerOwnerID, targetID)
     if (m_online) {
         OnDroneStateChange du;
@@ -238,11 +241,26 @@ void DroneSE::StateChange() {
 }
 
 void DroneSE::TargetAdded(SystemEntity* who) {
-    /** @todo (Allan) will need code once drones are implemented */
+    if (who == nullptr)
+        return;
+
+    SetTarget(who);
+    StateChange();
 }
 
 void DroneSE::TargetLost(SystemEntity *who) {
+    if (who != nullptr && m_targetID == who->GetID())
+        SetTarget();
+
     m_AI->TargetLost(who);
+
+    // Keep the client-visible target in sync when another locked target remains.
+    if (TargetMgr() != nullptr) {
+        SystemEntity* nextTarget = TargetMgr()->GetFirstTarget(true);
+        if (nextTarget != nullptr)
+            SetTarget(nextTarget);
+    }
+    StateChange();
 }
 
 void DroneSE::TargetedAdd(SystemEntity *who) {
@@ -250,7 +268,11 @@ void DroneSE::TargetedAdd(SystemEntity *who) {
 }
 
 void DroneSE::TargetedLost(SystemEntity* who) {
-    /** @todo (Allan) will need code once drones are implemented */
+    // This callback means another entity stopped locking this drone. It does not
+    // change the drone's own target or combat state.
+    if (who != nullptr)
+        _log(DRONE__AI_TRACE, "Drone %s(%u): %s(%u) stopped targeting it.",
+             GetName(), GetID(), who->GetName(), who->GetID());
 }
 
 PyDict* DroneSE::MakeSlimItem() {
