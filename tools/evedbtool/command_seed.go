@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
 	"fmt"
 	"os"
@@ -82,9 +83,6 @@ func (c *SeedCommand) Run(args []string) int {
 		migrationID += "_" + strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 	}
 
-	migrations := []*migrate.Migration{buildSeedMigration(migrationID, seedQueries)}
-	source := &migrate.MemoryMigrationSource{Migrations: migrations}
-
 	db := getDB()
 	defer db.Close()
 	if err := db.Ping(); err != nil {
@@ -93,6 +91,12 @@ func (c *SeedCommand) Run(args []string) int {
 	}
 
 	migrate.SetTable("seed_migrations")
+	migrations, err := buildSeedMigrations(db, migrationID, seedQueries)
+	if err != nil {
+		log.Error("Unable to prepare market seed migration history: ", err)
+		return 1
+	}
+	source := &migrate.MemoryMigrationSource{Migrations: migrations}
 	log.Info("Executing market seed migration ", migrationID, "...")
 	n, err := migrate.Exec(db, "mysql", source, migrate.Up)
 	if err != nil {
@@ -113,6 +117,48 @@ func buildSeedMigration(id string, seedQueries []string) *migrate.Migration {
 		Up:   seedQueries,
 		Down: []string{},
 	}
+}
+
+// buildSeedMigrations includes no-op representations of previously applied
+// seed migrations. sql-migrate rejects a database containing migration IDs
+// that are absent from its source; force runs use unique IDs, so without these
+// placeholders the next run would fail on the previous SEED_MARKET_* entry.
+func buildSeedMigrations(db *sql.DB, currentID string, seedQueries []string) ([]*migrate.Migration, error) {
+	// Ensure the custom migration table exists before reading its history.
+	// This matches sql-migrate's MySQL table layout.
+	_, err := db.Exec("CREATE TABLE IF NOT EXISTS seed_migrations (id VARCHAR(255) NOT NULL PRIMARY KEY, applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)")
+	if err != nil {
+		return nil, fmt.Errorf("create seed_migrations table: %w", err)
+	}
+
+	rows, err := db.Query("SELECT id FROM seed_migrations")
+	if err != nil {
+		return nil, fmt.Errorf("read seed_migrations history: %w", err)
+	}
+	defer rows.Close()
+
+	migrations := make([]*migrate.Migration, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("read seed migration ID: %w", err)
+		}
+		if id == currentID {
+			continue
+		}
+		migrations = append(migrations, &migrate.Migration{
+			Id:   id,
+			Up:   []string{},
+			Down: []string{},
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate seed_migrations history: %w", err)
+	}
+
+	// Keep the real SQL only on the migration being applied in this run.
+	migrations = append(migrations, buildSeedMigration(currentID, seedQueries))
+	return migrations, nil
 }
 
 func getQuery(regionValue string, saturation int, force bool) string {
