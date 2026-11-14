@@ -21,6 +21,7 @@ DroneAIMgr::DroneAIMgr(DroneSE* who)
 : m_state(DroneAI::State::Idle),
   m_pDrone(who),
   m_assignedShip(nullptr),
+  m_pendingTarget(nullptr),
   m_returnToBay(false),
   m_scoopRequested(false),
   m_mainAttackTimer(0),// dont start timer until we have a target
@@ -86,6 +87,36 @@ void DroneAIMgr::Process() {
      *   Assisting         = 12,
      *   Incapacitated     = 13  // out of control range, but online
      */
+
+    // A target outside immediate lock range is retained while the drone
+    // approaches. Without this pending-target path, StartTargeting() returns
+    // false and the drone silently abandons otherwise valid engage commands.
+    if (m_pendingTarget != nullptr) {
+        SystemEntity* pending = m_pendingTarget;
+        if (pending->SysBubble() == nullptr || pending->SysBubble() != m_pDrone->SysBubble()
+            || pending->DestinyMgr() == nullptr) {
+            m_pendingTarget = nullptr;
+            SetIdle();
+            return;
+        }
+        const double commandRange = (m_entityChaseRange > m_entityAttackRange)
+            ? m_entityChaseRange : m_entityAttackRange;
+        const double distance = m_pDrone->GetPosition().distance(pending->GetPosition());
+        if (distance <= commandRange) {
+            m_pendingTarget = nullptr;
+            Target(pending);
+        } else {
+            if (m_pDrone->DestinyMgr() != nullptr
+                && (!m_pDrone->DestinyMgr()->IsFollowing()
+                    || m_pDrone->DestinyMgr()->GetTargetID() != pending->GetID())) {
+                m_pDrone->DestinyMgr()->SetMaxVelocity(m_chaseSpeed);
+                m_pDrone->DestinyMgr()->Follow(pending, m_entityFlyRange);
+                m_state = DroneAI::State::Approaching;
+                m_pDrone->StateChange();
+            }
+            return;
+        }
+    }
 
     // test for drone attributes here - aggressive, focus fire, attack/follow
     // test for control distance here also.  offline drones outside this  (AttrDroneControlDistance)
@@ -176,6 +207,7 @@ void DroneAIMgr::Return(bool returnToBay) {
     if (m_pDrone->TargetMgr() != nullptr)
         m_pDrone->TargetMgr()->ClearAllTargets();
 
+    m_pendingTarget = nullptr;
     m_returnToBay = returnToBay;
     m_scoopRequested = false;
     m_mainAttackTimer.Disable();
@@ -195,6 +227,7 @@ void DroneAIMgr::SetIdle() {
     _log(DRONE__AI_TRACE, "Drone %s(%u): SetIdle: returning to idle.",
          m_pDrone->GetName(), m_pDrone->GetID());
     m_state = DroneAI::State::Idle;
+    m_pendingTarget = nullptr;
     m_returnToBay = false;
     m_scoopRequested = false;
 
@@ -295,6 +328,19 @@ void DroneAIMgr::Target(SystemEntity* pTarget) {
     bool chase = false;
     const double commandRange = (m_entityChaseRange > m_entityAttackRange)
         ? m_entityChaseRange : m_entityAttackRange;
+    const double distance = m_pDrone->GetPosition().distance(pTarget->GetPosition());
+    if (distance > commandRange) {
+        m_pendingTarget = pTarget;
+        m_pDrone->DestinyMgr()->SetMaxVelocity(m_chaseSpeed);
+        m_pDrone->DestinyMgr()->Follow(pTarget, m_entityFlyRange);
+        m_state = DroneAI::State::Approaching;
+        m_mainAttackTimer.Disable();
+        m_pDrone->StateChange();
+        _log(DRONE__AI_TRACE, "Drone %s(%u): Approaching target %s(%u) to enter %.0f m lock range.",
+             m_pDrone->GetName(), m_pDrone->GetID(), pTarget->GetName(), pTarget->GetID(), commandRange);
+        return;
+    }
+    m_pendingTarget = nullptr;
     uint32 maxTargets = m_pDrone->GetSelf()->GetAttribute(AttrMaxAttackTargets).get_uint32();
     if (maxTargets == 0)
         maxTargets = 1; // many combat drone types omit this NPC targeting attribute
@@ -373,6 +419,8 @@ void DroneAIMgr::TargetLost(SystemEntity* pTarget) {
     if (m_pDrone == nullptr || m_pDrone->TargetMgr() == nullptr)
         return;
 
+    if (pTarget != nullptr && m_pendingTarget == pTarget)
+        m_pendingTarget = nullptr;
     const char* targetName = (pTarget != nullptr) ? pTarget->GetName() : "<unknown>";
     const uint32 targetID = (pTarget != nullptr) ? pTarget->GetID() : 0;
     if (m_pDrone->TargetMgr()->HasNoTargets()) {
