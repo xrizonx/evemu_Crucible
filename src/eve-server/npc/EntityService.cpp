@@ -345,12 +345,30 @@ PyResult EntityBound::CmdReturnHome(PyCallArgs &call, PyList* droneIDs) {
 */
     call.Dump(DRONE__DUMP);
 
-    //Drone* pDrone = m_sysMgr->GetSE()->GetDroneSE();
-    //pDrone->DestinyMgr()->Orbit(pShipSE, 800);
+    Client* pClient = call.client;
+    ShipSE* pShipSE = (pClient != nullptr) ? pClient->GetShipSE() : nullptr;
+    if (pClient == nullptr || pShipSE == nullptr || m_sysMgr == nullptr
+        || pClient->SystemMgr() != m_sysMgr || m_sysMgr->GetID() != m_systemID)
+        return PyStatic.mtDict();
 
+    uint32 returned = 0;
+    for (PyRep* rep : droneIDs->items) {
+        if (rep == nullptr || !rep->IsInt())
+            continue;
+        SystemEntity* entity = m_sysMgr->GetSE(rep->AsInt()->value());
+        if (entity == nullptr || !entity->IsDroneSE())
+            continue;
+        DroneSE* drone = entity->GetDroneSE();
+        if (drone == nullptr || !drone->IsEnabled() || drone->GetOwner() != pClient
+            || drone->GetHomeShip() != pShipSE || drone->GetAI() == nullptr)
+            continue;
+        drone->GetAI()->Return(false);
+        ++returned;
+    }
 
-    call.client->SendNotifyMsg("Drone Control is not implemented yet.");
-    return new PyDict();
+    if (returned == 0)
+        pClient->SendNotifyMsg("No active drones under your control were selected to return.");
+    return PyStatic.mtDict();
 }
 
 PyResult EntityBound::CmdReturnBay(PyCallArgs &call, PyList* droneIDs) {
@@ -386,21 +404,30 @@ PyResult EntityBound::CmdReturnBay(PyCallArgs &call, PyList* droneIDs) {
     _log(DRONE__TRACE, "EntityBound::Handle_CmdReturnBay()");
     call.Dump(DRONE__DUMP);
 
-    call.client->SendNotifyMsg("Drone Control is not implemented yet.");
+    Client* pClient = call.client;
+    ShipSE* pShipSE = (pClient != nullptr) ? pClient->GetShipSE() : nullptr;
+    if (pClient == nullptr || pShipSE == nullptr || m_sysMgr == nullptr
+        || pClient->SystemMgr() != m_sysMgr || m_sysMgr->GetID() != m_systemID)
+        return PyStatic.mtDict();
 
-    // returns nodeID and timestamp and dict of error msg
-    /*
-    PyDict* dict = new PyDict();
-    PyTuple* tuple = new PyTuple(2);
-        tuple->SetItem(0, new PyString(GetBindStr()));    // node info here
-        tuple->SetItem(1, new PyLong(GetFileTimeNow()));
-    PySubStruct* str = new PySubStruct(new PySubStream(tuple));
-    PyTuple* tuple1 = new PyTuple(2);
-        tuple1->SetItem(0, str);
-        tuple1->SetItem(1, dict);
-    return tuple1;
-    */
-    return new PyDict();
+    uint32 returning = 0;
+    for (PyRep* rep : droneIDs->items) {
+        if (rep == nullptr || !rep->IsInt())
+            continue;
+        SystemEntity* entity = m_sysMgr->GetSE(rep->AsInt()->value());
+        if (entity == nullptr || !entity->IsDroneSE())
+            continue;
+        DroneSE* drone = entity->GetDroneSE();
+        if (drone == nullptr || !drone->IsEnabled() || drone->GetOwner() != pClient
+            || drone->GetHomeShip() != pShipSE || drone->GetAI() == nullptr)
+            continue;
+        drone->GetAI()->Return(true);
+        ++returning;
+    }
+
+    if (returning == 0)
+        pClient->SendNotifyMsg("No active drones under your control were selected to return to the drone bay.");
+    return PyStatic.mtDict();
 }
 
 PyResult EntityBound::CmdAbandonDrone(PyCallArgs &call, PyList* droneIDs) {
@@ -415,8 +442,29 @@ PyResult EntityBound::CmdAbandonDrone(PyCallArgs &call, PyList* droneIDs) {
     _log(DRONE__TRACE, "EntityBound::Handle_CmdAbandonDrone()");
     call.Dump(DRONE__DUMP);
 
-    call.client->SendNotifyMsg("Drone Control is not implemented yet.");
-    return new PyDict();
+    Client* pClient = call.client;
+    if (pClient == nullptr || m_sysMgr == nullptr || pClient->SystemMgr() != m_sysMgr)
+        return PyStatic.mtDict();
+
+    uint32 abandoned = 0;
+    for (PyRep* rep : droneIDs->items) {
+        if (rep == nullptr || !rep->IsInt())
+            continue;
+        SystemEntity* entity = m_sysMgr->GetSE(rep->AsInt()->value());
+        if (entity == nullptr || !entity->IsDroneSE())
+            continue;
+        DroneSE* drone = entity->GetDroneSE();
+        if (drone == nullptr || !drone->IsEnabled() || drone->GetOwner() != pClient)
+            continue;
+        if (drone->GetHomeShip() != nullptr)
+            drone->GetHomeShip()->ScoopDrone(drone);
+        drone->Abandon();
+        ++abandoned;
+    }
+
+    if (abandoned == 0)
+        pClient->SendNotifyMsg("No active drones under your control were selected to abandon.");
+    return PyStatic.mtDict();
 }
 
 PyResult EntityBound::CmdReconnectToDrones(PyCallArgs &call, PyList* droneCandidates) {
