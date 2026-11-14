@@ -121,12 +121,21 @@ void DroneSE::Process() {
         return;
     double profileStartTime(GetTimeUSeconds());
 
-    /*  Enable base call to Process Targeting and Movement  */
+    // Process movement and target-lock timers before running drone combat AI.
     SystemEntity::Process();
 
-    /** @todo (allan) finish drone AI and processing */
-    if (m_online)
+    if (m_online && m_AI != nullptr) {
         m_AI->Process();
+        // Complete the inventory/system removal outside the AI call so the AI
+        // object is not destroyed while one of its methods is still executing.
+        if (m_AI->IsScoopRequested()) {
+            if (ScoopToBay())
+                return; // this entity has been removed and deleted
+            if (m_pClient != nullptr)
+                m_pClient->SendNotifyMsg("The drone could not be returned to the drone bay. Check your drone bay capacity.");
+            m_AI->Return(false);
+        }
+    }
 
     if (sConfig.debug.UseProfiling)
         sProfiler.AddTime(Profile::drone, GetTimeUSeconds() - profileStartTime);
@@ -164,11 +173,42 @@ void DroneSE::Online(ShipSE* pShipSE/*nullptr*/) {
 }
 
 void DroneSE::Offline() {
-    // this is called by abandon also
-    m_destiny->Stop();
-    m_AI->AssignShip(nullptr);
+    // This is called by scoop and abandon. Clear combat locks before releasing
+    // control so neither side retains stale target references.
+    if (m_AI != nullptr)
+        m_AI->ClearAllTargets();
+    if (m_destiny != nullptr)
+        m_destiny->Stop();
+    if (m_AI != nullptr)
+        m_AI->AssignShip(nullptr);
     m_online = false;
     StateChange();
+}
+
+bool DroneSE::ScoopToBay() {
+    if (!m_online || m_pClient == nullptr || m_pShipSE == nullptr
+        || m_system == nullptr || m_self.get() == nullptr)
+        return false;
+
+    // EVE's normal drone scoop interaction range is 2,500 metres.
+    if (GetPosition().distance(m_pShipSE->GetPosition()) > 2500.0)
+        return false;
+
+    ShipItemRef ship = m_pClient->GetShip();
+    if (ship.get() == nullptr || ship->itemID() != m_pShipSE->GetID())
+        return false;
+
+    if (!ship->GetMyInventory()->ValidateAddItem(flagDroneBay, m_self))
+        return false;
+
+    m_self->ChangeOwner(m_pClient->GetCharacterID(), true);
+    m_pClient->MoveItem(m_self->itemID(), ship->itemID(), flagDroneBay);
+
+    ShipSE* homeShip = m_pShipSE;
+    homeShip->ScoopDrone(this);
+    m_system->RemoveEntity(this);
+    SafeDelete(this);
+    return true;
 }
 
 void DroneSE::IdleOrbit(ShipSE* pShipSE/*nullptr*/) {
