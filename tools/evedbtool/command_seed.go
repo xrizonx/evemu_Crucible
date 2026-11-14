@@ -209,17 +209,13 @@ CREATE TEMPORARY TABLE IF NOT EXISTS tStations (
 );
 TRUNCATE TABLE tStations;
 
-SELECT ROUND(COUNT(stationID) * @saturation)
-INTO @stationLimit
-FROM staStations
-WHERE regionID = @regionid;
-
+-- Select each station independently so the configured saturation works
+-- without relying on server-specific LIMIT user-variable behaviour.
 INSERT INTO tStations (stationId, solarSystemID, regionID, corporationID, security)
 SELECT stationID, solarSystemID, regionID, corporationID, security
 FROM staStations
 WHERE regionID = @regionid
-ORDER BY RAND()
-LIMIT @stationLimit;
+  AND RAND() < @saturation;
 
 CLEANUP
 
