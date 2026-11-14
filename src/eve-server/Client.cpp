@@ -2022,9 +2022,15 @@ bool Client::StartEncounterMission(MissionOffer& offer)
 
     // Use the beacon's actual bubble so the warpable signal and NPC wave are co-located.
     pBubble = pBeacon->SysBubble();
+    _log(AGENT__MESSAGE,
+        "Client::StartEncounterMission() - accepting offer %u mission %u (level %u, agent %u, faction %u, dungeon %u).",
+        offer.offerID, offer.missionID, offer.range, offer.agentID, agentFactionID, missionDungeonID);
     if (pBubble == nullptr || !m_system->GetSpawnMgr()->DoSpawnForMission(
             pBubble, m_system->GetRegionID(), offer.range, m_char->itemID(),
             offer.agentID, offer.offerID, offer.missionID, beacon->itemID(), agentFactionID, missionDungeonID)) {
+        _log(AGENT__ERROR,
+            "Client::StartEncounterMission() - spawn failed for offer %u mission %u.",
+            offer.offerID, offer.missionID);
         m_system->RemoveEntity(pBeacon);
         beacon->Delete();
         SafeDelete(pBeacon);
