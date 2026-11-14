@@ -325,14 +325,24 @@ void SpawnMgr::SpawnKilled(SystemBubble* pBubble, uint32 itemID, uint32 killerID
         RemoveSpawn(pBubble->GetID(), itemID);
 
         const bool missionKillRecorded = pBubble->RecordMissionKill();
-        const bool allMissionNPCsDestroyed = (m_spawns.count(pBubble->GetID()) == 0);
+        const uint32 liveNPCsIncludingDyingShip = pBubble->CountNPCs();
+        // NPC::Killed runs while the dying NPC may still be in the bubble.
+        // <= 1 therefore means this was the final live hostile in this
+        // dedicated mission pocket, even if the spawn registry retained rows.
+        const bool allMissionNPCsDestroyed =
+            (m_spawns.count(pBubble->GetID()) == 0 || liveNPCsIncludingDyingShip <= 1);
 
-        // The last hostile must always close the objective. Some kill sources
-        // can arrive here without a resolvable player Client/killerID, which
-        // means RecordMissionKill() intentionally declines the ordinary
-        // per-kill increment. Once the mission's spawn registry is empty,
-        // there are no remaining required hostiles, so persist the objective
-        // as complete instead of leaving the journal permanently incomplete.
+        _log(SPAWN__ERROR,
+            "Mission kill event: offer %u, NPC %u, bubble %u, live NPCs (including dying ship) %u, registry entries %u, kill counter %u/%u.",
+            pBubble->GetMissionOfferID(), itemID, pBubble->GetID(),
+            liveNPCsIncludingDyingShip,
+            static_cast<uint32>(m_spawns.count(pBubble->GetID())),
+            pBubble->GetMissionKills(), pBubble->GetMissionKillsRequired());
+
+        // The final live NPC closes the objective even if stale spawn rows remain.
+        if (allMissionNPCsDestroyed)
+            m_spawns.erase(pBubble->GetID());
+
         if (missionKillRecorded || allMissionNPCsDestroyed) {
             Agent* pAgent = sEntityList.GetAgent(pBubble->GetMissionAgentID());
             MissionOffer offer = MissionOffer();
@@ -360,6 +370,10 @@ void SpawnMgr::SpawnKilled(SystemBubble* pBubble, uint32 itemID, uint32 killerID
         }
 
         if (allMissionNPCsDestroyed) {
+            _log(SPAWN__ERROR,
+                "Mission offer %u marked ready for turn-in: all live NPCs cleared; objective is %u/%u.",
+                pBubble->GetMissionOfferID(), pBubble->GetMissionKillsRequired(),
+                pBubble->GetMissionKillsRequired());
             auto bubbleItr = std::find(m_bubbles.begin(), m_bubbles.end(), pBubble);
             if (bubbleItr != m_bubbles.end())
                 m_bubbles.erase(bubbleItr);
