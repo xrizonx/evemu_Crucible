@@ -324,7 +324,10 @@ void DroneAIMgr::TargetAcquired(SystemEntity* pTarget) {
 }
 
 void DroneAIMgr::Target(SystemEntity* pTarget) {
-    if (pTarget == nullptr || m_pDrone->TargetMgr() == nullptr) {
+    if (pTarget == nullptr || m_pDrone == nullptr || m_pDrone->GetSelf().get() == nullptr
+        || m_pDrone->TargetMgr() == nullptr || m_pDrone->DestinyMgr() == nullptr
+        || pTarget->DestinyMgr() == nullptr || pTarget->SysBubble() == nullptr
+        || pTarget->SysBubble() != m_pDrone->SysBubble()) {
         SetIdle();
         return;
     }
@@ -347,6 +350,8 @@ void DroneAIMgr::Target(SystemEntity* pTarget) {
     uint32 maxTargets = m_pDrone->GetSelf()->GetAttribute(AttrMaxAttackTargets).get_uint32();
     if (maxTargets == 0)
         maxTargets = 1; // many combat drone types omit this NPC targeting attribute
+    if (maxTargets > 255)
+        maxTargets = 255;
     uint32 lockTime = m_pDrone->GetSelf()->GetAttribute(AttrScanSpeed).get_uint32();
     if (lockTime == 0)
         lockTime = 1000;
