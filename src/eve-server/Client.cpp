@@ -2044,7 +2044,9 @@ bool Client::StartEncounterMission(MissionOffer& offer)
     offer.dungeonLocationID = pBubble->GetID();
     offer.dungeonSolarSystemID = m_system->GetID();
     offer.courierTypeID = 0;
-    offer.courierAmount = static_cast<uint16>(pBubble->CountNPCs());
+    // Use the exact kill requirement recorded by the mission pocket, rather
+    // than a generic entity count that may include non-objective NPCs.
+    offer.courierAmount = static_cast<uint16>(pBubble->GetMissionKillsRequired());
 
     // The mission journal reads its warp destinations from bookmarks, not
     // directly from destinationID. Use the standard util.KeyVal bookmark

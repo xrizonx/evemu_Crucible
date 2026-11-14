@@ -250,7 +250,7 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
                 // Give this combat test a full two hours after acceptance.
                 const uint32 missionDurationMinutes =
                     (offer.missionID == Mission::kBlockadeSecurityTestMissionID)
-                        ? 120
+                        ? Mission::kBlockadeSecurityTestDurationMinutes
                         : (30 * m_agent->GetLevel());
                 offer.expiryTime = GetFileTimeNow() + (missionDurationMinutes * EvE::Time::Minute);
                 if (offer.typeID != Mission::Type::Encounter && offer.courierTypeID) {
