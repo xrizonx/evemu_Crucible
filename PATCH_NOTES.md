@@ -152,3 +152,12 @@ A follow-up review found that the mission pocket's final-spawn cleanup and the m
 The synthetic Blockade reward/kill target assignment in `Agent::MakeOffer()` has also been moved to after generic Encounter initialization, which resets courier fields. This ensures the offered mission itself carries its objective and reward rather than relying only on the acceptance-time pocket setup.
 
 **Verification status:** source-level path corrected; automated build validation pending for the new commit. A live 24-kill run must still confirm 24/24 journal progress, Complete action availability, successful turn-in, 150,000 ISK wallet journal credit and encounter-site cleanup. Do not mark this as gameplay-verified until that test is performed.
+
+
+## 2026-11-14 follow-up — Blockade objective accounting and mixed fleet
+
+- Changed mission-pocket kill accounting so every NPC death reported by SpawnMgr advances the mission kill objective, even when the damage source cannot be resolved to an online player Client. The encounter pocket, rather than kill-credit ownership, is authoritative for this synthetic kill-all objective.
+- Kept the objective bounded by the required-kill target; the pocket's final-spawn cleanup still forces persisted progress to the actual required count when no registered hostile spawns remain.
+- Replaced the 24-frigate-only test fleet with a 24-ship composition selected from the installed static-data NPC groups: 12 Angel Cartel frigates, 4 destroyers, 4 cruisers and 4 battlecruisers. Types are selected dynamically from the static data pack within the expected Angel Cartel NPC groups rather than relying on a fixed list of type IDs.
+- Fleet setup now refuses to start if any required ship class group or its NPC type list is missing, instead of silently substituting another class.
+- Validation status: source changes pushed to the combat-mission integration branch. A fresh Windows/Linux/Docker CI run and in-game validation are still required. Confirm the log reports all four ship classes, then verify journal progress reaches the actual spawned count, Complete becomes available, turn-in pays once, and the pocket is cleaned up.
