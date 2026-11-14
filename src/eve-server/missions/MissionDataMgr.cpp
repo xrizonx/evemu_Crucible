@@ -18,12 +18,6 @@
 #include "inventory/ItemFactory.h"
 #include <algorithm>
 
-namespace {
-// Reserved synthetic mission ID for the isolated Level 1 Blockade spawn test.
-// It has no fabricated briefing, payout, or reward item attached to it.
-constexpr uint16 kBlockadeSecurityTestMissionID = 65535;
-}
-
 MissionDataMgr::MissionDataMgr()
 {
     m_procCount = 0;
@@ -263,12 +257,12 @@ void MissionDataMgr::Populate()
     blockadeTest.storyline = false;
     blockadeTest.typeID = Mission::Type::Encounter;
     blockadeTest.raceID = 0; // faction-independent
-    blockadeTest.missionID = kBlockadeSecurityTestMissionID;
+    blockadeTest.missionID = Mission::kBlockadeSecurityTestMissionID;
     blockadeTest.briefingID = 0;
     blockadeTest.dungeonID = 0; // resolve an Angel Cartel room template at acceptance
     // A modest Level 1 payout; the normal AgentBound turn-in path pays it
     // once after the encounter kill counter reaches the required ship count.
-    blockadeTest.rewardISK = 150000;
+    blockadeTest.rewardISK = Mission::kBlockadeSecurityTestRewardISK;
     blockadeTest.bonusISK = 0;
     blockadeTest.name = "The Blockade - Angel Cartel (TEST)";
     for (uint8 testLevel = 1; testLevel <= 5; ++testLevel) {
@@ -636,7 +630,7 @@ void MissionDataMgr::CreateMissionOffer(uint8 typeID, uint8 level, uint8 raceID,
                 const bool notCompletedStarter = (level != 0)
                     || (std::find(completedStarterMissionIDs.begin(), completedStarterMissionIDs.end(), mission.missionID)
                         == completedStarterMissionIDs.end());
-                if (securityAgent && mission.missionID == kBlockadeSecurityTestMissionID) {
+                if (securityAgent && mission.missionID == Mission::kBlockadeSecurityTestMissionID) {
                     candidates.push_back(mission);
                 } else if (!securityAgent && mission.typeID == Mission::Type::Encounter
                         && raceMatches && notStoryline && notCompletedStarter) {
@@ -656,7 +650,7 @@ void MissionDataMgr::CreateMissionOffer(uint8 typeID, uint8 level, uint8 raceID,
                     const bool notCompletedStarter = (level != 0)
                         || (std::find(completedStarterMissionIDs.begin(), completedStarterMissionIDs.end(), mission.missionID)
                             == completedStarterMissionIDs.end());
-                    if (securityAgent && mission.missionID == kBlockadeSecurityTestMissionID) {
+                    if (securityAgent && mission.missionID == Mission::kBlockadeSecurityTestMissionID) {
                         candidates.push_back(mission);
                     } else if (!securityAgent && mission.typeID == Mission::Type::Encounter
                             && raceMatches && notStoryline && notCompletedStarter) {

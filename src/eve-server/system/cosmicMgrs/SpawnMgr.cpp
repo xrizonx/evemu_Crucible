@@ -316,24 +316,42 @@ void SpawnMgr::SpawnKilled(SystemBubble* pBubble, uint32 itemID, uint32 killerID
         _log(SPAWN__DEPOP, "SpawnMgr::SpawnKilled::Mission - NPC %u killed by character %u.", itemID, killerID);
         RemoveSpawn(pBubble->GetID(), itemID);
 
-        if (pBubble->RecordMissionKill(killerID)) {
+        const bool missionKillRecorded = pBubble->RecordMissionKill(killerID);
+        const bool allMissionNPCsDestroyed = (m_spawns.count(pBubble->GetID()) == 0);
+
+        // The last hostile must always close the objective. Some kill sources
+        // can arrive here without a resolvable player Client/killerID, which
+        // means RecordMissionKill() intentionally declines the ordinary
+        // per-kill increment. Once the mission's spawn registry is empty,
+        // there are no remaining required hostiles, so persist the objective
+        // as complete instead of leaving the journal permanently incomplete.
+        if (missionKillRecorded || allMissionNPCsDestroyed) {
             Agent* pAgent = sEntityList.GetAgent(pBubble->GetMissionAgentID());
             MissionOffer offer = MissionOffer();
             if (pAgent != nullptr
                 && pAgent->HasMission(pBubble->GetMissionCharacterID(), offer)
                 && offer.offerID == pBubble->GetMissionOfferID()
-                && offer.stateID == Mission::State::Accepted) {
-                offer.courierTypeID = pBubble->GetMissionKills();
+                && offer.stateID == Mission::State::Accepted
+                && offer.courierAmount > 0) {
+                offer.courierTypeID = (allMissionNPCsDestroyed
+                    || pBubble->GetMissionKills() >= offer.courierAmount
+                    ? offer.courierAmount : pBubble->GetMissionKills());
                 pAgent->UpdateOffer(pBubble->GetMissionCharacterID(), offer);
                 Client* pClient = sEntityList.FindClientByCharID(pBubble->GetMissionCharacterID());
                 if (pClient != nullptr)
                     pAgent->SendMissionUpdate(pClient, "modified");
-                _log(SPAWN__MESSAGE, "Mission offer %u progress: %u/%u hostile ships destroyed.",
-                        offer.offerID, offer.courierTypeID, offer.courierAmount);
+                _log(SPAWN__MESSAGE,
+                    "Mission offer %u progress: %u/%u hostile ships destroyed%s.",
+                    offer.offerID, offer.courierTypeID, offer.courierAmount,
+                    allMissionNPCsDestroyed ? " (all mission spawns cleared)" : "");
+            } else {
+                _log(SPAWN__WARNING,
+                    "Mission pocket %u has no remaining NPC spawns, but its accepted offer %u could not be updated.",
+                    pBubble->GetID(), pBubble->GetMissionOfferID());
             }
         }
 
-        if (m_spawns.count(pBubble->GetID()) == 0) {
+        if (allMissionNPCsDestroyed) {
             auto bubbleItr = std::find(m_bubbles.begin(), m_bubbles.end(), pBubble);
             if (bubbleItr != m_bubbles.end())
                 m_bubbles.erase(bubbleItr);
