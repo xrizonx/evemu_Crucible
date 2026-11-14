@@ -333,8 +333,33 @@ void MissionDataMgr::Populate()
         offer.dungeonLocationID = row.GetInt(32);
         offer.dungeonSolarSystemID = row.GetInt(33);
         offer.dateCompleted = 0;
-        // will need to determine how to store/retrieve bookmarks as a list of dicts here
+        // Rebuild the mission-site bookmark from the persisted destination
+        // fields. agtOffers stores the beacon ID/system but not the PyObject
+        // bookmark payload, so this also restores journal warp access after
+        // a server restart.
         offer.bookmarks = new PyList();
+        if (offer.typeID == Mission::Type::Encounter
+            && offer.stateID == Mission::State::Accepted
+            && offer.destinationID != 0
+            && offer.destinationSystemID != 0) {
+            PyDict* bookmarkData = new PyDict();
+            bookmarkData->SetItemString("itemID", new PyInt(offer.destinationID));
+            bookmarkData->SetItemString("typeID", new PyInt(offer.destinationTypeID));
+            bookmarkData->SetItemString("agentID", new PyInt(offer.agentID));
+            bookmarkData->SetItemString("hint", new PyString("Mission Site - " + offer.name));
+            bookmarkData->SetItemString("locationType", new PyString("objective.target"));
+            bookmarkData->SetItemString("memo", new PyString(""));
+            bookmarkData->SetItemString("created", new PyLong(offer.dateAccepted));
+            bookmarkData->SetItemString("locationNumber", new PyInt(0));
+            bookmarkData->SetItemString("flag", PyStatic.NewNone());
+            bookmarkData->SetItemString("locationID", new PyInt(offer.destinationSystemID));
+            bookmarkData->SetItemString("ownerID", new PyInt(offer.destinationOwnerID));
+            bookmarkData->SetItemString("x", new PyFloat(0.0));
+            bookmarkData->SetItemString("y", new PyFloat(0.0));
+            bookmarkData->SetItemString("z", new PyFloat(0.0));
+            bookmarkData->SetItemString("solarsystemID", new PyInt(offer.destinationSystemID));
+            offer.bookmarks->AddItem(new PyObject("util.KeyVal", bookmarkData));
+        }
         m_offers.emplace(row.GetInt(2), offer);
         m_aoffers.emplace(row.GetInt(1), offer);    // do we really want dupe data here?  yes.  need offer by char and by agent
     }
