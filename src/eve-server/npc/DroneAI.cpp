@@ -154,6 +154,7 @@ void DroneAIMgr::Return() {
     m_pDrone->DestinyMgr()->SetMaxVelocity(m_chaseSpeed);
     m_pDrone->DestinyMgr()->Follow(m_assignedShip, m_entityOrbitRange);
     m_state = DroneAI::State::Departing;
+    m_pDrone->StateChange();
 }
 
 void DroneAIMgr::SetIdle() {
@@ -173,6 +174,7 @@ void DroneAIMgr::SetIdle() {
     // Orbit only while the owning ship still exists. An orphaned drone remains idle.
     if (m_assignedShip != nullptr)
         m_pDrone->IdleOrbit(m_assignedShip);
+    m_pDrone->StateChange();
 }
 
 void DroneAIMgr::SetEngaged(SystemEntity* pTarget) {
@@ -189,6 +191,7 @@ void DroneAIMgr::SetEngaged(SystemEntity* pTarget) {
     m_pDrone->DestinyMgr()->SetMaxVelocity(MakeRandomFloat(m_cruiseSpeed, (m_chaseSpeed /4)));
     m_pDrone->DestinyMgr()->Orbit(pTarget, m_entityOrbitRange);  //try to get inside orbit range
     m_state = DroneAI::State::Engaged;
+    m_pDrone->StateChange();
 }
 
 void DroneAIMgr::CheckDistance(SystemEntity* pSE)
@@ -219,6 +222,7 @@ void DroneAIMgr::CheckDistance(SystemEntity* pSE)
             m_pDrone->DestinyMgr()->Follow(pSE, m_entityFlyRange);
             m_state = DroneAI::State::Approaching;
             m_mainAttackTimer.Disable();
+            m_pDrone->StateChange();
         }
         return;
     }
