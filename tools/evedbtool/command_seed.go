@@ -79,7 +79,7 @@ func (c *SeedCommand) Run(args []string) int {
 	if force {
 		// A new migration ID makes an explicit reseed repeatable without
 		// changing or deleting the migration history from earlier runs.
-		migrationID += "_" + time.Now().UTC().Format("20060102150405")
+		migrationID += "_" + strconv.FormatInt(time.Now().UTC().UnixNano(), 10)
 	}
 
 	migrations := []*migrate.Migration{buildSeedMigration(migrationID, seedQueries)}
@@ -214,13 +214,12 @@ INTO @stationLimit
 FROM staStations
 WHERE regionID = @regionid;
 
-SET @stationIndex = 0;
 INSERT INTO tStations (stationId, solarSystemID, regionID, corporationID, security)
 SELECT stationID, solarSystemID, regionID, corporationID, security
 FROM staStations
-WHERE (@stationIndex := @stationIndex + 1) <= @stationLimit
-  AND regionID = @regionid
-ORDER BY RAND();
+WHERE regionID = @regionid
+ORDER BY RAND()
+LIMIT @stationLimit;
 
 CLEANUP
 
