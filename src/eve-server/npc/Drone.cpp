@@ -198,11 +198,16 @@ bool DroneSE::ScoopToBay() {
     if (ship.get() == nullptr || ship->itemID() != m_pShipSE->GetID())
         return false;
 
-    if (!ship->GetMyInventory()->ValidateAddItem(flagDroneBay, m_self))
-        return false;
+    try {
+        if (!ship->GetMyInventory()->ValidateAddItem(flagDroneBay, m_self))
+            return false;
 
-    m_self->ChangeOwner(m_pClient->GetCharacterID(), true);
-    m_pClient->MoveItem(m_self->itemID(), ship->itemID(), flagDroneBay);
+        m_self->ChangeOwner(m_pClient->GetCharacterID(), true);
+        m_pClient->MoveItem(m_self->itemID(), ship->itemID(), flagDroneBay);
+    } catch (...) {
+        // Capacity or inventory errors must not escape the system process loop.
+        return false;
+    }
 
     ShipSE* homeShip = m_pShipSE;
     homeShip->ScoopDrone(this);
