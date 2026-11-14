@@ -245,7 +245,13 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
 
                 offer.stateID = Mission::State::Accepted;
                 offer.dateAccepted = GetFileTimeNow();
-                offer.expiryTime = GetFileTimeNow() + (30 * m_agent->GetLevel() * EvE::Time::Minute);
+                // The synthetic Blockade test is a larger 24-frigate encounter.
+                // Give it a two-hour completion window; retain the legacy scaling
+                // for all other mission templates.
+                const uint32 missionTimeLimit = (offer.missionID == 65535)
+                    ? (120 * EvE::Time::Minute)
+                    : (30 * m_agent->GetLevel() * EvE::Time::Minute);
+                offer.expiryTime = GetFileTimeNow() + missionTimeLimit;
                 if (offer.typeID != Mission::Type::Encounter && offer.courierTypeID) {
                     sItemFactory.SetUsingClient(call.client);
                     ItemData data(offer.courierTypeID, pchar->itemID(), locTemp, flagNone, offer.courierAmount);
