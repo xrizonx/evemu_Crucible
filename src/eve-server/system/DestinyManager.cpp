@@ -754,6 +754,19 @@ void DestinyManager::MoveObject() {
         return;
     }
 
+    // GOTO is also used as the initial destiny mode for some NPCs.  An
+    // entity that has no requested/active speed and no movement transition
+    // is simply idle; do not run the acceleration state machine or report a
+    // false "move checks are not set right" error on every server tick.
+    if (!m_accel && !m_decel && !m_turning
+        && m_userSpeedFraction <= 0.0001f
+        && m_activeSpeedFraction <= 0.0001f
+        && m_prevSpeedFraction <= 0.0001f
+        && !m_tractored && !m_tractorPause) {
+        Halt();
+        return;
+    }
+
     /* acceleration and deceleration are both logarithmic, and the server needs to keep up with client position.
      * formula for time taken to accelerate from v to V, from https://wiki.eveonline.com/en/wiki/Acceleration
      *
@@ -2673,12 +2686,17 @@ Battleships 0.155
         warpSpeedMultiplier = typeWarpSpeedMultiplier;
     }
     if (warpSpeedMultiplier <= 0.0f) {
-        _log(
-            DESTINY__ERROR,
-            "Destiny::UpdateShipVariables(): %s(%u) has no valid warpSpeedMultiplier; using dogma default 3.0.",
-            mySE->GetName(),
-            mySE->GetID()
-        );
+        // NPC inventory types commonly omit ship-only dogma attribute 600.
+        // Their standard fallback is the 3.0 multiplier (9 AU/s); this is
+        // expected data, not a runtime error worth logging for every rat.
+        if (!mySE->IsNPCSE() && !mySE->IsDroneSE()) {
+            _log(
+                DESTINY__ERROR,
+                "Destiny::UpdateShipVariables(): %s(%u) has no valid warpSpeedMultiplier; using dogma default 3.0.",
+                mySE->GetName(),
+                mySE->GetID()
+            );
+        }
         warpSpeedMultiplier = 3.0f;
     }
     m_shipWarpSpeed = 3.0f * warpSpeedMultiplier;
