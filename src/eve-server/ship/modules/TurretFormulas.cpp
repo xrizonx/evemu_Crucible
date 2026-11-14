@@ -110,15 +110,14 @@ float TurretFormulas::GetToHit(ShipItemRef shipRef, TurretModule* pMod, SystemEn
 
 float TurretFormulas::GetNPCToHit(NPC* pNPC, SystemEntity* pTarget)
 {
-    if (pTarget == nullptr)
-        return 0;
-    uint16 sigRes = pNPC->GetAIMgr()->GetSigRes();
-    uint16 range = pNPC->GetAIMgr()->GetOptimalRange();
-    uint32 falloff = pNPC->GetAIMgr()->GetFalloff();
     if (pNPC == nullptr || pNPC->GetAIMgr() == nullptr
         || pNPC->DestinyMgr() == nullptr || pTarget == nullptr
         || pTarget->DestinyMgr() == nullptr || pTarget->GetSelf().get() == nullptr)
         return 0;
+
+    uint16 sigRes = pNPC->GetAIMgr()->GetSigRes();
+    uint16 range = pNPC->GetAIMgr()->GetOptimalRange();
+    uint32 falloff = pNPC->GetAIMgr()->GetFalloff();
 
     float distance = pNPC->DestinyMgr()->GetPosition().distance(pTarget->DestinyMgr()->GetPosition());
     if (distance <= 0.001f)
