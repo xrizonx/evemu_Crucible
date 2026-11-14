@@ -289,8 +289,12 @@ void NPC::SetResists() {
 }
 
 void NPC::Killed(Damage &damage) {
-    if ((m_bubble == nullptr) or (m_destiny == nullptr) or (m_system == nullptr))
-        return; // make error here?
+    if ((m_bubble == nullptr) or (m_destiny == nullptr) or (m_system == nullptr)) {
+        sLog.Error("NPC::Killed()", "NPC %s(%u) death callback missing context: bubble=%p destiny=%p system=%p.",
+            GetName(), GetID(), static_cast<void*>(m_bubble),
+            static_cast<void*>(m_destiny), static_cast<void*>(m_system));
+        return;
+    }
 
     uint32 killerID = 0;
     Client* pClient(nullptr);
@@ -310,8 +314,19 @@ void NPC::Killed(Damage &damage) {
         killerID = killer->GetID();
     }
 
-    if ((m_spawnMgr != nullptr) && (m_self.get() != nullptr))
+    if ((m_spawnMgr != nullptr) && (m_self.get() != nullptr)) {
+        if (m_bubble->IsMission()) {
+            _log(SPAWN__ERROR,
+                "NPC mission death forwarded: %s(%u), bubble %u, spawn manager %p, killer character %u.",
+                GetName(), m_self->itemID(), m_bubble->GetID(),
+                static_cast<void*>(m_spawnMgr), (pClient != nullptr ? killerID : 0));
+        }
         m_spawnMgr->SpawnKilled(m_bubble, m_self->itemID(), (pClient != nullptr ? killerID : 0));
+    } else if (m_bubble->IsMission()) {
+        sLog.Error("NPC::Killed()", "Mission NPC %s(%u) cannot report its death: spawn manager=%p, item=%p.",
+            GetName(), GetID(), static_cast<void*>(m_spawnMgr),
+            static_cast<void*>(m_self.get()));
+    }
 
     uint32 locationID = GetLocationID();
     //  log faction kill in dynamic data   -allan
