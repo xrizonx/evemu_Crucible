@@ -185,12 +185,24 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
 
                 if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
                     agentSays->SetItem(0, new PyString(
-                        "THE BLOCKADE - ANGEL CARTEL\\n\\n"
+                        "THE BLOCKADE\\n"
+                        "ANGEL CARTEL INCURSION\\n\\n"
+                        "SITUATION\\n"
                         "Angel Cartel forces have established a hostile presence in this system. "
-                        "Warp to the mission site and destroy all 24 hostile ships: 12 frigates, "
-                        "4 destroyers, 4 cruisers and 4 battlecruisers.\\n\\n"
-                        "Return to this agent after the pocket is clear to claim the mission reward. "
-                        "Reward: 150,000 ISK. Time limit: 120 minutes."));
+                        "Your task is to eliminate the entire strike force and secure the mission pocket.\\n\\n"
+                        "MISSION OBJECTIVES\\n"
+                        "- Destroy 12 frigates\\n"
+                        "- Destroy 4 destroyers\\n"
+                        "- Destroy 4 cruisers\\n"
+                        "- Destroy 4 battlecruisers\\n\\n"
+                        "COMBAT PROGRESS\\n"
+                        "Kills confirmed: 0 / 24\\n\\n"
+                        "COMPLETION\\n"
+                        "Return to this agent once all hostile ships have been destroyed.\\n\\n"
+                        "MISSION REWARD\\n"
+                        "150,000 ISK\\n"
+                        "TIME LIMIT\\n"
+                        "120 minutes from acceptance."));
                     agentSays->SetItem(1, PyStatic.NewNone());
                 } else {
                     agentSays->SetItem(0, new PyInt(offer.briefingID));
@@ -216,18 +228,31 @@ PyResult AgentBound::DoAction(PyCallArgs &call, std::optional <PyInt*> actionID)
                 MissionOffer offer = MissionOffer();
                 m_agent->GetOffer(pchar->itemID(), offer);
                 if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+                    const uint32 killsDestroyed =
+                        (offer.courierTypeID < offer.courierAmount)
+                            ? offer.courierTypeID : offer.courierAmount;
                     std::string briefing =
-                        "THE BLOCKADE - ANGEL CARTEL\\n\\n"
-                        "Destroy all 24 hostile ships at the bookmarked mission site: "
-                        "12 frigates, 4 destroyers, 4 cruisers and 4 battlecruisers. "
-                        "Return to this agent when the pocket is clear. Reward: 150,000 ISK.";
-                    if (offer.stateID == Mission::State::Accepted) {
-                        briefing += "\\n\\nObjective progress: ";
-                        briefing += std::to_string(offer.courierTypeID);
-                        briefing += "/";
-                        briefing += std::to_string(offer.courierAmount);
-                        briefing += " hostile ships destroyed.";
-                    }
+                        "THE BLOCKADE\\n"
+                        "ANGEL CARTEL INCURSION\\n\\n"
+                        "SITUATION\\n"
+                        "An Angel Cartel strike force is operating in this system. "
+                        "Destroy every hostile ship and secure the bookmarked mission pocket.\\n\\n"
+                        "MISSION OBJECTIVES\\n"
+                        "- 12 frigates\\n"
+                        "- 4 destroyers\\n"
+                        "- 4 cruisers\\n"
+                        "- 4 battlecruisers\\n\\n"
+                        "COMBAT PROGRESS\\n"
+                        "Kills confirmed: ";
+                    briefing += std::to_string(killsDestroyed);
+                    briefing += " / ";
+                    briefing += std::to_string(offer.courierAmount);
+                    briefing += "\\n\\nCOMPLETION\\n"
+                        "Return to this agent after the pocket is clear.\\n\\n"
+                        "MISSION REWARD\\n"
+                        "150,000 ISK\\n"
+                        "TIME LIMIT\\n"
+                        "120 minutes from acceptance.";
                     agentSays->SetItem(0, new PyString(briefing));
                     agentSays->SetItem(1, PyStatic.NewNone());
                 } else {
@@ -491,12 +516,32 @@ PyResult AgentBound::GetMissionBriefingInfo(PyCallArgs &call) {
         briefingInfo->SetItemString("Mission Title ID", new PyInt(offer.missionID));
         briefingInfo->SetItemString("Mission Briefing ID", new PyInt(offer.briefingID));
         if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+            const uint32 killsDestroyed =
+                (offer.courierTypeID < offer.courierAmount)
+                    ? offer.courierTypeID : offer.courierAmount;
+            std::string missionBriefing =
+                "ANGEL CARTEL INCURSION\\n\\n"
+                "SITUATION\\n"
+                "An Angel Cartel strike force has established a hostile presence in this system. "
+                "Eliminate the entire force and secure the bookmarked mission pocket.\\n\\n"
+                "MISSION OBJECTIVES\\n"
+                "- 12 frigates\\n"
+                "- 4 destroyers\\n"
+                "- 4 cruisers\\n"
+                "- 4 battlecruisers\\n\\n"
+                "COMBAT PROGRESS\\n"
+                "Kills confirmed: ";
+            missionBriefing += std::to_string(killsDestroyed);
+            missionBriefing += " / ";
+            missionBriefing += std::to_string(offer.courierAmount);
+            missionBriefing += "\\n\\nCOMPLETION\\n"
+                "Return to your agent once all hostile ships have been destroyed.\\n\\n"
+                "REWARD\\n"
+                "150,000 ISK\\n\\n"
+                "TIME LIMIT\\n"
+                "120 minutes from acceptance.";
             briefingInfo->SetItemString("Mission Title", new PyString("The Blockade - Angel Cartel"));
-            briefingInfo->SetItemString("Mission Briefing", new PyString(
-                "Angel Cartel forces have established a hostile presence in this system. "
-                "Warp to the bookmarked site and destroy all 24 hostile ships: 12 frigates, "
-                "4 destroyers, 4 cruisers and 4 battlecruisers. Return to this agent after "
-                "the pocket is clear. Reward: 150,000 ISK. Time limit: 120 minutes."));
+            briefingInfo->SetItemString("Mission Briefing", new PyString(missionBriefing));
         }
         switch(offer.typeID) {
             case Mission::Type::Courier:
@@ -669,11 +714,34 @@ PyDict* AgentBound::GetMissionObjectiveInfo(Client* pClient, MissionOffer& offer
     PyDict* objectiveData = new PyDict();
     objectiveData->SetItemString("missionTitleID", new PyInt(offer.missionID));
     if (offer.missionID == Mission::kBlockadeSecurityTestMissionID) {
+        const uint32 killsDestroyed =
+            (offer.courierTypeID < offer.courierAmount)
+                ? offer.courierTypeID : offer.courierAmount;
+        std::string missionBriefing =
+            "ANGEL CARTEL INCURSION\\n\\n"
+            "SITUATION\\n"
+            "An Angel Cartel strike force has established a hostile presence in this system. "
+            "Eliminate the entire force and secure the bookmarked mission pocket.\\n\\n"
+            "MISSION OBJECTIVES\\n"
+            "- 12 frigates\\n"
+            "- 4 destroyers\\n"
+            "- 4 cruisers\\n"
+            "- 4 battlecruisers\\n\\n"
+            "COMBAT PROGRESS\\n"
+            "Kills confirmed: ";
+        missionBriefing += std::to_string(killsDestroyed);
+        missionBriefing += " / ";
+        missionBriefing += std::to_string(offer.courierAmount);
+        missionBriefing += "\\n\\nCOMPLETION\\n"
+            "Return to your agent once all hostile ships have been destroyed.\\n\\n"
+            "REWARD\\n"
+            "150,000 ISK\\n\\n"
+            "TIME LIMIT\\n"
+            "120 minutes from acceptance.";
         objectiveData->SetItemString("missionTitle", new PyString("The Blockade - Angel Cartel"));
-        objectiveData->SetItemString("missionBriefing", new PyString(
-            "Destroy all 24 hostile ships at the bookmarked mission site: "
-            "12 frigates, 4 destroyers, 4 cruisers and 4 battlecruisers. "
-            "Return to this agent when the pocket is clear. Reward: 150,000 ISK."));
+        objectiveData->SetItemString("missionBriefing", new PyString(missionBriefing));
+        objectiveData->SetItemString("killsDestroyed", new PyInt(killsDestroyed));
+        objectiveData->SetItemString("killsRequired", new PyInt(offer.courierAmount));
     }
     objectiveData->SetItemString("contentID", new PyInt(offer.characterID));
     objectiveData->SetItemString("importantStandings", new PyInt(offer.important));     // boolean integer
