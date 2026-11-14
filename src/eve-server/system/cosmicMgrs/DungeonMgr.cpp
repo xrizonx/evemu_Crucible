@@ -215,8 +215,10 @@ bool DungeonDataMgr::GetRandomMissionDungeonForGroup(Dungeon::Dungeon& dungeon, 
     }
 
     if (candidates.empty()) {
-        _log(DUNG__WARNING,
-            "GetRandomMissionDungeonForGroup() - No template matched '%s'. Loaded mission templates=%u, first-room objects=%u, valid types=%u, Entity groups=%u, matching groups=%u.",
+        // Use the spawn error category so this actionable failure is visible
+        // alongside the final mission-spawn error, even when DUNG logging is filtered.
+        _log(SPAWN__ERROR,
+            "Mission template selection failed for group '%s': loaded templates=%u, first-room objects=%u, valid types=%u, Entity groups=%u, matching groups=%u.",
             groupPrefix, missionTemplateCount, firstRoomObjectCount, validTypeCount,
             entityGroupCount, matchingGroupCount);
         return false;
@@ -249,19 +251,33 @@ void DungeonDataMgr::Populate()
     // not the legacy dunDungeons + dunRooms tables. Import all room objects
     // into the same in-memory representation; no SQL data is written.
     DBQueryResult* templateRes = new DBQueryResult();
+    uint32 missionTemplateRowCount = 0;
     uint32 missionTemplateObjectCount = 0;
+    uint32 missionTemplateCollisionCount = 0;
     DungeonDB::GetMissionTemplateData(*templateRes);
     while (templateRes->GetRow(row))
     {
+        ++missionTemplateRowCount;
         const uint32 templateID = row.GetUInt(0);
-        // A legacy dungeon with the same ID takes precedence.
-        if (byDungeonID.find(templateID) != byDungeonID.end())
+        // A legacy dungeon with the same ID takes precedence. Count these
+        // skipped rows explicitly: otherwise an ID collision can make an
+        // entire mission template disappear without a useful runtime clue.
+        if (byDungeonID.find(templateID) != byDungeonID.end()) {
+            ++missionTemplateCollisionCount;
             continue;
+        }
         CreateDungeon(row);
         FillObject(row);
         ++missionTemplateObjectCount;
     }
-    _log(DUNG__MESSAGE, "Loaded %u room objects from mission dungeon templates.", missionTemplateObjectCount);
+    _log(SPAWN__MESSAGE,
+        "Mission template import: query rows=%u, imported room-object rows=%u, skipped legacy-ID collisions=%u.",
+        missionTemplateRowCount, missionTemplateObjectCount, missionTemplateCollisionCount);
+    if (missionTemplateCollisionCount != 0) {
+        _log(SPAWN__WARNING,
+            "Mission template import skipped %u rows because their template IDs already exist as legacy dungeon IDs.",
+            missionTemplateCollisionCount);
+    }
     SafeDelete(templateRes);
 
     sLog.Cyan("       DunDataMgr", "%lu Dungeon data sets loaded in %.3fms.",
