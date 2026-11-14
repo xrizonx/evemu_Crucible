@@ -266,7 +266,9 @@ void MissionDataMgr::Populate()
     blockadeTest.missionID = kBlockadeSecurityTestMissionID;
     blockadeTest.briefingID = 0;
     blockadeTest.dungeonID = 0; // resolve an Angel Cartel room template at acceptance
-    blockadeTest.rewardISK = 0;
+    // A modest Level 1 payout; the normal AgentBound turn-in path pays it
+    // once after the encounter kill counter reaches the required ship count.
+    blockadeTest.rewardISK = 150000;
     blockadeTest.bonusISK = 0;
     blockadeTest.name = "The Blockade - Angel Cartel (TEST)";
     for (uint8 testLevel = 1; testLevel <= 5; ++testLevel) {
