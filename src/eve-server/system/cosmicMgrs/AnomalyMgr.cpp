@@ -532,6 +532,11 @@ void AnomalyMgr::AddSignal(SystemEntity* pSE, uint32 id/*0*/)
         sig.position = iRef->position();
         // this will be wrong for capital ships and larger (maybe bs also)
         sig.sigStrength = iRef->GetAttribute(AttrSignatureRadius).get_float() /1000;
+        // Mission beacons are inventory-backed Cosmic Anomalies. Their type
+        // does not carry a useful signature-radius attribute, but they are
+        // already fully resolved anomaly sites and must not appear at 0%.
+        if (iRef->groupID() == EVEDB::invGroups::Cosmic_Anomaly)
+            sig.sigStrength = 1.0f;
         // get bubbleID, which is only used for .siglist command
         sig.bubbleID = pSE->SysBubble()->GetID();
 
