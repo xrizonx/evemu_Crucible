@@ -181,8 +181,16 @@ bool DungeonDataMgr::GetRandomMissionDungeonForGroup(Dungeon::Dungeon& dungeon, 
         const Dungeon::Room& firstRoom = candidate.rooms.begin()->second;
         bool hasRequestedNPC = false;
         for (const Dungeon::RoomObject& object : firstRoom.objects) {
+            // dunRoomObjects.groupID is the dungeon editor's room-object
+            // grouping (dunGroups), not necessarily invGroups.groupID.
+            // Resolve the inventory group through the object's typeID, exactly
+            // as the mission spawner does when deciding whether it is an NPC.
+            Inv::TypeData type = {};
             Inv::GrpData group = {};
-            sDataMgr.GetGroup(object.groupID, group);
+            sDataMgr.GetType(object.typeID, type);
+            if (type.id == 0)
+                continue;
+            sDataMgr.GetGroup(type.groupID, group);
             if (group.id != 0 && group.catID == EVEDB::invCategories::Entity
                     && group.name.compare(0, std::strlen(groupPrefix), groupPrefix) == 0) {
                 hasRequestedNPC = true;
