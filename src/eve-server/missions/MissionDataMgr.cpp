@@ -18,12 +18,6 @@
 #include "inventory/ItemFactory.h"
 #include <algorithm>
 
-namespace {
-// Reserved synthetic mission ID for the isolated Level 1 Blockade spawn test.
-// It has no fabricated briefing, payout, or reward item attached to it.
-constexpr uint16 kBlockadeSecurityTestMissionID = 65535;
-}
-
 MissionDataMgr::MissionDataMgr()
 {
     m_procCount = 0;
@@ -263,7 +257,7 @@ void MissionDataMgr::Populate()
     blockadeTest.storyline = false;
     blockadeTest.typeID = Mission::Type::Encounter;
     blockadeTest.raceID = 0; // faction-independent
-    blockadeTest.missionID = kBlockadeSecurityTestMissionID;
+    blockadeTest.missionID = Mission::kBlockadeSecurityTestMissionID;
     blockadeTest.briefingID = 0;
     blockadeTest.dungeonID = 0; // resolve an Angel Cartel room template at acceptance
     blockadeTest.rewardISK = 0;
