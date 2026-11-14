@@ -35,6 +35,7 @@
 #include "station/Station.h"
 #include "services/ServiceManager.h"
 #include "system/SystemEntity.h"
+#include "system/SystemManager.h"
 #include "system/DestinyManager.h"
 
 AgentBound::AgentBound(EVEServiceManager& mgr, AgentMgrService& parent, Agent *agt) :
