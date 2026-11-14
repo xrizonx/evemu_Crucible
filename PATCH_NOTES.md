@@ -109,3 +109,37 @@ This PR proposes the current fork work against `EvEmu-Project/evemu_Crucible:mas
 - Distinguish **fixed**, **investigating**, and **not reproduced** items.
 - Record build/CI status separately from in-game verification.
 - Do not describe a report as fixed solely because a defensive guard was added; verify the underlying behavior where possible.
+
+
+## 2026-11-14 — Blockade encounter, mission completion and drone combat integration
+
+### Implemented on the integration branch
+
+- **Blockade test fleet:** Expanded the synthetic Angel Cartel encounter to 24 frigates (NPC group 550). The user has confirmed that the fleet spawns, moves and engages the player in-game.
+- **Mission objective:** Added an explicit 24-kill completion target for synthetic mission ID 65535. The target is initialized after generic Encounter offer setup because the generic setup clears the cargo/objective fields.
+- **Mission timer:** The synthetic Blockade test mission now receives 120 minutes from acceptance. The special duration is scoped to mission 65535; other mission timers retain their existing level-scaled calculation.
+- **Reward:** Configured a 150,000 ISK mission reward and retained the normal agent mission wallet-transfer path for turn-in.
+- **Offer persistence:** Mission-offer updates now persist the reward as well as the courier/objective fields. Older open synthetic offers with missing reward or a zero kill target are normalized when loaded/queried; a nonzero existing target is preserved so partial encounter progress is not overwritten.
+- **Objective metadata:** Encounter kill progress is no longer incorrectly serialized as an objective type ID. The Encounter objective type metadata is sent separately from the kill-progress/target fields.
+- **Completion flow:** The existing Agent Complete action is gated by the kill objective. The existing completion path records completion, pays the configured reward and removes the encounter site/offer after successful turn-in.
+- **Spawn target accuracy:** Encounter offer kill targets are taken from the actual mission-pocket required-kill value rather than a generic NPC count.
+- **Drone damage and AI:** Removed duplicate global damage-rate scaling from drone attack construction; improved target-lock completion, approach/engage transitions, invalid/cross-system target cleanup, target-loss handling, and client-visible target/state synchronization. Fixed null-target reset and guarded state notifications when no system bubble is available.
+
+### Root cause of the missing objective/reward regression
+
+The synthetic mission's special reward and kill target were being assigned before the generic Encounter initialization block. That block subsequently reset the offer's courier/objective fields, so the mission journal could retain the 120-minute expiry while losing its reward and completion target. The special values are now assigned after the generic initialization. The database update query also previously omitted the reward column; that value is now persisted. A separate client payload issue passed the kill-progress field as the objective type ID; Encounter now sends the correct neutral objective type metadata.
+
+### Validation status — final combined head
+
+- Integration PR: [#11](https://github.com/xrizonx/evemu_Crucible/pull/11).
+- Final code head before documentation refresh: `b527d20d17d7dff570ad0dd7b001042593f20589`.
+- CI run: [#43593340656](https://github.com/xrizonx/evemu_Crucible/actions/runs/43593340656).
+- Docker image build: passed.
+- Linux GCC build, test invocation, install and packaging: passed.
+- Windows 64-bit UCRT64 GCC build: was still running when this note was prepared; do not treat the combined run as fully green until that job completes successfully.
+- In-game confirmation: 24 frigate spawns, movement and combat were confirmed by the user. The 24/24 journal counter, Complete action, 150,000 ISK wallet payout and encounter cleanup still require a live turn-in test. CI/compilation does not prove these gameplay outcomes.
+- No database reset or destructive migration is part of this work.
+
+### Integration and upstream review status
+
+The Blockade encounter, two-hour timer, reward/completion and drone combat changes are consolidated in PR #11. The earlier fork PRs #8, #9 and #10 describe overlapping slices of this same work and should be closed as superseded only after the integration PR is merged. An upstream contribution PR is a separate review/merge path; merging into this fork's `master` does not itself merge anything into `EvEmu-Project/evemu_Crucible`.
