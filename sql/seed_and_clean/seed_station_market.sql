@@ -11,7 +11,10 @@ insert into tStations values (60014137, 30000053, 10000001);
 -- actual seeding
 INSERT INTO mktOrders (typeID, ownerID, regionID, stationID, price, volEntered, volRemaining, issued,
 minVolume, duration, solarSystemID, jumps)
-  SELECT typeID, stationID, regionID, stationID, basePrice, 550, 550, 132478179209572976, 1, 250, solarSystemID, 1
+  SELECT typeID, stationID, regionID, stationID, basePrice,
+         CASE WHEN invGroups.categoryID = 8 THEN 550000 ELSE 550 END,
+         CASE WHEN invGroups.categoryID = 8 THEN 550000 ELSE 550 END,
+         132478179209572976, 1, 250, solarSystemID, 1
   FROM tStations, invTypes inner join invGroups on invTypes.groupID=invGroups.groupID
   WHERE invTypes.published = 1
   AND categoryID IN (4, 5, 6, 7, 8, 9, 16, 17, 18, 20, 22, 23, 24, 25, 32, 34, 35, 39, 40, 41, 42, 43, 46);

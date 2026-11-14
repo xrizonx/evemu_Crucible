@@ -34,6 +34,9 @@
 #include "agents/AgentMgrService.h"
 #include "station/Station.h"
 #include "services/ServiceManager.h"
+#include "system/SystemEntity.h"
+#include "system/SystemManager.h"
+#include "system/DestinyManager.h"
 
 AgentBound::AgentBound(EVEServiceManager& mgr, AgentMgrService& parent, Agent *agt) :
     EVEBoundObject(mgr, parent),
@@ -955,18 +958,71 @@ PyResult AgentBound::GetEntryPoint(PyCallArgs &call) {
     return nullptr;
 }
 
-PyResult AgentBound::GotoLocation(PyCallArgs &call, PyInt* locationType, PyInt* locationNumber, PyInt* referringAgentID) {
+PyResult AgentBound::GotoLocation(PyCallArgs &call, PyString* locationType, PyInt* locationNumber, PyRep* referringAgentID) {
     //sm.StartService('agents').GetAgentMoniker(bookmark.agentID).GotoLocation(bookmark.locationType, bookmark.locationNumber, referringAgentID)
     _log(AGENT__DUMP,  "AgentBound::Handle_GotoLocation() - size=%lli", call.tuple->size());
     call.Dump(AGENT__DUMP);
 
-    return nullptr;
+    // The client sends None for referringAgentID from the mission bookmark.
+    // Resolve the active encounter target here: this is the RPC used by the
+    // journal's "Warp to Location" context-menu action.
+    MissionOffer offer = MissionOffer();
+    if (!m_agent->HasMission(call.client->GetCharacterID(), offer)
+        || offer.stateID != Mission::State::Accepted
+        || offer.typeID != Mission::Type::Encounter
+        || offer.destinationID == 0
+        || offer.destinationSystemID != call.client->GetSystemID()) {
+        call.client->SendErrorMsg("The mission site is not available in this solar system.");
+        return PyStatic.NewNone();
+    }
+
+    ShipSE* pShip = call.client->GetShipSE();
+    if (pShip == nullptr || pShip->DestinyMgr() == nullptr || pShip->SystemMgr() == nullptr) {
+        call.client->SendErrorMsg("Your ship is not ready to warp.");
+        return PyStatic.NewNone();
+    }
+
+    SystemEntity* pTarget = pShip->SystemMgr()->GetSE(offer.destinationID);
+    if (pTarget == nullptr) {
+        call.client->SendErrorMsg("The mission site beacon could not be found. Please contact an administrator.");
+        return PyStatic.NewNone();
+    }
+
+    pShip->DestinyMgr()->WarpTo(pTarget->GetPosition(), 0, false, pTarget);
+    return PyStatic.NewNone();
 }
 
-PyResult AgentBound::WarpToLocation(PyCallArgs &call, PyInt* locationType, PyInt* locationNumber, PyFloat* warpRange, PyBool* fleet, PyInt* referringAgentID) {
-    //sm.StartService('agents').GetAgentMoniker(bookmark.agentID).WarpToLocation(bookmark.locationType, bookmark.locationNumber, warpRange, fleet, referringAgentID)
-    _log(AGENT__DUMP,  "AgentBound::Handle_WarpToLocation() - size=%lli", call.tuple->size());
+PyResult AgentBound::WarpToLocation(PyCallArgs &call, PyString* locationType, PyInt* locationNumber, PyFloat* warpRange, PyBool* fleet, PyInt* referringAgentID) {
+    // Mission journal bookmarks call this agent-bound RPC rather than the
+    // ordinary item warp command. Resolve the active encounter's destination
+    // beacon and warp directly to its live system entity.
+    _log(AGENT__DUMP, "AgentBound::Handle_WarpToLocation() - size=%lli", call.tuple->size());
     call.Dump(AGENT__DUMP);
 
-    return nullptr;
+    MissionOffer offer = MissionOffer();
+    if (!m_agent->HasMission(call.client->GetCharacterID(), offer)
+        || offer.stateID != Mission::State::Accepted
+        || offer.typeID != Mission::Type::Encounter
+        || offer.destinationID == 0
+        || offer.destinationSystemID != call.client->GetSystemID()) {
+        call.client->SendErrorMsg("The mission site is not available in this solar system.");
+        return PyStatic.NewNone();
+    }
+
+    ShipSE* pShip = call.client->GetShipSE();
+    if (pShip == nullptr || pShip->DestinyMgr() == nullptr || pShip->SystemMgr() == nullptr) {
+        call.client->SendErrorMsg("Your ship is not ready to warp.");
+        return PyStatic.NewNone();
+    }
+
+    SystemEntity* pTarget = pShip->SystemMgr()->GetSE(offer.destinationID);
+    if (pTarget == nullptr) {
+        call.client->SendErrorMsg("The mission site beacon could not be found. Please contact an administrator.");
+        return PyStatic.NewNone();
+    }
+
+    const int32 distance = (warpRange != nullptr
+        ? static_cast<int32>(warpRange->value()) : 0);
+    pShip->DestinyMgr()->WarpTo(pTarget->GetPosition(), distance, false, pTarget);
+    return PyStatic.NewNone();
 }

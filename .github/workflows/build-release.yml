@@ -6,7 +6,7 @@ concurrency:
 
 on:
   push:
-    branches: [master, evemu-crucible-modernization]
+    branches: [master, evemu-crucible-modernization, mission-data-restoration]
     tags: ["v*", "stable-rizonx"]
   pull_request:
     branches: [master]
@@ -51,15 +51,36 @@ jobs:
         run: ctest --test-dir build --output-on-failure
       - name: Install
         run: cmake --install build --prefix stage
-      - name: Download matching EVEDBTool Linux x86_64 binary
+      - name: Set up Go for EVEDBTool
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.x'
+      - name: Build patched EVEDBTool Linux x86_64 binary
         run: |
-          curl --fail --location --retry 3 --output sql/evedbtool https://github.com/EvEmu-Project/EVEDBTool/releases/download/0.0.6/evedbtool
-          test -s sql/evedbtool
-          chmod +x sql/evedbtool
+          git clone --quiet --depth 1 --branch 0.0.6 https://github.com/EvEmu-Project/EVEDBTool.git "$RUNNER_TEMP/EVEDBTool"
+          cp tools/evedbtool/command_seed.go "$RUNNER_TEMP/EVEDBTool/command_seed.go"
+          cd "$RUNNER_TEMP/EVEDBTool"
+          go version
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=evemu-crucible" -o "$GITHUB_WORKSPACE/sql/evedbtool" .
+          test -s "$GITHUB_WORKSPACE/sql/evedbtool"
+          chmod +x "$GITHUB_WORKSPACE/sql/evedbtool"
+      - name: Smoke-test EVEDBTool market seed SQL
+        run: |
+          cp sql/evedb.yaml.example sql/evedb.yaml
+          (cd sql && ./evedbtool seed -force -dryrun) > "$RUNNER_TEMP/evedbtool-seed-dryrun.log" 2>&1
+          for expected in "550000" "RAND() < @saturation" "officer" "deadspace" "faction" "storyline" "NOT EXISTS"; do
+            grep -qi "$expected" "$RUNNER_TEMP/evedbtool-seed-dryrun.log" || {
+              echo "EVEDBTool dry-run output is missing expected SQL: $expected" >&2
+              cat "$RUNNER_TEMP/evedbtool-seed-dryrun.log" >&2
+              exit 1
+            }
+          done
+          rm -f sql/evedb.yaml
       - name: Add runtime files and package
         run: |
           mkdir -p stage/share/evemu
           cp -a sql stage/share/evemu/
+          cp -a tools stage/share/evemu/
           cp -a utils stage/share/evemu/
           cp -a config stage/share/evemu/ 2>/dev/null || true
           printf 'Commit: %s\nBranch: %s\nPlatform: Linux x86_64\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" > stage/BUILD-INFO.txt
@@ -120,21 +141,49 @@ jobs:
       - name: Install
         shell: msys2 {0}
         run: cmake --install build --prefix stage
-      - name: Download matching EVEDBTool Windows x86_64 binary
+      - name: Set up Go for EVEDBTool
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.23.x'
+      - name: Build patched EVEDBTool Windows x86_64 binary
         shell: pwsh
         run: |
-          $url = "https://github.com/EvEmu-Project/EVEDBTool/releases/download/0.0.6/evedbtool.exe"
-          Invoke-WebRequest -Uri $url -OutFile "sql/evedbtool.exe"
+          $toolSource = Join-Path $env:RUNNER_TEMP "EVEDBTool"
+          git clone --quiet --depth 1 --branch 0.0.6 https://github.com/EvEmu-Project/EVEDBTool.git $toolSource
+          Copy-Item tools/evedbtool/command_seed.go (Join-Path $toolSource "command_seed.go")
+          Push-Location $toolSource
+          $env:CGO_ENABLED = "0"
+          $env:GOOS = "windows"
+          $env:GOARCH = "amd64"
+          go version
+          go build -trimpath -ldflags "-s -w -X main.version=evemu-crucible" -o "$env:GITHUB_WORKSPACE/sql/evedbtool.exe" .
+          Pop-Location
           if (!(Test-Path "sql/evedbtool.exe") -or (Get-Item "sql/evedbtool.exe").Length -lt 1000000) {
-            throw "EVEDBTool download is missing or unexpectedly small."
+            throw "Patched EVEDBTool build is missing or unexpectedly small."
           }
           Get-FileHash "sql/evedbtool.exe" -Algorithm SHA256 | Format-List
+      - name: Smoke-test EVEDBTool market seed SQL
+        shell: pwsh
+        run: |
+          Copy-Item sql/evedb.yaml.example sql/evedb.yaml
+          Push-Location sql
+          $output = & .\evedbtool.exe seed -force -dryrun 2>&1 | Out-String
+          $exitCode = $LASTEXITCODE
+          Pop-Location
+          if ($exitCode -ne 0) { throw "EVEDBTool seed dry-run failed: $output" }
+          foreach ($expected in @("550000", "RAND() < @saturation", "officer", "deadspace", "faction", "storyline", "NOT EXISTS")) {
+            if (!$output.Contains($expected, [StringComparison]::OrdinalIgnoreCase)) {
+              throw "EVEDBTool dry-run output is missing expected SQL: $expected"
+            }
+          }
+          Remove-Item sql/evedb.yaml -Force
       - name: Bundle UCRT64 runtime DLLs beside executables
         shell: msys2 {0}
         run: |
           set -euo pipefail
           mkdir -p stage/share/evemu
           cp -a sql stage/share/evemu/
+          cp -a tools stage/share/evemu/
           cp -a utils stage/share/evemu/
           if [[ -d config ]]; then cp -a config stage/share/evemu/; fi
           printf 'Commit: %s\nBranch: %s\nPlatform: Windows x86_64 UCRT64\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" > stage/BUILD-INFO.txt

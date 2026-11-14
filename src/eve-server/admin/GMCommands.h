@@ -21,7 +21,7 @@ COMMAND( setattr, Acct::Role::CONTENT,
          "(itemID) (attributeID) (value) - Sets attributeID of itemID to value." )
 COMMAND( fit, Acct::Role::VIP,
         "(itemID) - Fits selected item to active ship." )
-COMMAND( giveallskills, Acct::Role::ADMIN,
+COMMAND( giveallskills, Acct::Role::GMH,
         "['me'|<characterID>] - gives ALL skills to designated character or self" )
 COMMAND( giveskill, Acct::Role::VIP,
          "(skillID) (level) - gives skillID to specified level." )

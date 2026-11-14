@@ -96,7 +96,10 @@ bool Agent::MakeOffer(uint32 charID, MissionOffer& offer)
     if (HasMission(charID))
         return false;
 
-    sMissionDataMgr.CreateMissionOffer(missionType, missionLevel, m_agentData.raceID, m_important, offer, charID);
+    // Security encounter test missions are faction-independent. The mission
+    // selector still applies race restrictions to ordinary encounter data.
+    sMissionDataMgr.CreateMissionOffer(missionType, missionLevel, m_agentData.raceID,
+            m_important, offer, charID, securityAgent);
     if (offer.typeID == 0)
         return false;
 

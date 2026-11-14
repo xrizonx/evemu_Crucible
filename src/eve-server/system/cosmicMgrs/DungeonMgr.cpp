@@ -17,6 +17,18 @@
 #include "system/cosmicMgrs/AnomalyMgr.h"
 #include "system/cosmicMgrs/BeltMgr.h"
 #include "system/cosmicMgrs/DungeonMgr.h"
+#include <cstring>
+
+// NPC ship types in this Crucible data set use the Entity category (11) and
+// faction rat groups named "Asteroid ...". Keep ordinary Entity-category
+// scenery and structures out of the NPC selection path.
+static bool IsMissionNPCGroup(const Inv::GrpData& group)
+{
+    return group.catID == EVEDB::invCategories::Ship
+        || group.catID == EVEDB::invCategories::Drone
+        || (group.catID == EVEDB::invCategories::Entity
+            && group.name.compare(0, 9, "Asteroid ") == 0);
+}
 
 /*
 Dungeon flow:
@@ -114,18 +126,30 @@ bool DungeonDataMgr::GetRandomMissionDungeon(Dungeon::Dungeon& dungeon, uint32 f
     std::vector<Dungeon::Dungeon> factionCandidates;
 
     // Archetype 20 is the static-data archetype for agent mission dungeons.
-    // The template loader only returns room objects whose inventory groups
-    // are ships or drones, so mining-only rooms cannot be selected as combat pockets.
+    // Templates retain all room objects. Select only rooms containing known NPC
+    // groups so mining-only and scenery-only rooms cannot become combat pockets.
     for (const Dungeon::Dungeon& candidate : m_dungeons) {
         if (candidate.archetypeID != 20 || candidate.rooms.empty())
             continue;
 
         bool hasNPC = false;
         for (const auto& room : candidate.rooms) {
-            if (!room.second.objects.empty()) {
-                hasNPC = true;
-                break;
+            for (const Dungeon::RoomObject& object : room.second.objects) {
+                // dunRoomObjects.groupID is a dungeon-editor group ID, not
+                // invGroups.groupID. Resolve the NPC category via typeID.
+                Inv::TypeData type = {};
+                Inv::GrpData group = {};
+                sDataMgr.GetType(object.typeID, type);
+                if (type.id == 0)
+                    continue;
+                sDataMgr.GetGroup(type.groupID, group);
+                if (group.id != 0 && IsMissionNPCGroup(group)) {
+                    hasNPC = true;
+                    break;
+                }
             }
+            if (hasNPC)
+                break;
         }
         if (!hasNPC)
             continue;
@@ -143,6 +167,88 @@ bool DungeonDataMgr::GetRandomMissionDungeon(Dungeon::Dungeon& dungeon, uint32 f
     }
 
     dungeon = selection[MakeRandomInt(0, static_cast<uint32>(selection.size() - 1))];
+    return true;
+}
+
+
+bool DungeonDataMgr::GetRandomMissionDungeonForGroup(Dungeon::Dungeon& dungeon, const char* groupPrefix)
+{
+    std::vector<Dungeon::Dungeon> candidates;
+    if (groupPrefix == nullptr || groupPrefix[0] == '\0')
+        return false;
+
+    uint32 missionTemplateCount = 0;
+    uint32 firstRoomObjectCount = 0;
+    uint32 validTypeCount = 0;
+    uint32 entityGroupCount = 0;
+    uint32 matchingGroupCount = 0;
+    // Capture real static-data names/IDs from loaded room objects. This is
+    // diagnostic only: selection remains strict until the actual data proves
+    // which inventory groups represent the requested faction.
+    std::string entityGroupSamples;
+    uint32 entityGroupSampleCount = 0;
+
+    // The Blockade test must use Angel Cartel room templates even when the
+    // issuing security agent belongs to another empire faction. Require NPCs
+    // in the first room because that is the room instantiated on acceptance.
+    for (const Dungeon::Dungeon& candidate : m_dungeons) {
+        if (candidate.archetypeID != 20 || candidate.rooms.empty())
+            continue;
+
+        ++missionTemplateCount;
+        const Dungeon::Room& firstRoom = candidate.rooms.begin()->second;
+        firstRoomObjectCount += static_cast<uint32>(firstRoom.objects.size());
+        bool hasRequestedNPC = false;
+        for (const Dungeon::RoomObject& object : firstRoom.objects) {
+            // dunRoomObjects.groupID is the dungeon editor's room-object
+            // grouping (dunGroups), not necessarily invGroups.groupID.
+            // Resolve the inventory group through the object's typeID.
+            Inv::TypeData type = {};
+            Inv::GrpData group = {};
+            sDataMgr.GetType(object.typeID, type);
+            if (type.id == 0)
+                continue;
+            ++validTypeCount;
+            sDataMgr.GetGroup(type.groupID, group);
+            if (group.id == 0)
+                continue;
+            if (group.catID == EVEDB::invCategories::Entity) {
+                ++entityGroupCount;
+                if (entityGroupSampleCount < 30
+                        && entityGroupSamples.find(group.name) == std::string::npos) {
+                    if (!entityGroupSamples.empty())
+                        entityGroupSamples += "; ";
+                    entityGroupSamples += std::to_string(group.id) + ":" + group.name
+                        + " [type " + std::to_string(type.id) + " " + type.name + "]";
+                    ++entityGroupSampleCount;
+                }
+            }
+            if (group.catID == EVEDB::invCategories::Entity
+                    && group.name.compare(0, std::strlen(groupPrefix), groupPrefix) == 0) {
+                ++matchingGroupCount;
+                hasRequestedNPC = true;
+                break;
+            }
+        }
+        if (hasRequestedNPC)
+            candidates.push_back(candidate);
+    }
+
+    if (candidates.empty()) {
+        // Use the spawn error category so this actionable failure is visible
+        // alongside the final mission-spawn error, even when DUNG logging is filtered.
+        _log(SPAWN__ERROR,
+            "Mission template selection failed for group '%s': loaded templates=%u, first-room objects=%u, valid types=%u, Entity groups=%u, matching groups=%u.",
+            groupPrefix, missionTemplateCount, firstRoomObjectCount, validTypeCount,
+            entityGroupCount, matchingGroupCount);
+        _log(SPAWN__ERROR, "Mission Entity group samples (up to 30): %s",
+            entityGroupSamples.empty() ? "<none>" : entityGroupSamples.c_str());
+        return false;
+    }
+
+    _log(DUNG__MESSAGE, "GetRandomMissionDungeonForGroup() - Matched %u of %u mission templates for '%s'.",
+        static_cast<uint32>(candidates.size()), missionTemplateCount, groupPrefix);
+    dungeon = candidates[MakeRandomInt(0, static_cast<uint32>(candidates.size() - 1))];
     return true;
 }
 
@@ -164,22 +270,36 @@ void DungeonDataMgr::Populate()
     }
 
     // Mission content in this data set uses dunTemplates + dunRoomObjects,
-    // not the legacy dunDungeons + dunRooms tables. Import NPC room objects
+    // not the legacy dunDungeons + dunRooms tables. Import all room objects
     // into the same in-memory representation; no SQL data is written.
     DBQueryResult* templateRes = new DBQueryResult();
+    uint32 missionTemplateRowCount = 0;
     uint32 missionTemplateObjectCount = 0;
+    uint32 missionTemplateCollisionCount = 0;
     DungeonDB::GetMissionTemplateData(*templateRes);
     while (templateRes->GetRow(row))
     {
+        ++missionTemplateRowCount;
         const uint32 templateID = row.GetUInt(0);
-        // A legacy dungeon with the same ID takes precedence.
-        if (byDungeonID.find(templateID) != byDungeonID.end())
+        // A legacy dungeon with the same ID takes precedence. Count these
+        // skipped rows explicitly: otherwise an ID collision can make an
+        // entire mission template disappear without a useful runtime clue.
+        if (byDungeonID.find(templateID) != byDungeonID.end()) {
+            ++missionTemplateCollisionCount;
             continue;
+        }
         CreateDungeon(row);
         FillObject(row);
         ++missionTemplateObjectCount;
     }
-    _log(DUNG__MESSAGE, "Loaded %u NPC room objects from mission dungeon templates.", missionTemplateObjectCount);
+    _log(SPAWN__MESSAGE,
+        "Mission template import: query rows=%u, imported room-object rows=%u, skipped legacy-ID collisions=%u.",
+        missionTemplateRowCount, missionTemplateObjectCount, missionTemplateCollisionCount);
+    if (missionTemplateCollisionCount != 0) {
+        _log(SPAWN__WARNING,
+            "Mission template import skipped %u rows because their template IDs already exist as legacy dungeon IDs.",
+            missionTemplateCollisionCount);
+    }
     SafeDelete(templateRes);
 
     sLog.Cyan("       DunDataMgr", "%lu Dungeon data sets loaded in %.3fms.",
@@ -240,13 +360,13 @@ void DungeonDataMgr::FillObject(DBResultRow row) {
         oData.objectID = row.GetUInt(7);
         oData.typeID = row.GetUInt(8);
         oData.groupID = row.GetUInt(9);
-        oData.x = row.GetInt(10);
-        oData.y = row.GetInt(11);
-        oData.z = row.GetInt(12);
-        oData.yaw = row.GetInt(13);
-        oData.pitch = row.GetInt(14);
-        oData.roll = row.GetInt(15);
-        oData.radius = row.GetInt(16);
+        oData.x = row.GetDouble(10);
+        oData.y = row.GetDouble(11);
+        oData.z = row.GetDouble(12);
+        oData.yaw = row.GetDouble(13);
+        oData.pitch = row.GetDouble(14);
+        oData.roll = row.GetDouble(15);
+        oData.radius = row.GetDouble(16);
         dData.rooms[row.GetUInt(5)].objects.push_back(oData);
         // Populate all data for the dungeon and room
         dData.name = row.GetText(1);

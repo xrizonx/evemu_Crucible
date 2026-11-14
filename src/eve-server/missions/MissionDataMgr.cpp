@@ -18,6 +18,12 @@
 #include "inventory/ItemFactory.h"
 #include <algorithm>
 
+namespace {
+// Reserved synthetic mission ID for the isolated Level 1 Blockade spawn test.
+// It has no fabricated briefing, payout, or reward item attached to it.
+constexpr uint16 kBlockadeSecurityTestMissionID = 65535;
+}
+
 MissionDataMgr::MissionDataMgr()
 {
     m_procCount = 0;
@@ -248,6 +254,31 @@ void MissionDataMgr::Populate()
             m_missions.emplace(row.GetInt(3), data);
         }
     }
+    // Test-only encounter: expose The Blockade (Angel Cartel, Level 1) to
+    // every security agent (levels 1-5), regardless of empire faction. The actual
+    // room NPCs come from loaded dunTemplates/dunRoomObjects; no wave sequence,
+    // briefing, bounty, or reward is fabricated here.
+    MissionData blockadeTest = MissionData();
+    blockadeTest.important = false;
+    blockadeTest.storyline = false;
+    blockadeTest.typeID = Mission::Type::Encounter;
+    blockadeTest.raceID = 0; // faction-independent
+    blockadeTest.missionID = kBlockadeSecurityTestMissionID;
+    blockadeTest.briefingID = 0;
+    blockadeTest.dungeonID = 0; // resolve an Angel Cartel room template at acceptance
+    blockadeTest.rewardISK = 0;
+    blockadeTest.bonusISK = 0;
+    blockadeTest.name = "The Blockade - Angel Cartel (TEST)";
+    for (uint8 testLevel = 1; testLevel <= 5; ++testLevel) {
+        blockadeTest.level = testLevel;
+        blockadeTest.range = testLevel;
+        m_missions.emplace(testLevel, blockadeTest);
+
+        MissionData importantBlockadeTest = blockadeTest;
+        importantBlockadeTest.important = true;
+        m_missionsImp.emplace(testLevel, importantBlockadeTest);
+    }
+
     sLog.Cyan("   MissionDataMgr", "%lu(%lu) Unsorted Mission Data Sets loaded in %.3fms.", m_missions.size(), m_missionsImp.size(), (GetTimeMSeconds() - start));
 
     uint32 level1EncounterCount = 0;
@@ -302,8 +333,33 @@ void MissionDataMgr::Populate()
         offer.dungeonLocationID = row.GetInt(32);
         offer.dungeonSolarSystemID = row.GetInt(33);
         offer.dateCompleted = 0;
-        // will need to determine how to store/retrieve bookmarks as a list of dicts here
+        // Rebuild the mission-site bookmark from the persisted destination
+        // fields. agtOffers stores the beacon ID/system but not the PyObject
+        // bookmark payload, so this also restores journal warp access after
+        // a server restart.
         offer.bookmarks = new PyList();
+        if (offer.typeID == Mission::Type::Encounter
+            && offer.stateID == Mission::State::Accepted
+            && offer.destinationID != 0
+            && offer.destinationSystemID != 0) {
+            PyDict* bookmarkData = new PyDict();
+            bookmarkData->SetItemString("itemID", new PyInt(offer.destinationID));
+            bookmarkData->SetItemString("typeID", new PyInt(offer.destinationTypeID));
+            bookmarkData->SetItemString("agentID", new PyInt(offer.agentID));
+            bookmarkData->SetItemString("hint", new PyString("Mission Site - " + offer.name));
+            bookmarkData->SetItemString("locationType", new PyString("objective.target"));
+            bookmarkData->SetItemString("memo", new PyString(""));
+            bookmarkData->SetItemString("created", new PyLong(offer.dateAccepted));
+            bookmarkData->SetItemString("locationNumber", new PyInt(0));
+            bookmarkData->SetItemString("flag", PyStatic.NewNone());
+            bookmarkData->SetItemString("locationID", new PyInt(offer.destinationSystemID));
+            bookmarkData->SetItemString("ownerID", new PyInt(offer.destinationOwnerID));
+            bookmarkData->SetItemString("x", new PyFloat(0.0));
+            bookmarkData->SetItemString("y", new PyFloat(0.0));
+            bookmarkData->SetItemString("z", new PyFloat(0.0));
+            bookmarkData->SetItemString("solarsystemID", new PyInt(offer.destinationSystemID));
+            offer.bookmarks->AddItem(new PyObject("util.KeyVal", bookmarkData));
+        }
         m_offers.emplace(row.GetInt(2), offer);
         m_aoffers.emplace(row.GetInt(1), offer);    // do we really want dupe data here?  yes.  need offer by char and by agent
     }
@@ -452,7 +508,7 @@ bool MissionDataMgr::GetMissionData(uint16 missionID, MissionData& data) const
     return false;
 }
 
-void MissionDataMgr::CreateMissionOffer(uint8 typeID, uint8 level, uint8 raceID, bool important, MissionOffer& data, uint32 characterID)
+void MissionDataMgr::CreateMissionOffer(uint8 typeID, uint8 level, uint8 raceID, bool important, MissionOffer& data, uint32 characterID, bool securityAgent)
 {
     // variable mission data based on agent, init to 0 here.
     data.stateID                = Mission::State::Allocated;
@@ -578,8 +634,12 @@ void MissionDataMgr::CreateMissionOffer(uint8 typeID, uint8 level, uint8 raceID,
                 const bool notCompletedStarter = (level != 0)
                     || (std::find(completedStarterMissionIDs.begin(), completedStarterMissionIDs.end(), mission.missionID)
                         == completedStarterMissionIDs.end());
-                if (mission.typeID == Mission::Type::Encounter && raceMatches && notStoryline && notCompletedStarter)
+                if (securityAgent && mission.missionID == kBlockadeSecurityTestMissionID) {
                     candidates.push_back(mission);
+                } else if (!securityAgent && mission.typeID == Mission::Type::Encounter
+                        && raceMatches && notStoryline && notCompletedStarter) {
+                    candidates.push_back(mission);
+                }
             }
 
             // Some agent templates are in the opposite important/non-important pool.
@@ -594,8 +654,12 @@ void MissionDataMgr::CreateMissionOffer(uint8 typeID, uint8 level, uint8 raceID,
                     const bool notCompletedStarter = (level != 0)
                         || (std::find(completedStarterMissionIDs.begin(), completedStarterMissionIDs.end(), mission.missionID)
                             == completedStarterMissionIDs.end());
-                    if (mission.typeID == Mission::Type::Encounter && raceMatches && notStoryline && notCompletedStarter)
+                    if (securityAgent && mission.missionID == kBlockadeSecurityTestMissionID) {
                         candidates.push_back(mission);
+                    } else if (!securityAgent && mission.typeID == Mission::Type::Encounter
+                            && raceMatches && notStoryline && notCompletedStarter) {
+                        candidates.push_back(mission);
+                    }
                 }
             }
 

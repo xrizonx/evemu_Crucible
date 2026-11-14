@@ -14,11 +14,38 @@
 #include "npc/NPC.h"
 #include "npc/NPCAI.h"
 #include "system/DestinyManager.h"
+#include "system/Celestial.h"
 #include "system/SystemManager.h"
 #include "system/SystemBubble.h"
 #include "system/cosmicMgrs/SpawnMgr.h"
 #include "system/cosmicMgrs/DungeonMgr.h"
 #include "agents/Agent.h"
+
+// NPC ship types in this Crucible data set use Entity category (11) and
+// faction rat groups named "Asteroid ...". Retain non-NPC room objects as
+// celestials instead of silently discarding them.
+static bool IsMissionNPCGroup(const Inv::GrpData& group)
+{
+    return group.catID == EVEDB::invCategories::Ship
+        || group.catID == EVEDB::invCategories::Drone
+        || (group.catID == EVEDB::invCategories::Entity
+            && group.name.compare(0, 9, "Asteroid ") == 0);
+}
+
+// Explicit inventory-backed fleet for synthetic mission 65535. These are
+// test-only type/group mappings supplied for this branch; they do not modify
+// or depend on official mission or dungeon records.
+struct BlockadeTestShip
+{
+    uint16 typeID;
+    uint16 groupID;
+};
+
+static const BlockadeTestShip kAngelCartelBlockadeTestFleet[] = {
+    {11023, 550}, {10013, 550}, {10019, 550}, {11024, 550},
+    {10015, 550}, {10014, 550}, {10016, 550}, {2372, 550},
+    {11022, 550}, {11021, 550}, {16561, 550}, {16562, 550}
+};
 
 /** @todo  this can be updated to spawn mission, anomaly and deadspace rats.
  *   change all *roidRat* to *somethingelse* to better explain/describe the maps and how they're used.
@@ -450,12 +477,20 @@ void SpawnMgr::DoSpawnForIncursion(SystemBubble* pBubble, uint32 regionID)
 }
 
 bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 missionLevel,
-                                  uint32 characterID, uint32 agentID, uint32 offerID, uint32 beaconID,
-                                  uint32 factionID, uint32 dungeonID)
+                                  uint32 characterID, uint32 agentID, uint32 offerID, uint16 missionID,
+                                  uint32 beaconID, uint32 factionID, uint32 dungeonID)
 {
+    _log(SPAWN__MESSAGE,
+        "SpawnMgr::DoSpawnForMission() - offer %u mission %u level %u character %u agent %u beacon %u faction %u dungeon %u bubble %u.",
+        offerID, missionID, missionLevel, characterID, agentID, beaconID, factionID,
+        dungeonID, (pBubble != nullptr ? pBubble->GetID() : 0));
     if (pBubble == nullptr || !IsRegionID(regionID)
-        || characterID == 0 || agentID == 0 || offerID == 0)
+        || characterID == 0 || agentID == 0 || offerID == 0) {
+        _log(SPAWN__ERROR,
+            "SpawnMgr::DoSpawnForMission() - rejected invalid arguments for offer %u mission %u (region %u).",
+            offerID, missionID, regionID);
         return false;
+    }
 
     uint8 spawnClass = Spawn::Class::Easy;
     switch (missionLevel) {
@@ -469,6 +504,122 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
 
     pBubble->SetMission();
 
+    // Mission 65535 is a synthetic test encounter. Spawn the supplied Angel
+    // Cartel inventory types directly so it is independent of incomplete or
+    // unrelated imported mission-dungeon room data.
+    if (missionID == 65535) {
+        const uint32 angelCartelFactionID = 500011;
+        const uint32 angelCartelCorporationID = 1000138;
+        FactionData factionData = FactionData();
+        factionData.allianceID = angelCartelFactionID;
+        factionData.corporationID = angelCartelCorporationID;
+        factionData.factionID = angelCartelFactionID;
+        factionData.ownerID = angelCartelCorporationID;
+
+        uint16 spawnedCount = 0;
+        uint16 failedCount = 0;
+        uint16 fleetNumber = 0;
+        const GPoint center = pBubble->GetCenter();
+        const uint32 fleetSize = sizeof(kAngelCartelBlockadeTestFleet)
+            / sizeof(kAngelCartelBlockadeTestFleet[0]);
+
+        for (const BlockadeTestShip& ship : kAngelCartelBlockadeTestFleet) {
+            Inv::TypeData type = {};
+            Inv::GrpData group = {};
+            sDataMgr.GetType(ship.typeID, type);
+            if (type.id == 0 || type.groupID != ship.groupID) {
+                _log(SPAWN__ERROR,
+                    "Blockade test fleet type %u is missing or has group %u (expected %u).",
+                    ship.typeID, type.groupID, ship.groupID);
+                ++failedCount;
+                continue;
+            }
+            sDataMgr.GetGroup(type.groupID, group);
+            if (group.id == 0 || group.catID != EVEDB::invCategories::Entity) {
+                _log(SPAWN__ERROR,
+                    "Blockade test fleet type %u has invalid Angel Cartel NPC group %u.",
+                    ship.typeID, type.groupID);
+                ++failedCount;
+                continue;
+            }
+
+            ++fleetNumber;
+            GPoint spawnPosition(center);
+            // Spread the test fleet around the pocket centre to avoid stacking
+            // every ship at precisely the same coordinates.
+            spawnPosition.x += MakeRandomFloat(-5000.0f, 5000.0f);
+            spawnPosition.y += MakeRandomFloat(-5000.0f, 5000.0f);
+            spawnPosition.z += MakeRandomFloat(-2500.0f, 2500.0f);
+
+            ItemData itemData(ship.typeID, angelCartelCorporationID,
+                m_system->GetID(), flagNone, "", spawnPosition, type.name.c_str());
+            InventoryItemRef item = sItemFactory.SpawnItem(itemData);
+            if (item.get() == nullptr) {
+                _log(SPAWN__ERROR, "Blockade test fleet failed to create type %u.", ship.typeID);
+                ++failedCount;
+                continue;
+            }
+
+            NPC* pNPC = new NPC(item, m_services, m_system, factionData, this);
+            if (pNPC == nullptr || !pNPC->Load()) {
+                _log(SPAWN__ERROR, "Blockade test fleet failed to load NPC type %u.", ship.typeID);
+                if (pNPC != nullptr)
+                    pNPC->Delete();
+                ++failedCount;
+                continue;
+            }
+
+            m_system->AddNPC(pNPC);
+            pNPC->DestinyMgr()->SetPosition(spawnPosition);
+
+            SpawnEntry entry = SpawnEntry();
+            entry.enabled = false;
+            entry.groupID = ship.groupID;
+            entry.itemID = item->itemID();
+            entry.total = 1;
+            entry.number = fleetNumber;
+            entry.typeID = ship.typeID;
+            entry.spawnID = m_spawnID;
+            entry.corpID = angelCartelCorporationID;
+            entry.factionID = angelCartelFactionID;
+            entry.spawnClass = spawnClass;
+            entry.spawnGroup = GetSpawnGroup(spawnClass);
+            entry.level = missionLevel;
+            entry.stamp = 0;
+            m_spawns.emplace(pBubble->GetID(), entry);
+            ++spawnedCount;
+        }
+
+        if (spawnedCount == 0) {
+            _log(SPAWN__ERROR, "Blockade test mission %u spawned no Angel Cartel NPCs (%u failed).",
+                offerID, failedCount);
+            pBubble->SetMission(false);
+            return false;
+        }
+
+        ++m_spawnID;
+        m_bubbles.push_back(pBubble);
+        const uint32 npcCount = pBubble->CountNPCs();
+        if (npcCount == 0 || npcCount > 65535) {
+            m_spawns.erase(pBubble->GetID());
+            m_bubbles.pop_back();
+            pBubble->SetMission(false);
+            pBubble->SetSpawned(false);
+            return false;
+        }
+
+        pBubble->SetMissionData(characterID, agentID, offerID, beaconID,
+            static_cast<uint16>(npcCount));
+        pBubble->SetSpawned(true);
+        _log(SPAWN__MESSAGE,
+            "Blockade test mission %u spawned %u/%u Angel Cartel NPCs (faction %u, corporation %u; %u failed).",
+            offerID, spawnedCount, fleetSize, angelCartelFactionID,
+            angelCartelCorporationID, failedCount);
+        return true;
+    }
+
+    const bool blockadeTestMission = (missionID == 65535);
+
     // Mission dungeon metadata is more authoritative than the agent's faction:
     // the dungeon template identifies the actual opposing NPC faction and its
     // first-room NPC type IDs. Later room/gate progression is handled separately.
@@ -481,8 +632,21 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
         // The imported mission rows in some Crucible data sets have dungeonID=0.
         // Resolve a real NPC-bearing agent-mission template by faction instead
         // of requiring the empty legacy dunDungeons/dunRooms tables.
-        if (missionDungeon.rooms.empty())
-            sDunDataMgr.GetRandomMissionDungeon(missionDungeon, factionID);
+        if (missionDungeon.rooms.empty()) {
+            if (blockadeTestMission) {
+                // The synthetic Blockade test is Angel Cartel content and must
+                // not inherit the issuing agent's empire faction.
+                sDunDataMgr.GetRandomMissionDungeonForGroup(missionDungeon, "Asteroid Angel Cartel");
+            } else {
+                sDunDataMgr.GetRandomMissionDungeon(missionDungeon, factionID);
+            }
+        }
+
+        if (blockadeTestMission && missionDungeon.rooms.empty()) {
+            _log(SPAWN__ERROR, "Blockade test mission %u has no Angel Cartel first-room template; refusing to spawn a different faction.", offerID);
+            pBubble->SetMission(false);
+            return false;
+        }
 
         if (missionDungeon.factionID != 0)
             factionID = missionDungeon.factionID;
@@ -503,6 +667,7 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
             factionData.ownerID = corpID;
 
             uint16 spawnNumber = 0;
+            uint16 staticObjectCount = 0;
             for (const Dungeon::RoomObject& object : firstRoom.objects) {
                 // Static-data lookups are void-returning and leave the output
                 // untouched when an ID is missing. Zero-initialize both records
@@ -522,62 +687,81 @@ bool SpawnMgr::DoSpawnForMission(SystemBubble* pBubble, uint32 regionID, uint8 m
                     continue;
                 }
 
-                if (objectGroup.catID != EVEDB::invCategories::Ship
-                    && objectGroup.catID != EVEDB::invCategories::Drone)
-                    continue;
-
                 GPoint spawnPosition = pBubble->GetCenter();
                 spawnPosition.x += object.x;
                 spawnPosition.y += object.y;
                 spawnPosition.z += object.z;
 
-                ItemData itemData(object.typeID, corpID, m_system->GetID(), flagNone,
-                                  "", spawnPosition, objectType.name.c_str());
-                InventoryItemRef item = sItemFactory.SpawnItem(itemData);
-                if (item.get() == nullptr) {
-                    _log(SPAWN__ERROR, "Mission %u failed to create template NPC type %u.",
-                            offerID, object.typeID);
-                    continue;
+                if (IsMissionNPCGroup(objectGroup)) {
+                    ItemData itemData(object.typeID, corpID, m_system->GetID(), flagNone,
+                                      "", spawnPosition, objectType.name.c_str());
+                    InventoryItemRef item = sItemFactory.SpawnItem(itemData);
+                    if (item.get() == nullptr) {
+                        _log(SPAWN__ERROR, "Mission %u failed to create template NPC type %u.",
+                                offerID, object.typeID);
+                        continue;
+                    }
+
+                    NPC* pNPC = new NPC(item, m_services, m_system, factionData, this);
+                    if (pNPC == nullptr)
+                        continue;
+                    if (!pNPC->Load()) {
+                        _log(SPAWN__ERROR, "Mission %u failed to load template NPC %u (type %u).",
+                                offerID, pNPC->GetID(), object.typeID);
+                        pNPC->Delete();
+                        continue;
+                    }
+
+                    m_system->AddNPC(pNPC);
+                    pNPC->DestinyMgr()->SetPosition(spawnPosition);
+
+                    SpawnEntry entry = SpawnEntry();
+                    entry.enabled = false;
+                    entry.groupID = item->type().groupID();
+                    entry.itemID = item->itemID();
+                    entry.total = 1;
+                    entry.number = ++spawnNumber;
+                    entry.typeID = object.typeID;
+                    entry.spawnID = m_spawnID;
+                    entry.corpID = corpID;
+                    entry.factionID = factionID;
+                    entry.spawnClass = spawnClass;
+                    entry.spawnGroup = GetSpawnGroup(spawnClass);
+                    entry.level = missionLevel;
+                    entry.stamp = 0;
+                    m_spawns.emplace(pBubble->GetID(), entry);
+                } else {
+                    // Non-NPC room objects (structures, gates, containers and
+                    // scenery) remain part of the pocket as ordinary celestials.
+                    ItemData objectData(object.typeID, corpID, m_system->GetID(), flagNone,
+                                        "", spawnPosition, objectType.name.c_str());
+                    InventoryItemRef objectItem = sItemFactory.SpawnItem(objectData);
+                    if (objectItem.get() == nullptr) {
+                        _log(SPAWN__WARNING, "Mission %u failed to create room object type %u.",
+                                offerID, object.typeID);
+                        continue;
+                    }
+
+                    CelestialSE* pCelestial = new CelestialSE(objectItem, m_services, m_system);
+                    m_system->AddEntity(pCelestial, false);
+                    ++staticObjectCount;
                 }
-
-                NPC* pNPC = new NPC(item, m_services, m_system, factionData, this);
-                if (pNPC == nullptr)
-                    continue;
-                if (!pNPC->Load()) {
-                    _log(SPAWN__ERROR, "Mission %u failed to load template NPC %u (type %u).",
-                            offerID, pNPC->GetID(), object.typeID);
-                    pNPC->Delete();
-                    continue;
-                }
-
-                m_system->AddNPC(pNPC);
-                pNPC->DestinyMgr()->SetPosition(spawnPosition);
-
-                SpawnEntry entry = SpawnEntry();
-                entry.enabled = false;
-                entry.groupID = item->type().groupID();
-                entry.itemID = item->itemID();
-                entry.total = 1;
-                entry.number = ++spawnNumber;
-                entry.typeID = object.typeID;
-                entry.spawnID = m_spawnID;
-                entry.corpID = corpID;
-                entry.factionID = factionID;
-                entry.spawnClass = spawnClass;
-                entry.spawnGroup = GetSpawnGroup(spawnClass);
-                entry.level = missionLevel;
-                entry.stamp = 0;
-                m_spawns.emplace(pBubble->GetID(), entry);
             }
 
             if (spawnNumber > 0) {
                 ++m_spawnID;
                 m_bubbles.push_back(pBubble);
                 spawnedFromTemplate = true;
-                _log(SPAWN__MESSAGE, "Mission %u spawned %u NPCs from dungeon %u room %u.",
-                        offerID, spawnNumber, selectedDungeonID, firstRoom.roomID);
+                _log(SPAWN__MESSAGE, "Mission %u spawned %u NPCs and %u room objects from dungeon %u room %u.",
+                        offerID, spawnNumber, staticObjectCount, selectedDungeonID, firstRoom.roomID);
             }
         }
+    }
+
+    if (!spawnedFromTemplate && blockadeTestMission) {
+        _log(SPAWN__ERROR, "Blockade test mission %u did not spawn from its Angel Cartel room template.", offerID);
+        pBubble->SetMission(false);
+        return false;
     }
 
     if (!spawnedFromTemplate && !PrepSpawn(pBubble, spawnClass, 0, factionID)) {

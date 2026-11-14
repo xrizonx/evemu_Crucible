@@ -754,6 +754,19 @@ void DestinyManager::MoveObject() {
         return;
     }
 
+    // GOTO is also used as the initial destiny mode for some NPCs.  An
+    // entity that has no requested/active speed and no movement transition
+    // is simply idle; do not run the acceleration state machine or report a
+    // false "move checks are not set right" error on every server tick.
+    if (!m_accel && !m_decel && !m_turning
+        && m_userSpeedFraction <= 0.0001f
+        && m_activeSpeedFraction <= 0.0001f
+        && m_prevSpeedFraction <= 0.0001f
+        && !m_tractored && !m_tractorPause) {
+        Halt();
+        return;
+    }
+
     /* acceleration and deceleration are both logarithmic, and the server needs to keep up with client position.
      * formula for time taken to accelerate from v to V, from https://wiki.eveonline.com/en/wiki/Acceleration
      *
@@ -859,19 +872,56 @@ void DestinyManager::MoveObject() {
                 // decel for turn
                 move = "decelerating for turn";
             }
-            if (m_prevSpeedFraction) {
+            if (m_prevSpeedFraction > 0.0001f) {
                 // asf = psf - (psf - usf) * tf
                 m_activeSpeedFraction = m_prevSpeedFraction - (m_prevSpeedFraction - m_userSpeedFraction) * m_timeFraction;
             } else {
-                // this should never hit....should not have decel w/o previous speed
-                sLog.Warning("Destiny::MoveObject()", "decel = true, but psf = 0.");
+                // Recover a lost previous-speed fraction from the current or
+                // commanded speed. Restart the deceleration clock so a stale
+                // timestamp cannot snap an NPC to a stop on this same tick.
+                const float recoverableSpeed = (m_activeSpeedFraction > m_userSpeedFraction)
+                    ? m_activeSpeedFraction : m_userSpeedFraction;
+                if (recoverableSpeed > 0.0001f) {
+                    m_prevSpeedFraction = recoverableSpeed;
+                    m_prevSpeed = m_maxShipSpeed * recoverableSpeed;
+                    m_shipAccelTime = m_shipMaxAccelTime * recoverableSpeed;
+                    m_moveTime = GetTimeMSeconds();
+                    m_timeFraction = 0.0f;
+                    return;
+                }
+
+                // There is no remaining speed to decelerate. Normalize the
+                // orphaned transition instead of warning on every destiny tick.
+                Halt();
+                return;
             }
         } else if (m_tractored or m_tractorPause) {
             ;   // do nothing here.  this is to remove error reporting from next line.
+        } else if (m_userSpeedFraction > 0.0001f) {
+            // GOTO NPCs can retain a commanded cruise speed without an
+            // acceleration/deceleration transition. Treat that as steady
+            // movement instead of reporting an invalid movement state.
+            m_activeSpeedFraction = m_userSpeedFraction;
+            m_timeFraction = 1.0f;
+            move = "at constant speed, going";
+        } else if (m_activeSpeedFraction > 0.0001f || m_prevSpeedFraction > 0.0001f) {
+            // A speed fraction remains, but its transition flag was lost.
+            // Re-enter the normal deceleration path rather than snapping the
+            // entity to a stop or emitting an error every destiny tick.
+            m_prevSpeedFraction = (m_activeSpeedFraction > m_prevSpeedFraction)
+                ? m_activeSpeedFraction : m_prevSpeedFraction;
+            m_prevSpeed = m_maxShipSpeed * m_prevSpeedFraction;
+            m_accel = false;
+            m_decel = true;
+            m_shipAccelTime = m_shipMaxAccelTime * m_prevSpeedFraction;
+            m_moveTime = GetTimeMSeconds();
+            m_timeFraction = 0.0f;
+            return;
         } else {
-            sLog.Error("Destiny::MoveObject()", "%s(%u) - move checks are not set right. Acc:%s, Dec:%s, Turn:%s, Tic:%u, Tractored:%s, TractorPause:%s", \
-                    mySE->GetName(), mySE->GetID(), (m_accel ? "True" : "False"), (m_decel ? "True" : "False"), (m_turning ? "True" : "False"), \
-                    m_turnTic, (m_tractored ? "True" : "False"), (m_tractorPause ? "True" : "False"));
+            // No movement was requested and no speed remains. This is an
+            // idle GOTO entity; normalize its destiny state to STOP.
+            Halt();
+            return;
         }
 
         speed = (m_maxShipSpeed * m_activeSpeedFraction);
@@ -2650,9 +2700,43 @@ Battleships 0.155
     m_mass = sRef->GetAttribute(AttrMass).get_float();
     m_massMKg = m_mass / 1000000; //changes mass from Kg to milliKg (10^-6)
 
-    // this will catch speeds/needs for all ships (player and npc), and is easier to do here.
-    if (sRef->HasAttribute(AttrWarpSpeedMultiplier))
-        m_shipWarpSpeed = sRef->GetAttribute(AttrWarpSpeedMultiplier).get_float();
+    // Ship warp speed is type-specific: dogma attribute 600 is the ship's
+    // warp-speed multiplier, applied to the Crucible-era 3 AU/s baseline.
+    // A persisted/live value near zero is invalid for a normal ship and was
+    // producing values such as 0.10 AU/s. Recover from the immutable type
+    // default so every hull uses its own database value rather than a
+    // hard-coded per-ship speed.
+    const float liveWarpSpeedMultiplier =
+        sRef->GetAttribute(AttrWarpSpeedMultiplier).get_float();
+    const float typeWarpSpeedMultiplier =
+        sRef->GetDefaultAttribute(AttrWarpSpeedMultiplier).get_float();
+    float warpSpeedMultiplier = liveWarpSpeedMultiplier;
+    if (liveWarpSpeedMultiplier <= 0.1f && typeWarpSpeedMultiplier > 0.1f) {
+        _log(
+            DESTINY__ERROR,
+            "Destiny::UpdateShipVariables(): %s(%u) has invalid live warpSpeedMultiplier %.6f; using type default %.6f.",
+            mySE->GetName(),
+            mySE->GetID(),
+            liveWarpSpeedMultiplier,
+            typeWarpSpeedMultiplier
+        );
+        warpSpeedMultiplier = typeWarpSpeedMultiplier;
+    }
+    if (warpSpeedMultiplier <= 0.0f) {
+        // NPC inventory types commonly omit ship-only dogma attribute 600.
+        // Their standard fallback is the 3.0 multiplier (9 AU/s); this is
+        // expected data, not a runtime error worth logging for every rat.
+        if (!mySE->IsNPCSE() && !mySE->IsDroneSE()) {
+            _log(
+                DESTINY__ERROR,
+                "Destiny::UpdateShipVariables(): %s(%u) has no valid warpSpeedMultiplier; using dogma default 3.0.",
+                mySE->GetName(),
+                mySE->GetID()
+            );
+        }
+        warpSpeedMultiplier = 3.0f;
+    }
+    m_shipWarpSpeed = 3.0f * warpSpeedMultiplier;
     if (sRef->HasAttribute(AttrInetia))
         m_shipInertia = sRef->GetAttribute(AttrInetia).get_float();
     if (sRef->HasAttribute(AttrMaxVelocity))
