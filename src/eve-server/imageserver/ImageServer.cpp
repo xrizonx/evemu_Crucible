@@ -27,6 +27,7 @@
 
 #include "imageserver/ImageServer.h"
 #include "imageserver/ImageServerListener.h"
+#include <cstring>
 
 const char *const ImageServer::FallbackURL = "https://images.evetech.net/";
 
