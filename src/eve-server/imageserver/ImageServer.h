@@ -59,6 +59,9 @@ public:
 
     std::string GetFilePath(std::string& category, uint32 id, uint32 size);
     std::shared_ptr<std::vector<char> > GetImage(std::string& category, uint32 id, uint32 size);
+    // Embedded, fully offline JPEG placeholder for NPC agents whose historical
+    // portrait is not present in the local Character image cache.
+    std::shared_ptr<std::vector<char> > GetOfflineAgentPortrait();
 
     static const char *const Categories[];
     static const uint32 CategoryCount;
