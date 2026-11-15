@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Offline regression tests for the portrait import tool (stdlib only)."""
+import base64
 import pathlib
+import re
 import tempfile
 import unittest
 
@@ -8,6 +10,19 @@ from import_local import import_portraits, read_agent_ids, valid_jpeg
 
 
 class AgentPortraitImportTest(unittest.TestCase):
+    def test_compiled_fallback_is_valid_local_jpeg(self):
+        cpp = pathlib.Path(__file__).resolve().parents[2] / (
+            "src/eve-server/imageserver/ImageServer.cpp"
+        )
+        text = cpp.read_text(encoding="utf-8")
+        match = re.search(r'encoded\s*=\s*"([A-Za-z0-9+/=]+)"', text)
+        self.assertIsNotNone(match)
+        jpeg = base64.b64decode(match.group(1), validate=True)
+        self.assertGreater(len(jpeg), 500)
+        self.assertEqual(jpeg[:2], b"\xff\xd8")
+        self.assertEqual(jpeg[-2:], b"\xff\xd9")
+        self.assertIn(b"JFIF", jpeg[:32])
+
     def test_import_preserves_original_and_ignores_player_ids(self):
         with tempfile.TemporaryDirectory() as temp:
             root = pathlib.Path(temp)
