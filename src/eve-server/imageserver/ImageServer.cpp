@@ -150,6 +150,40 @@ std::shared_ptr<std::vector<char> > ImageServer::GetImage(std::string& category,
     return ret;
 }
 
+// Generated non-CCP offline stand-in portrait. This is a 64x64 JPEG that
+// remains available when image_cache has no original station-agent artwork.
+// Local Character/<agentID>_50.jpg and _512.jpg always take priority.
+// The resource is embedded so Windows/Linux/Docker builds need no asset
+// download, PNG codec or external HTTPS redirect to show NPC agent images.
+std::shared_ptr<std::vector<char> > ImageServer::GetOfflineAgentPortrait()
+{
+    static const std::shared_ptr<std::vector<char> > portrait = []() {
+        static const char* encoded =
+            "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA8LDA0MCg8NDA0REA8SFyYZFxUVFy8iJBwmODE7OjcxNjU9RVhLPUFUQjU2TWlOVFteY2RjPEpsdGxgc1hhY1//2wBDARARERcUFy0ZGS1fPzY/X19fX19fX19fX19fX19fX19fX19fX19fX19fX19fX19fX19fX19fX19fX19fX19fX1//wAARCABAAEADASIAAhEBAxEB/8QAGgAAAgMBAQAAAAAAAAAAAAAABAUAAgMGAf/EACwQAAEDAwIFAwMFAAAAAAAAAAEAAgMEESESMRMiQVGBMnGhUmGxBRQzQpH/xAAXAQEBAQEAAAAAAAAAAAAAAAABAAMC/8QAGhEBAQEBAQEBAAAAAAAAAAAAAAECMQMhEf/aAAwDAQACEQMRAD8A4xRRetaXusFq5eK4iedmnzhEsjazYXPdEQ075Rq1MYy9i97rC/ZXOjvC4xSDdp8Km26bS0r42l7XxysFrujdqAv3Qz2Nf6h5V8vFzoJRWewsdY+CqqKIyNgY23XqUPC28g+2UWmCvCbBGUlBPXAPc4MiHKCR+AgnAnZdJRieARU/7XTE1ovJxAc2uce6y9LWnnIV1P6ZPRjjRPEjW72FiO+OoQANwunqHTGQQim4kLxZ7+IBYHBx7LnqqKOGpkjic5zGm1zvfr8o87bV6SfjB7Q9pBQRFiQeiPQtQ2zwe4W1ZxKb+Q+yKQkLrSD74RaoKm+An1JVmWBsc0hikbjVjmHm6WxRhjQSObqVojWZrpzu5vwymqhBG7hymeQ+kG1h/gXPO1FxL76jk33R6o+NrxkZ6FGczK1u66CQ9T/XyiCCCQdwhah13gdguqIyTCkIlcD1GSEvR1FNBDEdb7Pcc4KIaYqLBtVA42bJn2Kvxo/q+EuGiiz40f1fCq6phZ6n28FSY1dozrJ3/KWE3JJ6pjVT080LmiTmGRg7pciu4//Z";
+        const char* alphabet =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        auto decoded = std::make_shared<std::vector<char>>();
+        decoded->reserve(768);
+        unsigned int value = 0;
+        int bits = -8;
+        for (const unsigned char ch : std::string(encoded)) {
+            if (ch == '=')
+                break;
+            const char* at = strchr(alphabet, ch);
+            if (at == nullptr)
+                continue;
+            value = (value << 6) | static_cast<unsigned int>(at - alphabet);
+            bits += 6;
+            if (bits >= 0) {
+                decoded->push_back(static_cast<char>((value >> bits) & 0xff));
+                bits -= 8;
+            }
+        }
+        return decoded;
+    }();
+    return portrait;
+}
+
 std::string ImageServer::GetFilePath(std::string& category, uint32 id, uint32 size)
 {
     std::string extension = category == "Character" ? "jpg" : "png";
