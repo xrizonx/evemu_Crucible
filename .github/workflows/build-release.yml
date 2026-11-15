@@ -40,6 +40,8 @@ jobs:
           restore-keys: |
             ccache-linux-${{ runner.arch }}-${{ github.ref_name }}-${{ hashFiles('CMakeLists.txt', 'cmake/**') }}-
             ccache-linux-${{ runner.arch }}-
+      - name: Test offline station agent portrait importer
+        run: python3 -m unittest discover -s tools/agent_portraits -p 'test_*.py'
       - name: Configure
         run: |
           ccache --max-size=1G
