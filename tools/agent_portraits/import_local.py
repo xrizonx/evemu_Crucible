@@ -40,9 +40,10 @@ def valid_jpeg(path):
     if not path.is_file() or path.stat().st_size < 4:
         return False
     with path.open("rb") as handle:
-        return handle.read(2) == b"\xff\xd8" and (
-            handle.seek(-2, 2) is None or handle.read(2) == b"\xff\xd9"
-        )
+        if handle.read(2) != b"\xff\xd8":
+            return False
+        handle.seek(-2, 2)
+        return handle.read(2) == b"\xff\xd9"
 
 
 def import_portraits(source, output, allowed=None, overwrite=False, dry_run=False):
