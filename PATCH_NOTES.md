@@ -1,5 +1,13 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 2026-11-15 — Local-only NPC agent portraits
+
+- Prevented missing NPC station-agent portraits from triggering modern external HTTPS redirects. `ImageServerConnection` now checks the existing `IsAgent` classification and serves a bundled local JPEG placeholder when the agent has no image in `image_cache/Character/`.
+- Local `<agentID>_50.jpg` and `_512.jpg` images retain priority. Other image categories and missing player-character portraits retain their previous behavior.
+- Added a 64px fictional portrait silhouette embedded in the server binary, avoiding third-party image downloads and image-server client HTTPS compatibility concerns. This placeholder is **not authentic 2012 NPC artwork**.
+- Added an offline-only, Python-standard-library portrait importer and regression tests to install existing licensed JPEG archives under their corresponding Crucible agent IDs; included the tests in Linux CI.
+- Updated [offline agent portrait audit and installation steps](docs/OFFLINE_STATION_AGENT_PORTRAITS_2026-11-15.md). Windows/Linux/Docker builds and 2012 client offline image response testing remain required.
+
 ## 2026-11-15 — Agent data, station portraits and mission safety
 
 - Agent station listing no longer relies exclusively on optional `chrNPCCharacters.stationID`: `ManagerDB::GetAgents` and `AgentDB::LoadAgentData` use `agtAgents.locationID` when it resolves to `staStations`, while preserving the legacy result columns.
