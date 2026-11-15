@@ -107,6 +107,13 @@ void ImageServerConnection::ProcessHeaders()
     }
 
     _imageData = sImageServer.GetImage(_category, _id, _size);
+    // The Crucible 2012 client does not need to follow a modern HTTPS
+    // redirect for station agents. Prefer a historical local JPEG; if it is
+    // missing, deliver a bundled, offline JPEG rather than a 301/404.
+    // IsAgent() restricts the fallback to agent IDs, preserving the normal
+    // missing-image handling for player characters and unrelated IDs.
+    if (!_imageData && _category == "Character" && IsAgent(_id))
+        _imageData = sImageServer.GetOfflineAgentPortrait();
     if (!_imageData) {
         if (IsPlayerItem(_id)) {
             sLog.Error("     Image Server","Image for itemID %u not found.", _id);
