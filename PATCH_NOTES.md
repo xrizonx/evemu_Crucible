@@ -1,3 +1,10 @@
+## 17 Nov 2026 — A01 operator acceptance, merged validation and staging cleanup
+
+- **A01 is RESOLVED (operator reported all A01 tests passed)** on the existing-data live test. Original [PR #32](https://github.com/xrizonx/evemu_Crucible/pull/32) was already merged into `master` at `7f600be1fa06191707f4352d46f2240bfe3d2159`.
+- [A01 MariaDB 11.8 fixture CI 44072201705](https://github.com/xrizonx/evemu_Crucible/actions/runs/44072201705) and [post-merge master Windows/Linux/Docker CI 44073936776](https://github.com/xrizonx/evemu_Crucible/actions/runs/44073936776) passed. Real-client test acceptance is the operator's report; no private gameplay evidence was uploaded here, and the opt-in full-server GitHub Actions job was skipped.
+- Retired only the A01-specific temporary fixture, isolated Docker harness, Python unit helpers and dedicated CI workflow; removed A01-only steps from the standard build. **Preserved `src/eve-test/`, CTest registration, normal Windows/Linux/Docker CI, existing game services, production Compose, SQL migrations and data.** Git history retains all A01 implementation files for reproducibility if needed.
+- [A01 archived completion record](docs/A01_STAGING_HARNESS.md) and the [living repair status](docs/REPAIR_CHECKLIST.md) preserve the sign-off and next tasks.
+
 ## 17 Nov 2026 — Rizonx GitHub project links and recent master updates
 
 - The Local-chat login welcome now directs players to this maintained fork, the live `master` commit history, `PATCH_NOTES.md`, the Windows/Linux/Docker build workflow and the GitHub issue tracker. Its links follow `master` automatically when the repository changes; the server does not fetch online content at login.
