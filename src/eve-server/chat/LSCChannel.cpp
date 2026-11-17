@@ -215,9 +215,16 @@ void LSCChannel::SendMessage(Client * c, const char * message, bool self/*false*
 void LSCChannel::SendServerMOTD(Client* pClient) {
     std::string uptime;
     sEntityList.GetUpTime(uptime);
-    std::string msg = "<br>Welcome to EVEmu Server";
-    //msg += pClient->GetCharName();
-    msg += ".<br>Server Version: ";
+    // These master-relative links always lead to the latest GitHub history
+    // and patch notes; no HTTP request is made by the EVEmu server/client.
+    std::string msg = "<br>Welcome to EVEmu Crucible - Rizonx.";
+    msg += "<br>Project: https://github.com/xrizonx/evemu_Crucible";
+    msg += "<br>Latest changes: https://github.com/xrizonx/evemu_Crucible/commits/master";
+    msg += "<br>Patch notes: https://github.com/xrizonx/evemu_Crucible/blob/master/PATCH_NOTES.md";
+    msg += "<br>Builds: https://github.com/xrizonx/evemu_Crucible/actions/workflows/build-release.yml";
+    msg += "<br>Issues and feedback: https://github.com/xrizonx/evemu_Crucible/issues";
+    msg += "<br>Thank you for helping improve this project.";
+    msg += "<br><br>Server Version: ";
     msg += EVEMU_REVISION;
     msg += "<br>Revision Date: ";
     msg += EVEMU_BUILD_DATE;

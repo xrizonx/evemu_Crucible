@@ -1,3 +1,10 @@
+## 17 Nov 2026 — Rizonx GitHub project links and recent master updates
+
+- The Local-chat login welcome now directs players to this maintained fork, the live `master` commit history, `PATCH_NOTES.md`, the Windows/Linux/Docker build workflow and the GitHub issue tracker. Its links follow `master` automatically when the repository changes; the server does not fetch online content at login.
+- **PR #31 (merged):** corrected Crucible fitted ship warp speed interpretation, warp alignment/state checks, wreck/container approach and loot surface-distance handling, and turret/mining/tractor range calculations. Guarded SQL for historically missing hull warp-speed attributes remains **operator-executed only**, not automatically applied.
+- **PR #32 (merged):** added an isolated MariaDB 11.8 staging fixture, source/test harness and read-only real-game snapshots for staged gameplay verification. Existing character data is **not modified** by these staging tools; real Crucible client acceptance remains pending.
+- The project's GitHub [commit history](https://github.com/xrizonx/evemu_Crucible/commits/master) is the automatically current change record. This file is a curated summary and updates only when committed to the repository.
+
 ## 16 Nov 2026 — PR #25 runtime-confirmed station container fix and 0.8.7-Rizonx server revision
 
 - **Operator runtime-confirmed:** assembled Giant Secure Container **140002461** (named `Test`) can be renamed, loaded with items, and emptied into the station hangar without crashing the server or the Crucible client. Stack splitting works and contents persist over server restarts.
