@@ -11,7 +11,7 @@
   <img alt="Docker" src="https://img.shields.io/badge/Docker-Build-2496ED?logo=docker&logoColor=white" />
 </p>
 
-[Source](https://github.com/xrizonx/evemu_Crucible) · [CI builds](https://github.com/xrizonx/evemu_Crucible/actions/workflows/build-release.yml) · [Full patch notes](PATCH_NOTES.md) · [Stability worklog](STABILITY_WORKLOG.md) · [Database guide](sql/README.md)
+[Source](https://github.com/xrizonx/evemu_Crucible) · [CI builds](https://github.com/xrizonx/evemu_Crucible/actions/workflows/build-release.yml) · [Report a bug / Issues](https://github.com/xrizonx/evemu_Crucible/issues) · [Full patch notes](PATCH_NOTES.md) · [Stability worklog](STABILITY_WORKLOG.md) · [Database guide](sql/README.md)
 
 EVEmu is an educational, work-in-progress EVE Online server emulator based on [upstream EVEmu Crucible](https://github.com/EvEmu-Project/evemu_Crucible). It is intended for local development and testing, not public or production hosting.
 
@@ -19,6 +19,8 @@ EVEmu is an educational, work-in-progress EVE Online server emulator based on [u
 
 ## Quick navigation
 
+- [Latest verified fixes and change history](#november-2026-maintainer-handover--features-fixes-and-stability)
+- [Open issue tracker and known limitations](#issue-tracker--outstanding-investigations)
 - [What has changed](#changes-in-this-fork)
 - [Download and install on Windows](#windows-11-and-windows-10-x64-setup)
 - [MariaDB setup](#3-install-and-configure-mariadb)
@@ -31,7 +33,7 @@ EVEmu is an educational, work-in-progress EVE Online server emulator based on [u
 
 ## Changes in this fork
 
-For the complete chronological changes, see [PATCH_NOTES.md](PATCH_NOTES.md), [STABILITY_WORKLOG.md](STABILITY_WORKLOG.md), and the [master commit history](https://github.com/xrizonx/evemu_Crucible/commits/master). Major changes through the merged [PR #13](https://github.com/xrizonx/evemu_Crucible/pull/13):
+For the complete chronological changes, see [PATCH_NOTES.md](PATCH_NOTES.md), [STABILITY_WORKLOG.md](STABILITY_WORKLOG.md), and the [master commit history](https://github.com/xrizonx/evemu_Crucible/commits/master). Early modernization changes (see the [November 2026 maintainer handover](#november-2026-maintainer-handover--features-fixes-and-stability) below for the newer changes through merged [PR #44](https://github.com/xrizonx/evemu_Crucible/pull/44)):
 
 - **Windows and packaging:** modern MSYS2 UCRT64/GCC, CMake/Boost and Windows linker/API compatibility fixes; runtime DLLs bundled **next to `bin\eve-server.exe`**, including `libmariadb.dll`, `libtinyxml-0.dll` and `libz-1.dll`.
 - **CI and tests:** Linux GCC, Windows UCRT64, Docker builds, CMake/CTest, weapon-formula tests, ccache, downloadable platform packages and checksums.
@@ -42,6 +44,88 @@ For the complete chronological changes, see [PATCH_NOTES.md](PATCH_NOTES.md), [S
 - **General stability:** crash-path null checks, module/item safety, expired timer corrections, iterator safety and log cleanup.
 
 **Test limitation:** passing Linux, Windows and Docker CI builds does not prove drone/weapon/mission mechanics are bug-free in a running game. New smartbomb, bomb, defender missile and drone behavior require in-game tests. Report runtime faults with the exact build SHA, logs, reproduction and crash dump.
+
+## November 2026 maintainer handover — features, fixes and stability
+
+> **Snapshot: 19 November 2026.** The latest reviewed merged feature is [PR #44](https://github.com/xrizonx/evemu_Crucible/pull/44), merge commit [`3fb1e546`](https://github.com/xrizonx/evemu_Crucible/commit/3fb1e546a9af386e29086e28dd95063dd00a7224). The corrected PR workflow [#44516480943](https://github.com/xrizonx/evemu_Crucible/actions/runs/44516480943) **passed Windows UCRT64 GCC, Linux GCC, Docker and the MariaDB NPC seed integration job**. A successful source build and source-invariant/CTest run do **not** prove every game mechanic or migration has been tested with a live client and full production-sized database. This document describes the audited/recorded changes, not a claimed line-by-line certification of the whole repository.
+
+### Recent merged changes — what they do
+
+| Area | Merged change | What was fixed or introduced | Remaining verification |
+| --- | --- | --- | --- |
+| **High-volume mineral/ore NPC buys** | [PR #44](https://github.com/xrizonx/evemu_Crucible/pull/44) | Published, market-listed mineral **group 18** and asteroid/ore **category 25** static NPC buy orders target **100,000,000 units per type/station** subject to the 10T ISK notional escrow ceiling. Sampled mineral, Veldspar and escrow-capped cases now run in isolated MariaDB CI. | Staging full SDE, real-client sale at various stack sizes, order counts/storage and latency |
+| **Market performance** | [PR #44](https://github.com/xrizonx/evemu_Crucible/pull/44) | Material/mineral price initialization consolidates one-per-type `invTypes` queries into one bounded base-price fetch; historical **1.05× material / 1.15× mineral** modifiers are retained. | Measure database and memory behavior on large catalogs; evaluate indexing and remaining per-row writes |
+| **Docker production compilation** | [PR #44](https://github.com/xrizonx/evemu_Crucible/pull/44) | Container server now compiles with CMake **Release**, consistent with Windows/Linux Release CI, rather than Debug. | Compare runtime throughput and verify diagnostics strategy for dedicated Debug images |
+| **Compiler repair** | [PR #44](https://github.com/xrizonx/evemu_Crucible/pull/44) | Removed the extra C++ brace left near `MarketDB::GetMineralPrices()`; the first run failed Windows/Linux/Docker but corrected CI then passed. A source guard helps catch accidental helper-boundary regressions. | None for this specific syntax regression beyond successful CI |
+| **Warp, gate/docking navigation** | [PR #43](https://github.com/xrizonx/evemu_Crucible/pull/43) | Warp-to-zero targets **2,400 m surface clearance** inside the **2,500 m** jump/docking threshold; ship and object radii counted once, autopilot standoff retained. Warp alignment/throttle, ordered landing position+velocity+stop+FX, station/gate approach overshoot, gate transfer state, cloak and invulnerability timer handling hardened. | Occasional **missing client warp tunnel** remains reported; investigate [#45](https://github.com/xrizonx/evemu_Crucible/issues/45). Live operator had verified normal warp/jump/dock; this is not a guarantee for every flight |
+| **Mining drones** | [PR #42](https://github.com/xrizonx/evemu_Crucible/pull/42) | Improved range-based asteroid engagement, mass/speed fallbacks, approach/orbit/return movement updates and keeping mined ore payload until returning to controller. | End-to-end AU-scale overview distance, drone ore transfer and recall on live client [#48](https://github.com/xrizonx/evemu_Crucible/issues/48) |
+| **DED/Officer expedition** | [PR #41](https://github.com/xrizonx/evemu_Crucible/pull/41) | Excluded known untargetable **Domination Grigori** while retaining the existing True Sansha exclusion, other valid officers and expedition composition. | Fresh mission generation, targetability, kill completion and loot checks |
+| **Sovereignty/IHub/POS, industry, movement** | [PR #40](https://github.com/xrizonx/evemu_Crucible/pull/40), [PR #39](https://github.com/xrizonx/evemu_Crucible/pull/39) and associated merged work | DEV/ADMIN `/sovindex5` override, raw-point width migrations, effective index values, infrastructure-upgrade validation, tower and forcefield handling, security/ownership hardening, SBU counting, structure lifecycle cleanup, tractor movement, Crucible static attributes and research/copying safeguards. | Full functional upgrade/forcefield and activity-driven index behavior [#49](https://github.com/xrizonx/evemu_Crucible/issues/49); industry/POS jobs [#47](https://github.com/xrizonx/evemu_Crucible/issues/47) |
+| **NPC market buy settlement** | [PR #35](https://github.com/xrizonx/evemu_Crucible/pull/35) and later fixes | Introduced separate static NPC buy seed, 100% `basePrice` pricing, supported pseudo-owner **4000000**, station-local range **0** compatible with unsigned MariaDB `orderRange`, scoped legacy NPC bid migration, quantity/type/station checks and stored-order-price payout. | Real player inventory/ISK reconciliation, rollback/failure injection, high-volume escrow checks [#46](https://github.com/xrizonx/evemu_Crucible/issues/46) |
+
+### Older fixes retained on master
+
+The fork also contains earlier combat and gameplay improvements recorded in [full patch notes](PATCH_NOTES.md), [stability worklog](STABILITY_WORKLOG.md) and [upstream issue triage](ISSUE_TRIAGE.md). Important retained areas include:
+
+- **Weapon and ship combat:** turret transversal versus radial velocity, optimal/falloff/tracking, missile explosion radius/velocity, shield remote transfer, online/offline fitted modules, smartbombs, bombs, defender missiles, damage and target/entity lifetime safety.
+- **Missions and agents:** synthetic Blockade and DED/Officer security missions, mission objective accounting and spawn cleanup, agent journal and data access guards, objective persistence and reward paths. In-game turn-in/reward behavior requires independent verification.
+- **Ships, modules and inventory:** station/cargo refresh, drag/drop item ID compatibility, manufacturing/research access restrictions, zero/invalid material amounts, non-player entity handling and safeguards against missing inventory/station objects.
+- **Sovereignty and POS:** TCU claim/FILETIME persistence, SBU distinct-gate rules, secure POS commands, tower onlining persistence, silo type capacity, bridge link checks, ownership and flag validation, cleanup of new structure metadata orphans. Existing orphan rows are **not** automatically deleted.
+- **Server stability:** malformed packet/input guards, invalid orbit geometry/speed fallback, stale targets, crash-path null checks, iterator invalidation, move/update packet sequencing and lower idle stop-packet churn.
+- **Compatibility and packaging:** MSYS2 UCRT64 Windows fixes for Boost, Winsock/DbgHelp and BFD; bundled required runtime DLLs, compiled EVEDBTool, Linux package, Docker image and cross-platform regression checks. The source is **Crucible-era**; do not use the current retail EVE client.
+
+### CI/CD status, scope and how to download builds
+
+- Workflow: [EVEmu Build and Release](https://github.com/xrizonx/evemu_Crucible/actions/workflows/build-release.yml), triggered on `master` pushes, pull requests to `master`, manual dispatch and release tags.
+- **Windows**: MSYS2 **UCRT64 GCC**, CMake/Ninja Release, CTest/source invariants, patched Go EVEDBTool (`evedbtool.exe`), runtime DLL dependency collection, downloadable **`evemu-crucible-windows-x86_64.zip`** and SHA256.
+- **Linux**: GCC Release + CTest/source invariants, patched Go EVEDBTool, staged tools/config/SQL, downloadable **`evemu-crucible-linux-x86_64.tar.gz`** and SHA256.
+- **Docker**: Debian 12 multi-stage build with optimized Release server and compiled EVEDBTool, verified by CI build. **MariaDB** job runs isolated migrations, seed insert/reseed and unsigned-order-range fixtures with explicit tests for large mineral/ore quantities, price, escrow and player order preservation.
+- CI employs `ccache` and Ninja where configured. **Temporary Actions artifacts are not the same as tagged GitHub Releases**; artifacts expire after their configured retention. The release publishing job is intentionally skipped for normal PR or branch runs.
+- Evidence: [successful corrected PR #44 CI](https://github.com/xrizonx/evemu_Crucible/actions/runs/44516480943) and [successful PR #43 gameplay-related CI](https://github.com/xrizonx/evemu_Crucible/actions/runs/44473762678). Select a **successful run for your intended SHA**, ideally the latest `master` run, before deployment.
+
+### Important market upgrade instructions — 100 million units
+
+**The new quantity applies to newly inserted static NPC buy orders; a code update does not change existing database rows.** Run EVEDBTool from the packaged `share/evemu/sql` directory (or the `sql` directory in a source build), using the correct credentials in the private `evedb.yaml`.
+
+1. **Stop the server and market bot.** Back up MariaDB and settings, verify the backup can be restored, and inspect `seed-regions` and `seed-saturation`. Saturation samples **stations**, not quantity per item; the script does not seed omitted regions/stations.
+2. **Preview the read-only SQL output**: Windows `./evedbtool.exe seed -buy-only -force -dryrun` (PowerShell can use `.\\evedbtool.exe`); Linux `./evedbtool seed -buy-only -force -dryrun`. Inspect deletion scope and legacy NPC buy normalization carefully.
+3. **Only when intentionally rebuilding existing static NPC buys**, run `./evedbtool.exe seed -buy-only -force` on Windows (or `./evedbtool seed -buy-only -force` on Linux). This replaces seed-managed buy orders in configured regions; it does **not** delete player orders or run the separate NPC sell seed. An ordinary non-force `seed -buy-only` is for first-time installation and does not adjust existing static buy quantities.
+4. Run the [read-only 100M mineral/ore audit](sql/diagnostics/2026-11-19-mineral-ore-npc-buy-100m-audit.sql) and the [broader 100%-base-price NPC buy audit](sql/diagnostics/2026-11-17-npc-buy-orders-100pct-audit.sql). Check duplicate station/type bids, prices, volumes, min volume and escrow; then verify partial/full stack selling and player wallet changes in the compatible game client.
+
+**Market constraints:** all static NPC bids must have `ownerID=4000000`, `bid=1`, `isCorp=0`, `orderRange=0`, `duration=250`. 100M units are a **maximum target**, not a universal guarantee: `LEAST(standardQuantity, FLOOR(10000000000000 / referencePrice))` limits expensive orders, with the existing one-unit minimum where eligible. Market pricing is exactly the database's positive static `invTypes.basePrice`, not a live regional market average. **Never use general `seed -force` merely to refresh buys**; it also refreshes NPC corporation sell orders.
+
+### Stability validation checklist
+
+For operator acceptance after upgrading the server and migrations, use the **same build SHA** for all runs and retain logs:
+
+| Subsystem | Minimum client/database acceptance |
+| --- | --- |
+| Login, station, images | Log in/out and re-enter station, load NPC agent portraits and hangars, verify cargo contents and image service without crash |
+| Ship warp/jump/dock | Repeat manual and autopilot warp, verify **visible warp tunnel**, gate surface arrival, 2,500m activation, docking and jump-cloak timing on small/large hulls |
+| Combat/NPCs | Warp to belt/anomaly; verify NPC spawn, orbit, targeting, correct damage, no repeating Destiny errors, no stale entity crashes |
+| Mining drones | Lock asteroid, deploy, approach/orbit/harvest, return to moving ship, recall early, confirm ore reaches cargo |
+| Market | Search orders under load; buy/sell partial stacks, exactly-once wallet credit and order decrement, 100M mineral/ore static bids, seed idempotence |
+| Missions | Accept Blockade and DED/Officer, check fleet composition/targetability, complete all kills, journal progress, ISK reward exactly once and pocket cleanup |
+| Sovereignty/POS | Apply current SQL migrations first; test DEV-only `/sovindex5`, IHub upgrades and persistence, online towers and visual forcefield, authorized roles |
+| Industry | Station BPO ME/PE, copying and delivery; reject invalid permissions/runs and invention **without charging resources**; POS/remote jobs remain incomplete |
+
+A green CI matrix proves that covered build/test paths passed; it **does not certify production readiness** or all possible client interactions.
+
+## Issue tracker — outstanding investigations
+
+> **Issue tracker is accepting bug reports:** [Open a GitHub issue](https://github.com/xrizonx/evemu_Crucible/issues/new) · [View current issues](https://github.com/xrizonx/evemu_Crucible/issues). Please search for duplicates first. Include the `BUILD-INFO.txt` SHA and platform (Windows UCRT64, Linux or Docker), MariaDB version, client build, exact steps to reproduce, expected/actual behavior, relevant server and client logs, SQL migration status and screenshots/packet traces when applicable. **Never post passwords, session secrets, player personal information or unredacted production database dumps.**
+
+**Open at documentation update (19 November 2026):** the fork's issue search returned no previous open issues; five **new investigation issues** were filed to track specific reported symptoms and engineering risks. Their existence does not mean every root cause is confirmed.
+
+| Tracking issue | Status / suspected or documented problem | Next evidence needed |
+| --- | --- | --- |
+| [#45 — intermittent missing warp tunnel](https://github.com/xrizonx/evemu_Crucible/issues/45) | **Reported intermittent behavior; root cause unconfirmed.** Ship may appear at arrival with no warp animation. Bubble membership and Destiny event delivery are investigation targets, not established causes. | Repeated warp runs with Destiny packet trace and server logs across gate transitions and hull sizes |
+| [#46 — market settlement atomicity](https://github.com/xrizonx/evemu_Crucible/issues/46) | **Known architecture risk**, not a demonstrated player exploit: order, wallet, item and history operations may not all commit or roll back atomically. | Fault-injected transaction/retry test with wallet/inventory/order reconciliation |
+| [#47 — invention/POS jobs/industry delivery](https://github.com/xrizonx/evemu_Crucible/issues/47) | **Documented incomplete:** invention intentionally disabled; POS/remote job workflow and transaction-safe job delivery remain incomplete. | Full job install, cost, restart, delivery/rollback tests and authentic T2 output model |
+| [#48 — station images, cargo and mining drone return](https://github.com/xrizonx/evemu_Crucible/issues/48) | **Unverified gameplay/stability:** historical 50px agent thumbnail/client station crash, cargo refresh and ore return need live re-testing. | Crash dumps, image HTTP traces, item location/quantity before and after drone return |
+| [#49 — IHub upgrades and POS/forcefield](https://github.com/xrizonx/evemu_Crucible/issues/49) | **Incomplete/needs verification:** functional upgrade services, forcefield visibility, tower restart and genuine activity-driven SOV indices. | Client UI screenshots, tower state and authoritative database checks after restart |
+
+**Additional watchlist (not automatically filed as confirmed defects):** upstream [pod-death crash #154](https://github.com/EvEmu-Project/evemu_Crucible/issues/154), [scanner crash #269](https://github.com/EvEmu-Project/evemu_Crucible/issues/269), [target-painted docking crash #39](https://github.com/EvEmu-Project/evemu_Crucible/issues/39), [outpost construction crash #315](https://github.com/EvEmu-Project/evemu_Crucible/issues/315); review [upstream issue triage](ISSUE_TRIAGE.md) before assuming a historic upstream report still affects this fork. Any reproducible bug should become its own issue with evidence.
 
 # Windows 11 and Windows 10 x64 setup
 
@@ -315,13 +399,17 @@ Run all commands from `C:\EVEmu\share\evemu\sql`:
 | `.\evedbtool.exe seed -dryrun` | Preview market seed SQL. |
 | `.\evedbtool.exe seed` | Initial market seed, if not already recorded. |
 | `.\evedbtool.exe seed -force -dryrun` | Preview a potentially destructive NPC market rebuild. |
-| `.\evedbtool.exe seed -force` | **Destructive market refresh** of qualifying NPC sell orders in selected regions; back up first. Player sell orders are retained. |
+| `.\evedbtool.exe seed -buy-only -dryrun` | Preview only the static NPC buy seed (including scoped legacy NPC buy normalization). |
+| `.\evedbtool.exe seed -buy-only` | Add the buy seed to a previously sell-seeded installation when no buy migration was applied. |
+| `.\evedbtool.exe seed -buy-only -force -dryrun` | Preview deletion/recreation of seed-managed NPC buys only. |
+| `.\evedbtool.exe seed -buy-only -force` | **Destructive static NPC buy refresh** in configured regions; back up first. Does not force rebuild NPC sells. |
+| `.\evedbtool.exe seed -force` | **Destructive NPC market refresh** of eligible corporation sell orders **and** seed-managed static NPC buys in configured regions; back up first. Player orders are retained by the implemented owner/range filters. |
 | `.\evedbtool.exe dungeon apply` | Import supplied dungeon definitions from `dungeons`. |
 | `.\evedbtool.exe dungeon list` | List installed dungeons. |
 | `.\evedbtool.exe dungeon list-factions` | Display faction IDs. |
 | `.\evedbtool.exe dungeon list-archetypes` | Display archetype IDs. |
 
-`seed-regions` accepts region names or numeric IDs, and `seed-saturation` accepts 1–100. The fork's patched seeder generates 550,000 units for charges/ammunition, 550 of other standard market items, and 10 for qualifying Officer/Deadspace/Faction/Storyline items. `seed -force` **deletes existing NPC corporation sell orders** for configured categories in the selected regions and rebuilds them; do not run without stopping the server, reviewing `-dryrun` and taking a verified backup. Full database-tool documentation: [sql/README.md](sql/README.md).
+`seed-regions` accepts region names or numeric IDs, and `seed-saturation` accepts 1–100. The **buy seed** creates up to **100,000,000 units per mineral (group 18) and asteroid/ore (category 25) item** at each selected station, 550,000 units for charges/ammunition, and 550 units for other published market types. Every static NPC buy is subject to the existing **10 trillion ISK pseudo-escrow ceiling**, so high-priced items can receive fewer units; pricing uses 100% of positive `invTypes.basePrice` (rounded to cents), with a 100 ISK fallback for nonpositive or missing values. The **separate sell seed** keeps 550,000 charges, 550 standard items, and 10 rare Officer/Deadspace/Faction/Storyline modules where eligible. `seed -buy-only -force` deletes/recreates the marker-matched **static NPC buy orders** in configured regions while retaining player orders and NPC sell orders; ordinary `seed -force` rebuilds **both the static buy and eligible NPC corporation sell seeds**. Stop server/bot, verify full backup and inspect `-dryrun` before either force operation. Normal `seed -buy-only` does **not** retrofit preexisting buy-order volumes. Full database-tool documentation: [sql/README.md](sql/README.md).
 
 ## 9. Build master locally on Windows
 
