@@ -41,6 +41,10 @@ assert "CASE WHEN it.basePrice IS NULL OR it.basePrice <= 0 THEN 100.00" in buy
 assert "ELSE GREATEST(0.01, ROUND(it.basePrice, 2))" in buy
 assert "eligible.referencePrice * eligible.quantity" in buy
 assert "10000000000000.00 / priced.referencePrice" in buy
+assert "WHEN ig.groupID = 18 OR ig.categoryID = 25 THEN 100000000" in buy
+assert "WHEN ig.categoryID = 8 THEN 550000" in buy
+assert "LEAST(priced.standardQuantity," in buy
+assert "GREATEST(1, FLOOR(10000000000000.00 / priced.referencePrice))" in buy
 assert "existing.stationID IS NULL" in buy
 assert "tExistingNPCBuySeed" in buy
 assert "AND RAND() < @saturation" in buy
@@ -67,6 +71,19 @@ assert "if (shouldDeleteItem)" in sale
 assert market_types.count("double price;") >= 3
 assert "double escrow;" in market_types
 assert "oInfo.price      = row.GetDouble(1);" in market_db
+# Material/mineral price initialization must not regress to per-type SQL
+# round-trips. Preserve the historic 5%/15% modifiers and missing-price defaults.
+assert "SELECT typeID, basePrice FROM invTypes WHERE typeID <= 65535" in market_db
+assert "LoadMarketBasePrices(data, 1.05);" in market_db
+assert "LoadMarketBasePrices(data, 1.15);" in market_db
+assert "data.empty()" in market_db and "data.find(" in market_db
+assert "SELECT basePrice FROM invTypes WHERE typeID = %u" not in market_db
+# Keep function boundaries intact when refactoring legacy price helpers.
+price_helper_tail = market_db.split("void MarketDB::GetMineralPrices(", 1)[1].split(
+    "void MarketDB::UpdateInvPrice(", 1)[0]
+assert price_helper_tail.rstrip().endswith("LoadMarketBasePrices(data, 1.15);\n}")
+
+
 assert "sellerWalletOwnerID = useCorp ?" in sale
 
 assert workflow.count("verify_npc_buy_seed.py") == 2

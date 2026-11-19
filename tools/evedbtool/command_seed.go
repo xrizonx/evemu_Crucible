@@ -559,7 +559,14 @@ WHERE LOWER(COALESCE(mg.metaGroupName, '')) IN ('officer', 'deadspace', 'faction
                 it.typeID,
                 CASE WHEN it.basePrice IS NULL OR it.basePrice <= 0 THEN 100.00
                      ELSE GREATEST(0.01, ROUND(it.basePrice, 2)) END AS referencePrice,
-                CASE WHEN ig.categoryID = 8 THEN 550000 ELSE 550 END AS standardQuantity
+                CASE
+                    -- Mineral inventory group 18 and published asteroid/ore
+                    -- category 25 use up to 100 million units per NPC bid.
+                    -- The outer LEAST() still applies the 10T ISK escrow cap.
+                    WHEN ig.groupID = 18 OR ig.categoryID = 25 THEN 100000000
+                    WHEN ig.categoryID = 8 THEN 550000
+                    ELSE 550
+                END AS standardQuantity
          FROM tNPCBuyStations AS st
          CROSS JOIN invTypes AS it
          INNER JOIN invGroups AS ig ON it.groupID = ig.groupID

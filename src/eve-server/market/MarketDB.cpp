@@ -577,43 +577,36 @@ void MarketDB::GetManufacturedItems(std::map< uint16, Inv::TypeData >& data)
         data[row.GetInt(0)] = Inv::TypeData();
 }
 
+// Read material prices in one round-trip instead of one query per type.
+// Existing callers use a uint16 key, so exclude larger type IDs to avoid
+// narrowing aliases. Missing source prices preserve the caller's defaults.
+static void LoadMarketBasePrices(std::map< uint16, Market::matlData >& data, double multiplier)
+{
+    if (data.empty())
+        return;
+
+    DBQueryResult res;
+    if (!sDatabase.RunQuery(res, "SELECT typeID, basePrice FROM invTypes WHERE typeID <= 65535")) {
+        codelog(MARKET__DB_ERROR, "Unable to load bulk market base prices: %s", res.error.c_str());
+        return;
+    }
+
+    DBResultRow row;
+    while (res.GetRow(row)) {
+        const auto itr = data.find(static_cast<uint16>(row.GetInt(0)));
+        if (itr != data.end())
+            itr->second.price = row.GetFloat(1) * multiplier;
+    }
+}
+
 void MarketDB::GetMaterialPrices(std::map< uint16, Market::matlData >& data)
 {
-    DBQueryResult res;
-    DBResultRow row;
-    std::map< uint16, Market::matlData >::iterator itr;
-    for (itr = data.begin(); itr != data.end(); ++itr) {
-        sDatabase.RunQuery(res, "SELECT basePrice FROM invTypes WHERE typeID = %u", itr->first);
-        if (res.GetRow(row))
-            itr->second.price = (row.GetFloat(0) * 1.05);
-    }
+    LoadMarketBasePrices(data, 1.05);
 }
 
 void MarketDB::GetMineralPrices(std::map< uint16, Market::matlData >& data)
 {
-    DBQueryResult res;
-    DBResultRow row;
-    std::map< uint16, Market::matlData >::iterator itr;
-    for (itr = data.begin(); itr != data.end(); ++itr) {
-        sDatabase.RunQuery(res, "SELECT basePrice FROM invTypes WHERE typeID = %u", itr->first);
-        if (res.GetRow(row))
-            itr->second.price = (row.GetFloat(0) * 1.15);
-    }
-
-    /*  mineral prices in first column from rens 31/5/2010 @ 17:30  logged by me from IGB
-     * second price column is from Grismar 16/2/07
-     * third price column is from ccp market dump, filtered and averaged for Crucible era from all regions
-     * typeID   Name            2010        2007       2012
-     * 34      Tritanium        2.70        2.37        2.72315
-     * 35      Pyerite          5.80        4.00        4.90957
-     * 36      Mexallon        26.90       21.93       29.7163
-     * 37      Isogen          49.16       64.06       59.1943
-     * 38      Nocxium         99.02       93.76       94.227
-     * 39      Zydrine       1315.03     2347.36     1290.39
-     * 40      Megacyte      2650.00     3989.06     2707.67
-     * 11399   Morphite      5407.68    14291.00     4943.2
-     *
-     */
+    LoadMarketBasePrices(data, 1.15);
 }
 
 void MarketDB::UpdateInvPrice(std::map< uint16, Inv::TypeData >& data)

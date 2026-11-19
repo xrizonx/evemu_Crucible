@@ -49,12 +49,14 @@ INSERT INTO staStations
 (60000001,30000001,10000001,1000125);
 
 INSERT INTO invGroups (groupID,categoryID) VALUES
-(18,4),(83,8),(7,7);
+(18,4),(83,8),(7,7),(462,25);
 
 INSERT INTO invTypes
 (typeID,typeName,groupID,published,marketGroupID,basePrice) VALUES
 (34,'Test Tritanium',18,1,1,6.25),
 (35,'Test Pyerite',18,1,1,12.50),
+(1230,'Test Veldspar Ore',462,1,1,10.00),
+(200,'Test Expensive Mineral Cap',18,1,1,200000.00),
 (100,'Test Charge',83,1,1,0.01),
 (101,'Test No Base Price',7,1,1,0.00),
 (102,'Not Market Listed',7,1,NULL,100.00),
