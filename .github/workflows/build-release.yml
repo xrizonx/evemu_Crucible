@@ -449,7 +449,7 @@ jobs:
               exit 1
             fi
           }
-          expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND duration=250" "4"
+          expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND duration=250" "6"
           expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=1000125 AND bid=1" "0"
           expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=32767 AND price=6.25 AND escrow=25.00" "1"
           expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=90000000 AND bid=1 AND price=5.00 AND escrow=50.00" "1"
@@ -457,13 +457,19 @@ jobs:
           expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=1000125 AND bid=0 AND price=6.25" "1"
           expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND typeID=101 AND price=100.00" "1"
           expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND typeID=100 AND price=0.01 AND volEntered=550000" "1"
+          expect "SELECT volEntered FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND typeID=34" "100000000"
+          expect "SELECT volEntered FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND typeID=35" "100000000"
+          expect "SELECT volEntered FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND typeID=1230" "100000000"
+          expect "SELECT volEntered FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND typeID=200" "50000000"
+          expect "SELECT escrow FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND typeID=200" "10000000000000.00"
+          expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND escrow > 10000000000000.00" "0"
           expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND typeID IN (102,103)" "0"
           # A second normal seed must not duplicate the force-seeded orders.
           (cd sql && ./evedbtool seed -buy-only)
-          expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND duration=250" "4"
+          expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND duration=250" "6"
           # A second force must refresh only the seed-managed rows.
           (cd sql && ./evedbtool seed -buy-only -force)
-          expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND duration=250" "4"
+          expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND duration=250" "6"
           expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=90000000" "2"
           expect "SELECT COUNT(*) FROM mktOrders WHERE ownerID=1000125 AND bid=0" "1"
           expect "SELECT COUNT(*) FROM (SELECT stationID,typeID,COUNT(*) AS n FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND duration=250 GROUP BY stationID,typeID HAVING n>1) AS dup" "0"
