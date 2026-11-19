@@ -41,6 +41,10 @@ assert "CASE WHEN it.basePrice IS NULL OR it.basePrice <= 0 THEN 100.00" in buy
 assert "ELSE GREATEST(0.01, ROUND(it.basePrice, 2))" in buy
 assert "eligible.referencePrice * eligible.quantity" in buy
 assert "10000000000000.00 / priced.referencePrice" in buy
+assert "WHEN ig.groupID = 18 OR ig.categoryID = 25 THEN 100000000" in buy
+assert "WHEN ig.categoryID = 8 THEN 550000" in buy
+assert "LEAST(priced.standardQuantity," in buy
+assert "GREATEST(1, FLOOR(10000000000000.00 / priced.referencePrice))" in buy
 assert "existing.stationID IS NULL" in buy
 assert "tExistingNPCBuySeed" in buy
 assert "AND RAND() < @saturation" in buy
