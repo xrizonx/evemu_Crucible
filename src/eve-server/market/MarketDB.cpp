@@ -609,22 +609,6 @@ void MarketDB::GetMineralPrices(std::map< uint16, Market::matlData >& data)
     LoadMarketBasePrices(data, 1.15);
 }
 
-    /*  mineral prices in first column from rens 31/5/2010 @ 17:30  logged by me from IGB
-     * second price column is from Grismar 16/2/07
-     * third price column is from ccp market dump, filtered and averaged for Crucible era from all regions
-     * typeID   Name            2010        2007       2012
-     * 34      Tritanium        2.70        2.37        2.72315
-     * 35      Pyerite          5.80        4.00        4.90957
-     * 36      Mexallon        26.90       21.93       29.7163
-     * 37      Isogen          49.16       64.06       59.1943
-     * 38      Nocxium         99.02       93.76       94.227
-     * 39      Zydrine       1315.03     2347.36     1290.39
-     * 40      Megacyte      2650.00     3989.06     2707.67
-     * 11399   Morphite      5407.68    14291.00     4943.2
-     *
-     */
-}
-
 void MarketDB::UpdateInvPrice(std::map< uint16, Inv::TypeData >& data)
 {
     DBerror err;
