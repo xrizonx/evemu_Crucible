@@ -78,6 +78,11 @@ assert "LoadMarketBasePrices(data, 1.05);" in market_db
 assert "LoadMarketBasePrices(data, 1.15);" in market_db
 assert "data.empty()" in market_db and "data.find(" in market_db
 assert "SELECT basePrice FROM invTypes WHERE typeID = %u" not in market_db
+# Keep function boundaries intact when refactoring legacy price helpers.
+price_helper_tail = market_db.split("void MarketDB::GetMineralPrices(", 1)[1].split(
+    "void MarketDB::UpdateInvPrice(", 1)[0]
+assert price_helper_tail.rstrip().endswith("LoadMarketBasePrices(data, 1.15);\n}")
+
 
 assert "sellerWalletOwnerID = useCorp ?" in sale
 
