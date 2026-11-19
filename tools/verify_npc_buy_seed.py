@@ -71,6 +71,14 @@ assert "if (shouldDeleteItem)" in sale
 assert market_types.count("double price;") >= 3
 assert "double escrow;" in market_types
 assert "oInfo.price      = row.GetDouble(1);" in market_db
+# Material/mineral price initialization must not regress to per-type SQL
+# round-trips. Preserve the historic 5%/15% modifiers and missing-price defaults.
+assert "SELECT typeID, basePrice FROM invTypes WHERE typeID <= 65535" in market_db
+assert "LoadMarketBasePrices(data, 1.05);" in market_db
+assert "LoadMarketBasePrices(data, 1.15);" in market_db
+assert "data.empty()" in market_db and "data.find(" in market_db
+assert "SELECT basePrice FROM invTypes WHERE typeID = %u" not in market_db
+
 assert "sellerWalletOwnerID = useCorp ?" in sale
 
 assert workflow.count("verify_npc_buy_seed.py") == 2
