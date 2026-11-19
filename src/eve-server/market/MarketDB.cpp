@@ -577,28 +577,37 @@ void MarketDB::GetManufacturedItems(std::map< uint16, Inv::TypeData >& data)
         data[row.GetInt(0)] = Inv::TypeData();
 }
 
+// Read material prices in one round-trip instead of one query per type.
+// Existing callers use a uint16 key, so exclude larger type IDs to avoid
+// narrowing aliases. Missing source prices preserve the caller's defaults.
+static void LoadMarketBasePrices(std::map< uint16, Market::matlData >& data, double multiplier)
+{
+    if (data.empty())
+        return;
+
+    DBQueryResult res;
+    if (!sDatabase.RunQuery(res, "SELECT typeID, basePrice FROM invTypes WHERE typeID <= 65535")) {
+        codelog(MARKET__DB_ERROR, "Unable to load bulk market base prices: %s", res.error.c_str());
+        return;
+    }
+
+    DBResultRow row;
+    while (res.GetRow(row)) {
+        const auto itr = data.find(static_cast<uint16>(row.GetInt(0)));
+        if (itr != data.end())
+            itr->second.price = row.GetFloat(1) * multiplier;
+    }
+}
+
 void MarketDB::GetMaterialPrices(std::map< uint16, Market::matlData >& data)
 {
-    DBQueryResult res;
-    DBResultRow row;
-    std::map< uint16, Market::matlData >::iterator itr;
-    for (itr = data.begin(); itr != data.end(); ++itr) {
-        sDatabase.RunQuery(res, "SELECT basePrice FROM invTypes WHERE typeID = %u", itr->first);
-        if (res.GetRow(row))
-            itr->second.price = (row.GetFloat(0) * 1.05);
-    }
+    LoadMarketBasePrices(data, 1.05);
 }
 
 void MarketDB::GetMineralPrices(std::map< uint16, Market::matlData >& data)
 {
-    DBQueryResult res;
-    DBResultRow row;
-    std::map< uint16, Market::matlData >::iterator itr;
-    for (itr = data.begin(); itr != data.end(); ++itr) {
-        sDatabase.RunQuery(res, "SELECT basePrice FROM invTypes WHERE typeID = %u", itr->first);
-        if (res.GetRow(row))
-            itr->second.price = (row.GetFloat(0) * 1.15);
-    }
+    LoadMarketBasePrices(data, 1.15);
+}
 
     /*  mineral prices in first column from rens 31/5/2010 @ 17:30  logged by me from IGB
      * second price column is from Grismar 16/2/07
