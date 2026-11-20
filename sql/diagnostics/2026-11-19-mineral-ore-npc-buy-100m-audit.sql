@@ -65,3 +65,24 @@ WHERE it.published = 1 AND it.marketGroupID IS NOT NULL
   AND (ig.groupID = 18 OR ig.categoryID = 25)
   AND o.orderID IS NULL
 ORDER BY it.typeID LIMIT 250;
+
+
+-- 5. Invalid seeded order prices, minimum volumes or escrow.
+-- Query 1 intentionally divides by a positive order price; this separate query
+-- reports zero/negative/NULL prices that would otherwise escape that audit.
+-- Static seeded buy orders require a one-unit minimum; negative escrow and
+-- zero entered volume are also invalid. Read-only, no corrective UPDATE.
+SELECT o.regionID, o.stationID, o.typeID, it.typeName,
+       o.price, o.minVolume, o.volEntered, o.volRemaining, o.escrow
+FROM mktOrders AS o
+JOIN invTypes AS it ON it.typeID = o.typeID
+JOIN invGroups AS ig ON ig.groupID = it.groupID
+WHERE o.ownerID = 4000000 AND o.bid = 1 AND o.isCorp = 0
+  AND o.orderRange = 0 AND o.duration = 250
+  AND it.published = 1 AND it.marketGroupID IS NOT NULL
+  AND (ig.groupID = 18 OR ig.categoryID = 25)
+  AND (o.price IS NULL OR o.price <= 0
+       OR o.minVolume IS NULL OR o.minVolume <> 1
+       OR o.volEntered <= 0 OR o.escrow < 0)
+ORDER BY o.regionID, o.stationID, o.typeID
+LIMIT 250;
