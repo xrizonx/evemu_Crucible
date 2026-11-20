@@ -130,10 +130,13 @@ CRowSet::CRowSet( DBRowDescriptor** rowDesc )
 
 PyPackedRow* CRowSet::NewRow()
 {
-    //DBRowDescriptor* rowDesc = _GetRowDesc();
-    PyPackedRow* row = new PyPackedRow( _GetRowDesc() );
+    DBRowDescriptor* rowDesc = _GetRowDesc();
+    // PyPackedRow owns its descriptor reference; the rowset retains the
+    // original reference in its header keyword.
+    PyIncRef(rowDesc);
+    PyPackedRow* row = new PyPackedRow(rowDesc);
 
-    list().AddItem( row );
+    list().AddItem(row);
     return row;
 }
 
@@ -179,10 +182,11 @@ CIndexedRowSet::CIndexedRowSet( DBRowDescriptor** rowDesc )
 
 PyPackedRow* CIndexedRowSet::NewRow( PyRep* key )
 {
-    //DBRowDescriptor* rowDesc = _GetRowDesc();
-    PyPackedRow* row = new PyPackedRow( _GetRowDesc() );
+    DBRowDescriptor* rowDesc = _GetRowDesc();
+    PyIncRef(rowDesc);
+    PyPackedRow* row = new PyPackedRow(rowDesc);
 
-    dict().SetItem( key , row );
+    dict().SetItem(key, row);
     return row;
 }
 
@@ -224,9 +228,11 @@ CFilterRowSet::CFilterRowSet( DBRowDescriptor** rowDesc )
 CRowSet* CFilterRowSet::NewRowset( PyRep* key )
 {
     DBRowDescriptor* rowDesc = _GetRowDesc();
-    CRowSet* row = new CRowSet( &rowDesc );
+    // The nested rowset also owns a header reference.
+    PyIncRef(rowDesc);
+    CRowSet* row = new CRowSet(&rowDesc);
 
-    dict().SetItem( key , row );
+    dict().SetItem(key, row);
     return row;
 }
 
