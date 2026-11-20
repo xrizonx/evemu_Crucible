@@ -34,7 +34,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential ccache cmake ninja-build zlib1g-dev libmariadb-dev libboost-all-dev libtinyxml-dev libutfcpp-dev
       - name: Restore instrumented compiler cache
-        uses: actions/cache@v5
+        uses: actions/cache/restore@v5
         with:
           path: .ccache-asan
           key: ccache-asan-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
@@ -76,6 +76,15 @@ jobs:
         run: |
           cmake --build build-sanitized --parallel 2 --target eve-server
           ccache --show-stats
+      # Ordinary actions/cache post-save is skipped after a failed sanitizer
+      # test. Preserve expensive instrumented compile outputs on failing runs
+      # so the next bugfix iteration can reuse them.
+      - name: Save instrumented compiler cache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: .ccache-asan
+          key: ccache-asan-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
 
   linux:
     name: Linux GCC build
@@ -553,7 +562,8 @@ jobs:
   release:
     name: Publish GitHub release
     if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/tags/stable-rizonx'
-    needs: [linux, windows, docker, npc-buy-mariadb]
+    # Never publish tagged release artifacts if address/UB sanitizers fail.
+    needs: [linux, windows, docker, npc-buy-mariadb, sanitizers]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
