@@ -108,7 +108,10 @@ private:
     /* map of bubbleID, spawnID */
     std::map<uint16, uint32> m_spawnIDs;
 
-    std::list<SystemBubble*> m_bubbles;                 //for proc only.
+    std::list<SystemBubble*> m_bubbles;                 //active bubbles; manager owns these
+    // Retired empty bubbles may still be observed by spawn/mission managers.
+    // Keep their pointers valid until their system is unloaded, then reclaim.
+    std::list<SystemBubble*> m_retiredBubbles;
     std::vector<SystemEntity*> m_wanderers;             //entities that are no longer in their bubble, but not removed
 
     std::map<uint32, SystemBubble*> m_bubbleIDMap;     // bubbleID/bubble*
