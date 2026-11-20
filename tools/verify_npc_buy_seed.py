@@ -3,6 +3,7 @@
 
 The operator must still verify SQL against MariaDB 11.8 and a Crucible client.
 """
+import re
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
@@ -93,7 +94,14 @@ assert workflow.count("verify_npc_buy_seed.py") == 2
 assert "npc-buy-mariadb:" in workflow
 assert "tools/tests/npc_buy_seed_unsigned_schema.sql" in workflow
 assert "seed -buy-only -force" in workflow
-assert "needs: [linux, windows, docker, npc-buy-mariadb]" in workflow
+# Tagged releases must be gated on every build, DB and sanitizer job.
+# Parse the release job dependency list rather than matching a brittle line
+# that fails when a new safety gate is added.
+release = workflow.split("\n  release:", 1)[1]
+release_needs = re.search(r"^\s*needs:\s*\[([^]]+)\]", release, re.MULTILINE)
+assert release_needs is not None
+required_jobs = {"linux", "windows", "docker", "npc-buy-mariadb", "sanitizers"}
+assert required_jobs.issubset({job.strip() for job in release_needs.group(1).split(",")})
 assert "SELECT" in audit and "DELETE " not in audit and "UPDATE " not in audit
 assert "SET @npc_owner_id = 4000000" in audit
 # The original 17-Nov general audit has four static-seed checks.
