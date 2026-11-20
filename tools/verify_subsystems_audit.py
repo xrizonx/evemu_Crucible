@@ -140,12 +140,17 @@ assert "bubble->ForgetMarkersAfterSystemUnload();" in clear_system
 assert "SafeDelete(bubble);" in clear_system
 assert "m_sysBubbleMap.erase(systemID);" in clear_system
 assert "m_bubbles.remove(" not in clear_system
+assert "m_retiredBubbles.begin()" in clear_system
+assert "retiredItr = m_retiredBubbles.erase(retiredItr);" in clear_system
+remove_empty = bubbles.split("void BubbleManager::RemoveEmpty()", 1)[1].split(
+    "void BubbleManager::Add(", 1)[0]
+assert "m_retiredBubbles.push_back(retired);" in remove_empty
 assert "m_markers.clear();" in system_bubble.split(
     "void SystemBubble::ForgetMarkersAfterSystemUnload()", 1)[1].split(
     "void SystemBubble::clear()", 1)[0]
 clear_all = bubbles.split("void BubbleManager::clear()", 1)[1].split(
     "void BubbleManager::Process()", 1)[0]
-for lookup in ("m_bubbles", "m_wanderers", "m_bubbleIDMap", "m_sysBubbleMap", "m_spawnIDs"):
+for lookup in ("m_bubbles", "m_retiredBubbles", "m_wanderers", "m_bubbleIDMap", "m_sysBubbleMap", "m_spawnIDs"):
     assert lookup + ".clear();" in clear_all
 
 # Disconnecting before character initialization must release allocations
