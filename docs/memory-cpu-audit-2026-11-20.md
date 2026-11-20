@@ -14,6 +14,7 @@ test or instrumented long-running multiplayer workload has been completed for th
 | Unload cost | Calling `std::list::remove` for every bubble scanned the entire owning list repeatedly | Use a single owning-list pass; processing all bubbles is linear in total bubble count |
 | Manager cleanup | `BubbleManager::clear()` freed objects without clearing the list and its lookup indexes | Clear all indexes and saved spawn IDs, making repeat cleanup avoid previously freed pointers |
 | Aborted pre-login connections | `Client::~Client()` returned if `m_loaded` was false, leaking its allocated session and two destiny queues, and retaining partial bound-service references | Release partial-session allocations and bound resources without executing full authenticated logout |
+| Inbound network packets | `Client::ProcessNet()` discarded its freshly decoded `PyPacket*` after dispatch without deleting the wrapper | Use `std::unique_ptr<PyPacket>` to reclaim incoming packets on success, ordinary failure and exceptions; keep dispatch handler behavior unchanged |
 | Regression checks | Relevant cleanup/performance contracts were not asserted | Extend `tools/verify_subsystems_audit.py` with targeted source invariants |
 
 These changes do **not** change spawn rules, ship movement, market data, SQL schemas,
@@ -51,9 +52,12 @@ profiling are separate tasks.
 3. `SystemBubble::SyncPos()` generates one update per entity per pilot. This
    scales with both pilot and entity counts; optimize only after profiling
    packet sizes and observing stable ordering/ownership semantics.
-4. Long-run memory retention from item caches, gameplay scripts, C++ packet
-   references, failed system boots, image/network workers and DB connections
-   has **not** been exhaustively reviewed. No absolute absence-of-leaks claim.
+4. Lower-level `PyRep` reference-counting, outbound `PyPacket::Encode()`
+   ownership and partial decode failures need dedicated instrumented tests.
+   Changing the global ownership convention without that evidence risks double
+   frees and use-after-free. Long-run retention from item caches, failed system
+   boots, image/network workers and DB connections has **not** been exhaustively
+   reviewed. No absolute absence-of-leaks claim.
 5. No measured p95/p99 server tick latency or client interaction response
    latency is available across differently populated solar systems.
 
