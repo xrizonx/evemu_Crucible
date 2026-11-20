@@ -35,11 +35,12 @@ void DBCleaner::CleanEntity(uint32 type) {
 
 void DBCleaner::CleanGroupFromSpace(uint32 groupID) {
     DBerror err;
-    // Delete entity attributes associated with removed entities
+    // Restrict attribute cleanup to the same in-space probe rows deleted below.
+    // Probes in hangars, containers or other non-space locations must be preserved.
     sDatabase.RunQuery(err, "DELETE FROM entity_attributes WHERE itemID IN "
     "(SELECT itemID FROM entity "
     "INNER JOIN invTypes USING (typeID) "
-    "WHERE groupID = %u)", groupID);
+    "WHERE locationID >= 30000000 AND locationID <= 32000000 AND groupID = %u)", groupID);
     // Delete entities themselves
     sDatabase.RunQuery(err, "DELETE entity FROM entity "
     "INNER JOIN invTypes USING (typeID) "
@@ -48,16 +49,17 @@ void DBCleaner::CleanGroupFromSpace(uint32 groupID) {
 
 void DBCleaner::CleanOrphanedWormholes() {
     DBerror err;
-    // Delete wormholes which don't have any reference in the sysSignatures table
+    // Delete only in-space wormholes not referenced by sysSignatures.
+    // NOT EXISTS avoids NULL poisoning from the signature item-ID column.
     sDatabase.RunQuery(err, "DELETE FROM entity_attributes WHERE itemID IN "
     "(SELECT itemID FROM entity "
     "INNER JOIN invTypes USING (typeID) "
-    "WHERE itemID NOT IN (SELECT sigItemID FROM sysSignatures) "
-    "AND groupID = %u)", EVEDB::invGroups::Wormhole);
+    "WHERE NOT EXISTS (SELECT 1 FROM sysSignatures WHERE sigItemID = entity.itemID) "
+    "AND locationID >= 30000000 AND locationID <= 32000000 AND groupID = %u)", EVEDB::invGroups::Wormhole);
 
     sDatabase.RunQuery(err, "DELETE entity FROM entity "
     "INNER JOIN invTypes USING (typeID) "
-    "WHERE itemID NOT IN (SELECT sigItemID FROM sysSignatures) "
+    "WHERE NOT EXISTS (SELECT 1 FROM sysSignatures WHERE sigItemID = entity.itemID) "
     "AND locationID >= 30000000 AND locationID <= 32000000 AND groupID = %u", EVEDB::invGroups::Wormhole); 
 }
 
