@@ -201,4 +201,61 @@ assert "unaligned.Append<uint8>(marker);" in marshal_test
 assert "unaligned.Append<uint32>(word);" in marshal_test
 assert "std::memcmp(&unaligned[1], &word, sizeof(word))" in marshal_test
 
+# The EVE client rebuilds application rows from the notification's
+# old/new dictionary. Omitting even an unchanged field (notably "roles")
+# causes KeyError in bco_applications.py when joining a player corporation.
+import re
+import xml.etree.ElementTree as ET
+
+application_columns = (
+    "applicationID", "corporationID", "characterID", "applicationText",
+    "roles", "grantableRoles", "status", "applicationDateTime",
+    "deleted", "lastCorpUpdaterID",
+)
+corporation_packets = ET.fromstring(source("src/eve-common/packets/CorporationPkts.xmlp"))
+application_packet = corporation_packets.find(
+    "./elementDef[@name='OnCorporationApplicationChanged']/tupleInline/dictInline"
+)
+assert application_packet is not None
+application_entries = application_packet.findall("dictInlineEntry")
+assert len(application_entries) == len(application_columns)
+assert {entry.attrib["key"] for entry in application_entries} == set(application_columns)
+for entry in application_entries:
+    key = entry.attrib["key"]
+    raw_fields = [field.attrib["name"] for field in entry.findall("./tupleInline/raw")]
+    assert raw_fields == [key + "Old", key + "New"], (key, raw_fields)
+
+registry = source("src/eve-server/corporation/CorpRegistryBound.cpp")
+application_change = registry.split(
+    "void CorpRegistryBound::FillOCApplicationChange(", 1
+)[1].split("PyResult CorpRegistryBound::GetStations(", 1)[0]
+assert "if (Old.valid)" in application_change
+assert "if (New.valid)" in application_change
+for key in application_columns:
+    for direction in ("Old", "New"):
+        # Both an actual value and PyNone must be assigned for insert/delete.
+        assert application_change.count("OCAC." + key + direction + " =") == 2, (
+            "Missing application change value for", key, direction)
+
+corp_database = source("src/eve-server/corporation/CorporationDB.cpp")
+mine = corp_database.split("PyRep *CorporationDB::GetMyApplications(", 1)[1].split(
+    "PyRep *CorporationDB::GetApplications(", 1)[0]
+corp = corp_database.split("PyRep *CorporationDB::GetApplications(", 1)[1].split(
+    "bool CorporationDB::GetCurrentApplicationInfo(", 1)[0]
+def sql_from_cpp(body):
+    return " ".join("".join(re.findall(r'"([^"]*)"', body)).split())
+
+columns = ", ".join(application_columns)
+expected_query = "SELECT " + columns + " FROM crpApplications"
+assert expected_query in sql_from_cpp(mine)
+assert expected_query in sql_from_cpp(corp)
+insert_app = corp_database.split("bool CorporationDB::InsertApplication(", 1)[1].split(
+    "bool CorporationDB::UpdateApplication(", 1)[0]
+assert "(corporationID, characterID, applicationText, roles, grantableRoles," in insert_app
+assert "status, applicationDateTime, deleted, lastCorpUpdaterID)" in insert_app
+lookup_app = corp_database.split("bool CorporationDB::GetCurrentApplicationInfo(", 1)[1].split(
+    "bool CorporationDB::InsertApplication(", 1)[0]
+assert "sDatabase.DoEscapeString(escaped, aInfo.appText);" in lookup_app
+assert "aInfo.corpID, escaped.c_str()))" in lookup_app
+
 print("Source-level gameplay safety guards passed")
