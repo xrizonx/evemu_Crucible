@@ -46,6 +46,7 @@ m_emptyTimer(0),
 m_bubbleID(0)
 {
     m_bubbles.clear();
+    m_retiredBubbles.clear();
     m_wanderers.clear();
     m_bubbleIDMap.clear();
     m_sysBubbleMap.clear();
@@ -66,10 +67,13 @@ int BubbleManager::Initialize() {
 void BubbleManager::clear() {
     for (auto cur : m_bubbles)
         SafeDelete(cur);
+    for (auto cur : m_retiredBubbles)
+        SafeDelete(cur);
 
     // Release all non-owning indices as well. A repeated cleanup must not
     // encounter dangling pointers left by an earlier clear().
     m_bubbles.clear();
+    m_retiredBubbles.clear();
     m_wanderers.clear();
     m_bubbleIDMap.clear();
     m_sysBubbleMap.clear();
@@ -158,7 +162,11 @@ void BubbleManager::RemoveEmpty()
     while (itr != m_bubbles.end()) {
         if ((*itr)->IsEmpty()) {
             _log(DESTINY__BUBBLE_DEBUG, "BubbleManager::RemoveEmpty() - Bubble %u is empty and is being deleted from the system.", (*itr)->GetID() );
-            RemoveBubble((*itr)->GetSystem()->GetID(), (*itr));
+            SystemBubble* retired = *itr;
+            RemoveBubble(retired->GetSystemID(), retired);
+            // Other managers may still hold non-owning pointers. Keep these
+            // valid until the system unloads, then reclaim the allocations.
+            m_retiredBubbles.push_back(retired);
             itr = m_bubbles.erase(itr);
         } else {
             ++itr;
@@ -316,6 +324,24 @@ void BubbleManager::ClearSystemBubbles(uint32 systemID)
         itr = m_bubbles.erase(itr);
         // SystemManager already deleted the marker entities. Do not repeat
         // their deletion in SystemBubble::~SystemBubble().
+        bubble->ForgetMarkersAfterSystemUnload();
+        SafeDelete(bubble);
+    }
+
+    // Periodically retired bubbles no longer appear in the active indexes.
+    // Reclaim them only after the owning system has unloaded.
+    auto retiredItr = m_retiredBubbles.begin();
+    while (retiredItr != m_retiredBubbles.end()) {
+        SystemBubble* bubble = *retiredItr;
+        if (bubble == nullptr) {
+            retiredItr = m_retiredBubbles.erase(retiredItr);
+            continue;
+        }
+        if (bubble->GetSystemID() != systemID) {
+            ++retiredItr;
+            continue;
+        }
+        retiredItr = m_retiredBubbles.erase(retiredItr);
         bubble->ForgetMarkersAfterSystemUnload();
         SafeDelete(bubble);
     }
