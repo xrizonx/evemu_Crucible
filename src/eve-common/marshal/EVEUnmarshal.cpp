@@ -25,6 +25,9 @@
 
 #include "eve-common.h"
 
+#include <cstring>
+#include <vector>
+
 #include "python/classes/PyDatabase.h"
 #include "python/PyVisitor.h"
 #include "python/PyRep.h"
@@ -34,6 +37,20 @@
 #include "marshal/EVEMarshalStringTable.h"
 
 #include "utils/EVEUtils.h"
+
+// Database packed rows contain values at byte boundaries rather than
+// natural alignment boundaries. Reconstruct each scalar as bytes before
+// advancing the iterator so UBSan-safe reads preserve the old wire format.
+namespace {
+template<typename T>
+T ReadPackedScalar(Buffer::const_iterator<uint8>& cursor)
+{
+    T value;
+    std::memcpy(&value, &*cursor, sizeof(value));
+    cursor += sizeof(value);
+    return value;
+}
+}
 
 PyRep* Unmarshal( const Buffer& data )
 {
@@ -288,11 +305,11 @@ PyRep* UnmarshalStream::LoadStringTable()
 
 PyRep* UnmarshalStream::LoadWStringUCS2Char()
 {
-    const Buffer::const_iterator<uint16> wstr = Read<uint16>( 1 );
+    const uint16 character = Read<uint16>();
 
-    // convert to UTF-8
+    // Avoid treating a potentially unaligned wire byte as uint16&.
     std::string str;
-    utf8::utf16to8( wstr, wstr + 1, std::back_inserter( str ) );
+    utf8::utf16to8( &character, &character + 1, std::back_inserter( str ) );
 
     return new PyWString( str );
 }
@@ -300,11 +317,14 @@ PyRep* UnmarshalStream::LoadWStringUCS2Char()
 PyRep* UnmarshalStream::LoadWStringUCS2()
 {
     const uint32 len = ReadSizeEx();
-    const Buffer::const_iterator<uint16> wstr = Read<uint16>( len );
+    const Buffer::const_iterator<uint8> bytes = Read<uint8>( static_cast<size_t>(len) * sizeof(uint16) );
+    // utf8cpp dereferences its input as uint16, so provide aligned storage.
+    std::vector<uint16> characters(len);
+    if (len > 0)
+        std::memcpy(characters.data(), &*bytes, characters.size() * sizeof(uint16));
 
-    // convert to UTF-8
     std::string str;
-    utf8::utf16to8( wstr, wstr + len, std::back_inserter( str ) );
+    utf8::utf16to8( characters.begin(), characters.end(), std::back_inserter( str ) );
 
     return new PyWString( str );
 }
@@ -594,63 +614,45 @@ PyRep* UnmarshalStream::LoadPackedRow()
             case DBTYPE_UI8:
             case DBTYPE_FILETIME:
             {
-                Buffer::const_iterator<int64> v = unpackedItr.As<int64>();
-                row->SetField( index, new PyLong( *v++ ) );
-                unpackedItr = v.As<uint8>();
+                row->SetField( index, new PyLong( ReadPackedScalar<int64>(unpackedItr) ) );
             } break;
 
             case DBTYPE_I4:
             {
-                Buffer::const_iterator<int32> v = unpackedItr.As<int32>();
-                row->SetField( index, new PyInt( *v++ ) );
-                unpackedItr = v.As<uint8>();
+                row->SetField( index, new PyInt( ReadPackedScalar<int32>(unpackedItr) ) );
             } break;
             case DBTYPE_UI4:
             {
-                Buffer::const_iterator<uint32> v = unpackedItr.As<uint32>();
-                row->SetField( index, new PyInt( *v++ ) );
-                unpackedItr = v.As<uint8>();
+                row->SetField( index, new PyInt( ReadPackedScalar<uint32>(unpackedItr) ) );
             } break;
 
             case DBTYPE_I2:
             {
-                Buffer::const_iterator<int16> v = unpackedItr.As<int16>();
-                row->SetField( index, new PyInt( *v++ ) );
-                unpackedItr = v.As<uint8>();
+                row->SetField( index, new PyInt( ReadPackedScalar<int16>(unpackedItr) ) );
             } break;
             case DBTYPE_UI2:
             {
-                Buffer::const_iterator<uint16> v = unpackedItr.As<uint16>();
-                row->SetField( index, new PyInt( *v++ ) );
-                unpackedItr = v.As<uint8>();
+                row->SetField( index, new PyInt( ReadPackedScalar<uint16>(unpackedItr) ) );
             } break;
 
             case DBTYPE_I1:
             {
-                Buffer::const_iterator<int8> v = unpackedItr.As<int8>();
-                row->SetField( index, new PyInt( *v++ ) );
-                unpackedItr = v.As<uint8>();
+                row->SetField( index, new PyInt( ReadPackedScalar<int8>(unpackedItr) ) );
             } break;
 
             case DBTYPE_UI1:
             {
-                Buffer::const_iterator<uint8> v = unpackedItr.As<uint8>();
-                row->SetField( index, new PyInt( *v++ ) );
-                unpackedItr = v.As<uint8>();
+                row->SetField( index, new PyInt( ReadPackedScalar<uint8>(unpackedItr) ) );
             } break;
 
             case DBTYPE_R8:
             {
-                Buffer::const_iterator<double> v = unpackedItr.As<double>();
-                row->SetField( index, new PyFloat( *v++ ) );
-                unpackedItr = v.As<uint8>();
+                row->SetField( index, new PyFloat( ReadPackedScalar<double>(unpackedItr) ) );
             } break;
 
             case DBTYPE_R4:
             {
-                Buffer::const_iterator<float> v = unpackedItr.As<float>();
-                row->SetField( index, new PyFloat( *v++ ) );
-                unpackedItr = v.As<uint8>();
+                row->SetField( index, new PyFloat( ReadPackedScalar<float>(unpackedItr) ) );
             } break;
 
             case DBTYPE_BOOL:
