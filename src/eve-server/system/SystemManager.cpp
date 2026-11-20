@@ -1308,9 +1308,10 @@ void SystemManager::GetSpawnBubbles(SpawnBubbleMap* bubbleMap)
 {
     if (is_log_enabled(SPAWN__MESSAGE))
         _log(SPAWN__MESSAGE, "SystemManager::GetSpawnBubbles() - called for %s(%u)", m_data.name.c_str(), m_data.systemID);
-    SpawnBubbleMap::iterator itr = m_ratBubbles.begin();
-    while (itr != m_ratBubbles.end())
-        bubbleMap->emplace(itr->first, itr->second);
+    // The previous loop never advanced its iterator and hung the server
+    // whenever a system had at least one active rat-spawn bubble.
+    for (const auto& entry : m_ratBubbles)
+        bubbleMap->emplace(entry.first, entry.second);
 }
 
 void SystemManager::RemoveSpawnBubble(SystemBubble* pBubble)
