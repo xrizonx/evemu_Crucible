@@ -24,21 +24,36 @@ jobs:
     name: Linux ASan/UBSan memory and UB smoke
     runs-on: ubuntu-22.04
     timeout-minutes: 55
+    env:
+      # Isolate sanitizer objects from optimized Linux/Windows ccache entries.
+      CCACHE_DIR: ${{ github.workspace }}/.ccache-asan
     steps:
       - uses: actions/checkout@v5
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build zlib1g-dev libmariadb-dev libboost-all-dev libtinyxml-dev libutfcpp-dev
+          sudo apt-get install -y build-essential ccache cmake ninja-build zlib1g-dev libmariadb-dev libboost-all-dev libtinyxml-dev libutfcpp-dev
+      - name: Restore instrumented compiler cache
+        uses: actions/cache@v5
+        with:
+          path: .ccache-asan
+          key: ccache-asan-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-asan-${{ runner.os }}-${{ runner.arch }}-
       - name: Configure address and undefined-behavior sanitizers
         run: |
+          ccache --max-size=900M
           cmake -S . -B build-sanitized -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_C_FLAGS="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined" \
             -DCMAKE_CXX_FLAGS="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
             -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
-      - name: Compile instrumented C++ targets
-        run: cmake --build build-sanitized --parallel 2
+      # Compile the CTest dependency graph first. Failures in memory/UB tests
+      # then surface without compiling the entire server binary needlessly.
+      - name: Compile instrumented CTest targets
+        run: cmake --build build-sanitized --parallel 2 --target eve-test
       - name: Run instrumented registered tests
         env:
           ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
@@ -46,7 +61,21 @@ jobs:
         run: |
           ctest --test-dir build-sanitized -N | tee sanitizer-test-list.txt
           grep -qE '^  Test #[0-9]+' sanitizer-test-list.txt || { echo "No CTest tests were registered" >&2; exit 1; }
-          ctest --test-dir build-sanitized --output-on-failure
+          ctest --test-dir build-sanitized --output-on-failure --output-junit "$GITHUB_WORKSPACE/sanitizer-test-results.xml"
+      - name: Upload sanitizer test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evemu-sanitizer-ctest-results
+          path: sanitizer-test-results.xml
+          if-no-files-found: warn
+          retention-days: 7
+      # Preserve full server instrumentation/compile coverage on a green run,
+      # but avoid doing its most expensive work before test failures surface.
+      - name: Compile instrumented server after passing tests
+        run: |
+          cmake --build build-sanitized --parallel 2 --target eve-server
+          ccache --show-stats
 
   linux:
     name: Linux GCC build
