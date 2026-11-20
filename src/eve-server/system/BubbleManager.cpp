@@ -67,6 +67,14 @@ void BubbleManager::clear() {
     for (auto cur : m_bubbles)
         SafeDelete(cur);
 
+    // Release all non-owning indices as well. A repeated cleanup must not
+    // encounter dangling pointers left by an earlier clear().
+    m_bubbles.clear();
+    m_wanderers.clear();
+    m_bubbleIDMap.clear();
+    m_sysBubbleMap.clear();
+    m_spawnIDs.clear();
+
     sLog.Warning("        BubbleMgr", "Bubble Manager has been closed." );
 }
 
@@ -285,10 +293,31 @@ SystemBubble* BubbleManager::FindBubbleByID(uint16 bubbleID)
 
 void BubbleManager::ClearSystemBubbles(uint32 systemID)
 {
-    auto range = m_sysBubbleMap.equal_range(systemID);
-    for (auto itr = range.first; itr != range.second; ++itr){
-        m_bubbles.remove(itr->second);
-        m_bubbleIDMap.erase(itr->second->GetID());
+    // Called after SystemManager::UnloadSystem() has destroyed the system's
+    // entities. Reclaim each owned bubble rather than only removing its pointer
+    // from indices (which leaked one allocation per retired bubble).
+    //
+    // One pass over the owning list avoids list::remove() for every bubble,
+    // which was quadratic when many bubbles shared one system.
+    auto itr = m_bubbles.begin();
+    while (itr != m_bubbles.end()) {
+        SystemBubble* bubble = *itr;
+        if (bubble == nullptr) {
+            itr = m_bubbles.erase(itr);
+            continue;
+        }
+        if (bubble->GetSystemID() != systemID) {
+            ++itr;
+            continue;
+        }
+
+        m_bubbleIDMap.erase(bubble->GetID());
+        m_spawnIDs.erase(bubble->GetID());
+        itr = m_bubbles.erase(itr);
+        // SystemManager already deleted the marker entities. Do not repeat
+        // their deletion in SystemBubble::~SystemBubble().
+        bubble->ForgetMarkersAfterSystemUnload();
+        SafeDelete(bubble);
     }
 
     m_sysBubbleMap.erase(systemID);
