@@ -148,4 +148,15 @@ clear_all = bubbles.split("void BubbleManager::clear()", 1)[1].split(
 for lookup in ("m_bubbles", "m_wanderers", "m_bubbleIDMap", "m_sysBubbleMap", "m_spawnIDs"):
     assert lookup + ".clear();" in clear_all
 
+# Disconnecting before character initialization must release allocations
+# created by Client::Client, without running full gameplay logout.
+client = source("src/eve-server/Client.cpp")
+partial_logout = client.split("Client::~Client()", 1)[1].split("m_loaded = false;", 1)[0]
+assert "if (!m_loaded)" in partial_logout
+for owned in ("m_TS", "m_scan", "pShipSE", "pSession"):
+    assert "SafeDelete(" + owned + ");" in partial_logout
+for queued in ("m_destinyEventQueue", "m_destinyUpdateQueue"):
+    assert "PyDecRef(" + queued + ");" in partial_logout
+assert "m_services.ClearBoundObject(*cur, this);" in partial_logout
+
 print("Source-level gameplay safety guards passed")
