@@ -143,8 +143,23 @@ Client::Client(EVEServiceManager& services, EVETCPConnection** con)
 }
 
 Client::~Client() {
-    if (!m_loaded)
+    if (!m_loaded) {
+        // A failed or interrupted login still allocated these objects in the
+        // constructor. Previously returning here leaked the session and both
+        // pending destiny queues on every pre-login disconnect.
+        for (auto channel : m_channels)
+            channel->LeaveChannel(this);
+        for (auto cur = m_bindSet.rbegin(); cur != m_bindSet.rend(); ++cur)
+            m_services.ClearBoundObject(*cur, this);
+
+        SafeDelete(m_TS);
+        SafeDelete(m_scan);
+        SafeDelete(pShipSE);
+        SafeDelete(pSession);
+        PyDecRef(m_destinyEventQueue);
+        PyDecRef(m_destinyUpdateQueue);
         return;
+    }
 
     m_loaded = false;
 
