@@ -159,4 +159,13 @@ for queued in ("m_destinyEventQueue", "m_destinyUpdateQueue"):
     assert "PyDecRef(" + queued + ");" in partial_logout
 assert "m_services.ClearBoundObject(*cur, this);" in partial_logout
 
+# DispatchPacket only borrows inbound PyPacket pointers. Every iteration
+# of the network receive loop must reclaim the packet, including failures.
+packet_loop = client.split("bool Client::ProcessNet()", 1)[1].split(
+    "void Client::", 1)[0]
+assert "while (PyPacket* p = PopPacket())" in packet_loop
+assert "std::unique_ptr<PyPacket> packet(p);" in packet_loop
+assert "p = nullptr;" not in packet_loop
+assert 'm_char.get() != nullptr' in packet_loop
+
 print("Source-level gameplay safety guards passed")
