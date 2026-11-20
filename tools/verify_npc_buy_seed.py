@@ -13,6 +13,9 @@ market_types = (root / "src/eve-common/EVE_Market.h").read_text(encoding="utf-8"
 market_db = (root / "src/eve-server/market/MarketDB.cpp").read_text(encoding="utf-8")
 workflow = (root / ".github/workflows/build-release.yml").read_text(encoding="utf-8")
 audit = (root / "sql/diagnostics/2026-11-17-npc-buy-orders-100pct-audit.sql").read_text(encoding="utf-8")
+mineral_ore_audit = (root / "sql/diagnostics/2026-11-19-mineral-ore-npc-buy-100m-audit.sql").read_text(
+    encoding="utf-8"
+)
 
 # Standard seed and existing installation migrations must coexist.
 assert 'cmdFlags.BoolVar(&buyOnly, "buy-only"' in go
@@ -93,14 +96,19 @@ assert "seed -buy-only -force" in workflow
 assert "needs: [linux, windows, docker, npc-buy-mariadb]" in workflow
 assert "SELECT" in audit and "DELETE " not in audit and "UPDATE " not in audit
 assert "SET @npc_owner_id = 4000000" in audit
-assert audit.count("o.orderRange = 0 AND o.duration = 250") == 5
+# The original 17-Nov general audit has four static-seed checks.
+# The separate 19-Nov mineral/ore audit has five; validate each independently.
+assert audit.count("o.orderRange = 0 AND o.duration = 250") == 4
 assert "o.orderRange = -1" not in audit
 assert "orderRange=-1" not in audit
-# Invalid-price static NPC seed orders must be visible in a read-only audit,
-# rather than hidden by the positive-price filter in the quantity calculation.
-assert "-- 5. Invalid seeded order prices, minimum volumes or escrow." in audit
-assert "o.price IS NULL OR o.price <= 0" in audit
-assert "o.minVolume IS NULL OR o.minVolume <> 1" in audit
-assert "o.volEntered <= 0 OR o.escrow < 0" in audit
+assert "SELECT" in mineral_ore_audit and "DELETE " not in mineral_ore_audit and "UPDATE " not in mineral_ore_audit
+assert mineral_ore_audit.count("o.orderRange = 0 AND o.duration = 250") == 5
+assert "o.orderRange = -1" not in mineral_ore_audit
+# Invalid-price static NPC seed orders must be visible in the 19-Nov read-only
+# audit, rather than hidden by the positive-price filter in its first query.
+assert "-- 5. Invalid seeded order prices, minimum volumes or escrow." in mineral_ore_audit
+assert "o.price IS NULL OR o.price <= 0" in mineral_ore_audit
+assert "o.minVolume IS NULL OR o.minVolume <> 1" in mineral_ore_audit
+assert "o.volEntered <= 0 OR o.escrow < 0" in mineral_ore_audit
 
 print("PASS: NPC buy migration, idempotence, pricing, settlement, and read-only audit invariants")
