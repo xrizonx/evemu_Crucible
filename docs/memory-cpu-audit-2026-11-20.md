@@ -10,10 +10,11 @@ test or instrumented long-running multiplayer workload has been completed for th
 | Area | Prior defect | Change / intended invariant |
 | --- | --- | --- |
 | Active NPC spawn-bubble enumeration | `SystemManager::GetSpawnBubbles()` looped over a nonempty map without incrementing its iterator: a permanent hang / full-core spin | Iterate the map exactly once with a range-based loop; preserve all returned key/pointer pairs |
-| Unloading solar systems | `BubbleManager::ClearSystemBubbles()` removed references from the global list and maps but did not free the `new SystemBubble` allocations | Destroy retired bubbles after `SystemManager::UnloadSystem()` has already destroyed their entities; clear non-owning marker pointers to prevent double destruction |
+| Unloading solar systems | `BubbleManager::ClearSystemBubbles()` removed references from the global list and maps but did not free the `new SystemBubble` allocations | Destroy all active and deferred-retirement bubbles after `SystemManager::UnloadSystem()` has destroyed their entities; clear non-owning marker pointers to prevent double destruction |
 | Unload cost | Calling `std::list::remove` for every bubble scanned the entire owning list repeatedly | Use a single owning-list pass; processing all bubbles is linear in total bubble count |
-| Manager cleanup | `BubbleManager::clear()` freed objects without clearing the list and its lookup indexes | Clear all indexes and saved spawn IDs, making repeat cleanup avoid previously freed pointers |
+| Manager cleanup | `BubbleManager::clear()` freed objects without clearing the list and its lookup indexes | Clear active/retired owners, indexes and saved spawn IDs, making repeat cleanup avoid previously freed pointers |
 | Aborted pre-login connections | `Client::~Client()` returned if `m_loaded` was false, leaking its allocated session and two destiny queues, and retaining partial bound-service references | Release partial-session allocations and bound resources without executing full authenticated logout |
+| Deferred empty bubbles | The periodic `RemoveEmpty()` path unlinked empty bubbles while other subsystems might still have pointers, permanently losing track of their allocations | Quarantine retired pointers in a separate owning list and reclaim at system unload; keep non-owning observers valid during system lifetime |
 | Inbound network packets | `Client::ProcessNet()` discarded its freshly decoded `PyPacket*` after dispatch without deleting the wrapper | Use `std::unique_ptr<PyPacket>` to reclaim incoming packets on success, ordinary failure and exceptions; keep dispatch handler behavior unchanged |
 | Regression checks | Relevant cleanup/performance contracts were not asserted | Extend `tools/verify_subsystems_audit.py` with targeted source invariants |
 
@@ -39,12 +40,12 @@ profiling are separate tasks.
 
 ## Unresolved / requires more evidence
 
-1. `BubbleManager::RemoveEmpty()` unlinks periodic empty bubbles without deleting
-   their allocations. Before reclaiming those objects at runtime, audit the
-   non-owning references in `SpawnMgr`, anomaly and dungeon managers, and the
-   associated mission/respawn timers. Removing them prematurely could introduce
-   use-after-free bugs or suppress existing respawns. Unload-time reclamation
-   is handled separately.
+1. `BubbleManager::RemoveEmpty()` now transfers empty bubbles to a retained
+   ownership list instead of leaking them permanently. They remain allocated
+   while the system is active to preserve existing non-owning references in
+   spawn, anomaly and dungeon managers. To reclaim them immediately, first
+   audit these observers and all mission/respawn timers; premature deletion
+   could introduce use-after-free or suppress existing spawns.
 2. `EntityList::Process()` processes clients and loaded systems on its main
    loop, so a single expensive callback can delay all systems. Do not add
    parallel processing until shared-world state, per-client queues and database
