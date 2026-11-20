@@ -185,4 +185,20 @@ assert "virtual ~ElementParser() = default;" in element_interface
 xml_parser_impl = source("src/eve-core/utils/XMLParser.cpp")
 assert "SafeDelete(cur.second);" in xml_parser_impl
 
+# Marshal byte streams deliberately pack multi-byte values immediately after
+# one-byte markers. Never regress to typed, potentially unaligned reads/writes.
+buffer = source("src/eve-core/utils/Buffer.h")
+assign = buffer.split("void AssignAt(", 1)[1].split("void AssignSeqAt(", 1)[0]
+assert "std::memcpy( &mBuffer[ _index ], &value, sizeof( T ) );" in assign
+assert "*(T*)&mBuffer" not in assign
+unmarshal_h = source("src/eve-common/marshal/EVEUnmarshal.h")
+assert "std::memcpy( &value, &*bytes, sizeof(T) );" in unmarshal_h
+unmarshal_cpp = source("src/eve-common/marshal/EVEUnmarshal.cpp")
+assert "ReadPackedScalar<" in unmarshal_cpp
+assert "std::vector<uint16> characters(len);" in unmarshal_cpp
+marshal_test = source("src/eve-test/marshal/EVEMarshalTest.cpp")
+assert "unaligned.Append<uint8>(marker);" in marshal_test
+assert "unaligned.Append<uint32>(word);" in marshal_test
+assert "std::memcmp(&unaligned[1], &word, sizeof(word))" in marshal_test
+
 print("Source-level gameplay safety guards passed")
