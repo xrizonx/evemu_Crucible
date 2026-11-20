@@ -85,6 +85,30 @@ int marshal_EVEMarshalTest( int argc, char* argv[] )
         return EXIT_FAILURE;
     }
 
+    // UnmarshalStream creates generic PyObjectEx containers. Packed rows
+    // inside them must have a *real* DBRowDescriptor reconstructed from the
+    // wire header, not an unsafe cast of a PyObjectEx to DBRowDescriptor.
+    if (!rep->IsObjectEx() || rep->AsObjectEx()->list().size() != 1 ||
+        !rep->AsObjectEx()->list().GetItem(0)->IsPackedRow()) {
+        ::puts( "Unmarshaled result does not contain the expected packed row." );
+        PyDecRef(rep);
+        return EXIT_FAILURE;
+    }
+    PyPackedRow* decoded = rep->AsObjectEx()->list().GetItem(0)->AsPackedRow();
+    if (decoded->header()->ColumnCount() != 6 ||
+        decoded->header()->FindColumn("lowPrice") != 1 ||
+        decoded->header()->FindColumn("orders") != 5 ||
+        !decoded->GetField(1)->IsLong() ||
+        decoded->GetField(1)->AsLong()->value() != 18000 ||
+        !decoded->GetField(4)->IsLong() ||
+        decoded->GetField(4)->AsLong()->value() != 5463586 ||
+        !decoded->GetField(5)->IsInt() ||
+        decoded->GetField(5)->AsInt()->value() != 254) {
+        ::puts( "Unmarshaled packed row descriptor or values differ from source." );
+        PyDecRef(rep);
+        return EXIT_FAILURE;
+    }
+
     ::puts( "Final:" );
     rep->Dump( stdout, "    " );
     PyDecRef( rep );
