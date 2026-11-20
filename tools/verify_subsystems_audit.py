@@ -118,4 +118,13 @@ assert wormhole_cleanup.count(
     "Both wormhole deletions must use NULL-safe orphan detection")
 assert "NOT IN (SELECT sigItemID FROM sysSignatures)" not in wormhole_cleanup
 
+# Never hang a loaded solar system when enumerating nonempty rat-spawn
+# bubbles. Iteration must progress for both small and large collections.
+system = source("src/eve-server/system/SystemManager.cpp")
+spawn_bubble_copy = system.split("void SystemManager::GetSpawnBubbles(", 1)[1].split(
+    "void SystemManager::RemoveSpawnBubble(", 1)[0]
+assert "for (const auto& entry : m_ratBubbles)" in spawn_bubble_copy
+assert "bubbleMap->emplace(entry.first, entry.second);" in spawn_bubble_copy
+assert "while (itr != m_ratBubbles.end())" not in spawn_bubble_copy
+
 print("Source-level gameplay safety guards passed")
