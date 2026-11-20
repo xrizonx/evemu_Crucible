@@ -91,6 +91,14 @@ SystemBubble::~SystemBubble()
         }
 }
 
+void SystemBubble::ForgetMarkersAfterSystemUnload() {
+    // UnloadSystem() owns and deletes every registered marker in m_entities.
+    // These are non-owning references after that pass; clear before our dtor.
+    m_markers.clear();
+    m_centerSE = nullptr;
+    m_hasMarkers = false;
+}
+
 void SystemBubble::clear() {
     if (m_hasMarkers)
         for (auto cur : m_markers) {
