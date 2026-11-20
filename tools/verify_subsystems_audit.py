@@ -127,4 +127,25 @@ assert "for (const auto& entry : m_ratBubbles)" in spawn_bubble_copy
 assert "bubbleMap->emplace(entry.first, entry.second);" in spawn_bubble_copy
 assert "while (itr != m_ratBubbles.end())" not in spawn_bubble_copy
 
+# An unloaded system must reclaim the bubble allocations as well as all
+# lookup entries. This is a source guard, not a runtime leak-sanitizer result.
+bubbles = source("src/eve-server/system/BubbleManager.cpp")
+system_bubble = source("src/eve-server/system/SystemBubble.cpp")
+clear_system = bubbles.split("void BubbleManager::ClearSystemBubbles(", 1)[1].split(
+    "void BubbleManager::RemoveBubble(", 1)[0]
+assert "itr = m_bubbles.erase(itr);" in clear_system
+assert "m_bubbleIDMap.erase(bubble->GetID());" in clear_system
+assert "m_spawnIDs.erase(bubble->GetID());" in clear_system
+assert "bubble->ForgetMarkersAfterSystemUnload();" in clear_system
+assert "SafeDelete(bubble);" in clear_system
+assert "m_sysBubbleMap.erase(systemID);" in clear_system
+assert "m_bubbles.remove(" not in clear_system
+assert "m_markers.clear();" in system_bubble.split(
+    "void SystemBubble::ForgetMarkersAfterSystemUnload()", 1)[1].split(
+    "void SystemBubble::clear()", 1)[0]
+clear_all = bubbles.split("void BubbleManager::clear()", 1)[1].split(
+    "void BubbleManager::Process()", 1)[0]
+for lookup in ("m_bubbles", "m_wanderers", "m_bubbleIDMap", "m_sysBubbleMap", "m_spawnIDs"):
+    assert lookup + ".clear();" in clear_all
+
 print("Source-level gameplay safety guards passed")
