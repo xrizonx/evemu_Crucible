@@ -20,6 +20,34 @@ env:
   CCACHE_DIR: ${{ github.workspace }}/.ccache
 
 jobs:
+  sanitizers:
+    name: Linux ASan/UBSan memory and UB smoke
+    runs-on: ubuntu-22.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build zlib1g-dev libmariadb-dev libboost-all-dev libtinyxml-dev libutfcpp-dev
+      - name: Configure address and undefined-behavior sanitizers
+        run: |
+          cmake -S . -B build-sanitized -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_FLAGS="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined" \
+            -DCMAKE_CXX_FLAGS="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Compile instrumented C++ targets
+        run: cmake --build build-sanitized --parallel 2
+      - name: Run instrumented registered tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          ctest --test-dir build-sanitized -N | tee sanitizer-test-list.txt
+          grep -qE '^  Test #[0-9]+' sanitizer-test-list.txt || { echo "No CTest tests were registered" >&2; exit 1; }
+          ctest --test-dir build-sanitized --output-on-failure
+
   linux:
     name: Linux GCC build
     runs-on: ubuntu-22.04
