@@ -528,11 +528,55 @@ PyRep* UnmarshalStream::LoadPackedRow()
     // PyPackedRows are just a packed form of blue.DBRow
     // these take a DBRowDescriptor and the column data in different formats
     PyRep* header_element = LoadRep();
-    if( NULL == header_element )
+    if (header_element == nullptr)
         return nullptr;
 
-    // create the base packed row to be filled with data
-    PyPackedRow* row = new PyPackedRow( (DBRowDescriptor*)header_element );
+    // LoadObjectEx() returns a generic PyObjectEx for blue.DBRowDescriptor;
+    // it does NOT create a C++ DBRowDescriptor instance. Reinterpreting it as
+    // DBRowDescriptor* is undefined behaviour (caught by UBSan). Reconstruct
+    // the specialized descriptor from the validated wire representation.
+    if (!header_element->IsObjectEx() || header_element->AsObjectEx()->isType2()) {
+        sLog.Error("Unmarshal", "Packed row has an invalid descriptor object.");
+        PyDecRef(header_element);
+        return nullptr;
+    }
+    PyRep* wire_header = header_element->AsObjectEx()->header();
+    if (wire_header == nullptr || !wire_header->IsTuple() ||
+        wire_header->AsTuple()->size() < 2 ||
+        !wire_header->AsTuple()->GetItem(0)->IsToken() ||
+        wire_header->AsTuple()->GetItem(0)->AsToken()->content() != "blue.DBRowDescriptor" ||
+        !wire_header->AsTuple()->GetItem(1)->IsTuple()) {
+        sLog.Error("Unmarshal", "Packed row has an invalid descriptor header.");
+        PyDecRef(header_element);
+        return nullptr;
+    }
+    PyTuple* args = wire_header->AsTuple()->GetItem(1)->AsTuple();
+    if (args->size() != 1 || !args->GetItem(0)->IsTuple()) {
+        sLog.Error("Unmarshal", "Packed row descriptor columns are malformed.");
+        PyDecRef(header_element);
+        return nullptr;
+    }
+    PyTuple* columns = args->GetItem(0)->AsTuple();
+    DBRowDescriptor* descriptor = new DBRowDescriptor();
+    for (size_t i = 0; i < columns->size(); ++i) {
+        PyRep* entry = columns->GetItem(i);
+        if (entry == nullptr || !entry->IsTuple() ||
+            entry->AsTuple()->size() != 2 ||
+            !entry->AsTuple()->GetItem(0)->IsString() ||
+            !entry->AsTuple()->GetItem(1)->IsInt()) {
+            sLog.Error("Unmarshal", "Packed row descriptor has an invalid column.");
+            PyDecRef(descriptor);
+            PyDecRef(header_element);
+            return nullptr;
+        }
+        PyTuple* column = entry->AsTuple();
+        descriptor->AddColumn(column->GetItem(0)->AsString()->content().c_str(),
+                              static_cast<DBTYPE>(column->GetItem(1)->AsInt()->value()));
+    }
+    PyDecRef(header_element);
+
+    // PyPackedRow takes ownership of the newly constructed descriptor.
+    PyPackedRow* row = new PyPackedRow(descriptor);
 
     // create the sizemap and sort it by bitsize, the value of the map indicates the index of the column
     // this can be used to identify things easily
