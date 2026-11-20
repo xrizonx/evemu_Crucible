@@ -1677,61 +1677,56 @@ PyResult CorpRegistryBound::DeleteApplication(PyCallArgs & call, PyInt* corporat
 
 void CorpRegistryBound::FillOCApplicationChange(OnCorporationApplicationChanged& OCAC, const Corp::ApplicationInfo& Old, const Corp::ApplicationInfo& New)
 {
-    //  ? (PyRep*)new PyInt(x) : PyStatic.NewNone();
+    // The client constructs added/removed application rows from the change
+    // dictionary. Always populate every column in crpApplications, including
+    // unchanged values; omitted keys cause KeyError in bco_applications.py.
+    // For an insert/delete the missing side is represented by PyNone.
     if (Old.valid) {
         OCAC.applicationIDOld = new PyInt(Old.appID);
-        //OCAC.applicationDateTimeOld = new PyLong(Old.appTime);
-        OCAC.applicationTextOld = new PyString(Old.appText);
-        OCAC.characterIDOld = new PyInt(Old.charID);
         OCAC.corporationIDOld = new PyInt(Old.corpID);
-        //OCAC.deletedOld = new PyInt(Old.deleted);
-        //OCAC.grantableRolesOld = new PyLong(Old.grantRole);
-        if (Old.lastCID) {
-            OCAC.lastCorpUpdaterIDOld = new PyInt(Old.lastCID);
-        } else {
-            OCAC.lastCorpUpdaterIDOld = PyStatic.NewNone();
-        }
-        //OCAC.rolesOld = new PyLong(Old.role);
+        OCAC.characterIDOld = new PyInt(Old.charID);
+        OCAC.applicationTextOld = new PyString(Old.appText);
+        OCAC.rolesOld = new PyLong(Old.role);
+        OCAC.grantableRolesOld = new PyLong(Old.grantRole);
         OCAC.statusOld = new PyInt(Old.status);
+        OCAC.applicationDateTimeOld = new PyLong(Old.appTime);
+        OCAC.deletedOld = new PyInt(Old.deleted);
+        OCAC.lastCorpUpdaterIDOld = Old.lastCID ? static_cast<PyRep*>(new PyInt(Old.lastCID)) : PyStatic.NewNone();
     } else {
         OCAC.applicationIDOld = PyStatic.NewNone();
-        //OCAC.applicationDateTimeOld = PyStatic.NewNone();
-        OCAC.applicationTextOld = PyStatic.NewNone();
-        OCAC.characterIDOld = PyStatic.NewNone();
         OCAC.corporationIDOld = PyStatic.NewNone();
-        //OCAC.deletedOld = PyStatic.NewNone();
-        //OCAC.grantableRolesOld = PyStatic.NewNone();
-        OCAC.lastCorpUpdaterIDOld = PyStatic.NewNone();
-        //OCAC.rolesOld = PyStatic.NewNone();
+        OCAC.characterIDOld = PyStatic.NewNone();
+        OCAC.applicationTextOld = PyStatic.NewNone();
+        OCAC.rolesOld = PyStatic.NewNone();
+        OCAC.grantableRolesOld = PyStatic.NewNone();
         OCAC.statusOld = PyStatic.NewNone();
+        OCAC.applicationDateTimeOld = PyStatic.NewNone();
+        OCAC.deletedOld = PyStatic.NewNone();
+        OCAC.lastCorpUpdaterIDOld = PyStatic.NewNone();
     }
 
     if (New.valid) {
         OCAC.applicationIDNew = new PyInt(New.appID);
-        //OCAC.applicationDateTimeNew = new PyLong(New.appTime);
-        OCAC.applicationTextNew = new PyString(New.appText);
-        OCAC.characterIDNew = new PyInt(New.charID);
         OCAC.corporationIDNew = new PyInt(New.corpID);
-        //OCAC.deletedNew = new PyInt(New.deleted);
-        //OCAC.grantableRolesNew = new PyLong(New.grantRole);
-        if (New.lastCID) {
-            OCAC.lastCorpUpdaterIDNew = new PyInt(New.lastCID);
-        } else {
-            OCAC.lastCorpUpdaterIDNew = PyStatic.NewNone();
-        }
-        //OCAC.rolesNew = new PyLong(New.role);
+        OCAC.characterIDNew = new PyInt(New.charID);
+        OCAC.applicationTextNew = new PyString(New.appText);
+        OCAC.rolesNew = new PyLong(New.role);
+        OCAC.grantableRolesNew = new PyLong(New.grantRole);
         OCAC.statusNew = new PyInt(New.status);
+        OCAC.applicationDateTimeNew = new PyLong(New.appTime);
+        OCAC.deletedNew = new PyInt(New.deleted);
+        OCAC.lastCorpUpdaterIDNew = New.lastCID ? static_cast<PyRep*>(new PyInt(New.lastCID)) : PyStatic.NewNone();
     } else {
         OCAC.applicationIDNew = PyStatic.NewNone();
-        //OCAC.applicationDateTimeNew = PyStatic.NewNone();
-        OCAC.applicationTextNew = PyStatic.NewNone();
-        OCAC.characterIDNew = PyStatic.NewNone();
         OCAC.corporationIDNew = PyStatic.NewNone();
-        //OCAC.deletedNew = PyStatic.NewNone();
-        //OCAC.grantableRolesNew = PyStatic.NewNone();
-        OCAC.lastCorpUpdaterIDNew = PyStatic.NewNone();
-        //OCAC.rolesNew = PyStatic.NewNone();
+        OCAC.characterIDNew = PyStatic.NewNone();
+        OCAC.applicationTextNew = PyStatic.NewNone();
+        OCAC.rolesNew = PyStatic.NewNone();
+        OCAC.grantableRolesNew = PyStatic.NewNone();
         OCAC.statusNew = PyStatic.NewNone();
+        OCAC.applicationDateTimeNew = PyStatic.NewNone();
+        OCAC.deletedNew = PyStatic.NewNone();
+        OCAC.lastCorpUpdaterIDNew = PyStatic.NewNone();
     }
 }
 
