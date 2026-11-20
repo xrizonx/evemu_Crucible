@@ -25,8 +25,26 @@
 
 #include "eve-test.h"
 
+#include <cstring>
+
 int marshal_EVEMarshalTest( int argc, char* argv[] )
 {
+    // The marshal wire stream has fields immediately following byte markers.
+    // A 32-bit append therefore often lands at a non-aligned byte address.
+    // Check that Buffer preserves the exact native representation without
+    // making an invalid typed store (caught by UBSan on earlier builds).
+    Buffer unaligned;
+    const uint8 marker = 0x7e;
+    const uint32 word = 0x12345678;
+    unaligned.Append<uint8>(marker);
+    unaligned.Append<uint32>(word);
+    if (unaligned.size() != 1 + sizeof(word) ||
+        unaligned[0] != marker ||
+        std::memcmp(&unaligned[1], &word, sizeof(word)) != 0) {
+        ::puts("Unaligned buffer append changed the marshal bytes.");
+        return EXIT_FAILURE;
+    }
+
     DBRowDescriptor *header = new DBRowDescriptor;
     // Fill header:
     header->AddColumn( "historyDate", DBTYPE_FILETIME );
