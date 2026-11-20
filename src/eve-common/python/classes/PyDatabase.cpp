@@ -211,7 +211,11 @@ PyDict* CIndexedRowSet::_CreateKeywords(DBRowDescriptor* rowDesc)
 
     PyDict* keywords = new PyDict();
     keywords->SetItemString( "header", rowDesc );
-    keywords->SetItemString( "columnName", rowDesc->GetColumnName(0) );
+    // columnName is borrowed from the descriptor; the dictionary also
+    // owns a reference and must retain it independently.
+    PyString* columnName = rowDesc->GetColumnName(0);
+    PyIncRef(columnName);
+    keywords->SetItemString("columnName", columnName);
 
     return keywords;
 }
@@ -257,7 +261,11 @@ PyDict* CFilterRowSet::_CreateKeywords(DBRowDescriptor* rowDesc)
 
     PyDict* keywords = new PyDict();
     keywords->SetItemString( "header", rowDesc );
-    keywords->SetItemString( "columnName", rowDesc->GetColumnName(0) );
+    // columnName is borrowed from the descriptor; the dictionary also
+    // owns a reference and must retain it independently.
+    PyString* columnName = rowDesc->GetColumnName(0);
+    PyIncRef(columnName);
+    keywords->SetItemString("columnName", columnName);
 
     return keywords;
 }
