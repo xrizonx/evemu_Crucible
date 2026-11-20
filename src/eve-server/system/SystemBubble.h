@@ -135,6 +135,9 @@ public:
     ContainerSE* GetCenterMarker()                      { return m_centerSE; }
 
     void clear();
+    // Called only after SystemManager has deleted all registered entities.
+    // Marker pointers are then stale; they must not be deleted a second time.
+    void ForgetMarkersAfterSystemUnload();
     void PrintEntityList();
 
     void Add(SystemEntity* pSE);
