@@ -101,4 +101,21 @@ assert "return OrderMiningDrones(call, droneIDs, targetID, false);" in entity
 assert "return OrderMiningDrones(call, droneIDs, targetID, true);" in entity
 assert "ship->TargetMgr()->GetTarget(asteroidID, true) != asteroid" in entity
 assert "drone->GetControllerID() == ship->GetID() && drone->GetHomeShip() == ship" in entity
+# A startup cleanup must never strip attributes from probe/wormhole items
+# that it intentionally preserves outside the live solar-system location range.
+cleaner = source("src/eve-server/DBCleaner.cpp")
+probe_cleanup = cleaner.split("void DBCleaner::CleanGroupFromSpace(", 1)[1].split(
+    "void DBCleaner::CleanOrphanedWormholes(", 1)[0]
+wormhole_cleanup = cleaner.split("void DBCleaner::CleanOrphanedWormholes(", 1)[1].split(
+    "void DBCleaner::CleanDungeonEntities(", 1)[0]
+space_filter = "locationID >= 30000000 AND locationID <= 32000000"
+assert probe_cleanup.count(space_filter) == 2, (
+    "Probe attribute and entity deletions must use the same space filter")
+assert wormhole_cleanup.count(space_filter) == 2, (
+    "Wormhole attribute and entity deletions must use the same space filter")
+assert wormhole_cleanup.count(
+    "NOT EXISTS (SELECT 1 FROM sysSignatures WHERE sigItemID = entity.itemID)") == 2, (
+    "Both wormhole deletions must use NULL-safe orphan detection")
+assert "NOT IN (SELECT sigItemID FROM sysSignatures)" not in wormhole_cleanup
+
 print("Source-level gameplay safety guards passed")
