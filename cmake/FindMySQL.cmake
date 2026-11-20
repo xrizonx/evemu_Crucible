@@ -13,12 +13,15 @@
 IF( WIN32 )
   LIST( APPEND MYSQL_NAMES "libmariadb" )
 ELSE( WIN32 )
-  LIST( APPEND MYSQL_NAMES "mysqlclient_r" "mysqlclient" )
+  # Modern Debian/Ubuntu libmariadb-dev provides libmariadb.so and
+  # /usr/include/mariadb/mysql.h, rather than libmysqlclient.so.
+  # Keep legacy MySQL library names for older installations.
+  LIST( APPEND MYSQL_NAMES "mysqlclient_r" "mysqlclient" "mariadb" )
 ENDIF( WIN32 )
 
 FIND_PATH(
   MYSQL_INCLUDE_DIRS "mysql.h"
-  PATH_SUFFIXES "mysql"
+  PATH_SUFFIXES "mysql" "mariadb"
   )
 FIND_LIBRARY(
   MYSQL_LIBRARIES
