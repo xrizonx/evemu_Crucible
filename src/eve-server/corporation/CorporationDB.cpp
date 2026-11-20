@@ -1453,9 +1453,10 @@ PyRep *CorporationDB::GetMyApplications(uint32 charID) {
 PyRep *CorporationDB::GetApplications(uint32 corpID) {
     DBQueryResult res;
     if (!sDatabase.RunQuery(res,
-        " SELECT"
-        " applicationID, characterID, corporationID, applicationText, status,"
-        " applicationDateTime, lastCorpUpdaterID"
+        // Match GetMyApplications() and OnCorporationApplicationChanged.
+        // The client expects all ten application columns in the same order.
+        " SELECT applicationID, corporationID, characterID, applicationText,"
+        " roles, grantableRoles, status, applicationDateTime, deleted, lastCorpUpdaterID"
         " FROM crpApplications"
         " WHERE corporationID = %u AND deleted = 0",
         corpID))
@@ -1471,6 +1472,10 @@ PyRep *CorporationDB::GetApplications(uint32 corpID) {
 }
 
 bool CorporationDB::GetCurrentApplicationInfo(Corp::ApplicationInfo& aInfo) {
+    // applicationText originates from the client; escape it before building
+    // the existing lookup query (quotes must not break SQL).
+    std::string escaped;
+    sDatabase.DoEscapeString(escaped, aInfo.appText);
     DBQueryResult res;
     if (!sDatabase.RunQuery(res,
         " SELECT"
@@ -1478,7 +1483,7 @@ bool CorporationDB::GetCurrentApplicationInfo(Corp::ApplicationInfo& aInfo) {
         " applicationDateTime, lastCorpUpdaterID, deleted"
         " FROM crpApplications"
         " WHERE characterID = %u AND corporationID = %u AND applicationText = '%s'",
-        aInfo.charID, aInfo.corpID, aInfo.appText.c_str()))
+        aInfo.charID, aInfo.corpID, escaped.c_str()))
     {
         codelog(CORP__DB_ERROR, "Error in query: %s", res.error.c_str());
         aInfo.valid = false;
@@ -1514,10 +1519,17 @@ bool CorporationDB::InsertApplication(Corp::ApplicationInfo& aInfo) {
     sDatabase.DoEscapeString(escaped, aInfo.appText);
     DBerror err;
     if (!sDatabase.RunQueryLID(err, aInfo.appID,
+        // Persist the same complete row carried in the new-application
+        // notification. Otherwise client cache and DB defaults can disagree.
         " INSERT INTO crpApplications"
-        " (corporationID, characterID, applicationText, applicationDateTime)"
-        " VALUES (%u, %u, '%s', %lli)",
-        aInfo.corpID, aInfo.charID, escaped.c_str(), aInfo.appTime))
+        " (corporationID, characterID, applicationText, roles, grantableRoles,"
+        " status, applicationDateTime, deleted, lastCorpUpdaterID)"
+        " VALUES (%u, %u, '%s', %lli, %lli, %u, %lli, %u, %u)",
+        aInfo.corpID, aInfo.charID, escaped.c_str(),
+        static_cast<long long>(aInfo.role),
+        static_cast<long long>(aInfo.grantRole),
+        aInfo.status, static_cast<long long>(aInfo.appTime), aInfo.deleted,
+        aInfo.lastCID))
     {
         codelog(CORP__DB_ERROR, "Error in query: %s", err.c_str());
         return false;
