@@ -26,6 +26,8 @@
 #ifndef __UTILS__BUFFER_H__INCL__
 #define __UTILS__BUFFER_H__INCL__
 
+#include <cstring>
+
 #include "utils/misc.h"
 #include "memory/SafeMem.h"
 
@@ -532,8 +534,11 @@ public:
 
         // turn iterator into byte offset
         const size_type _index = ( index.template As< uint8 >() - begin< uint8 >() );
-        // assign the value
-        *(T*)&mBuffer[ _index ] = value;
+        // Serialized values may start at an arbitrary byte offset (for
+        // example immediately after a one-byte marshal header). Casting
+        // those bytes to T* performs an unaligned typed store and violates
+        // strict aliasing. memcpy preserves the exact native wire bytes.
+        std::memcpy( &mBuffer[ _index ], &value, sizeof( T ) );
     }
     /**
      * @brief Assigns a sequence of elements to buffer at specific point.
