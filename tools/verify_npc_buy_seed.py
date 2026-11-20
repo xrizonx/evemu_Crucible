@@ -93,7 +93,7 @@ assert "seed -buy-only -force" in workflow
 assert "needs: [linux, windows, docker, npc-buy-mariadb]" in workflow
 assert "SELECT" in audit and "DELETE " not in audit and "UPDATE " not in audit
 assert "SET @npc_owner_id = 4000000" in audit
-assert audit.count("o.orderRange = 0 AND o.duration = 250") == 4
+assert audit.count("o.orderRange = 0 AND o.duration = 250") == 5
 assert "o.orderRange = -1" not in audit
 assert "orderRange=-1" not in audit
 # Invalid-price static NPC seed orders must be visible in a read-only audit,
