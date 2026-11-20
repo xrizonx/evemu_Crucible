@@ -96,4 +96,11 @@ assert "SET @npc_owner_id = 4000000" in audit
 assert audit.count("o.orderRange = 0 AND o.duration = 250") == 4
 assert "o.orderRange = -1" not in audit
 assert "orderRange=-1" not in audit
+# Invalid-price static NPC seed orders must be visible in a read-only audit,
+# rather than hidden by the positive-price filter in the quantity calculation.
+assert "-- 5. Invalid seeded order prices, minimum volumes or escrow." in audit
+assert "o.price IS NULL OR o.price <= 0" in audit
+assert "o.minVolume IS NULL OR o.minVolume <> 1" in audit
+assert "o.volEntered <= 0 OR o.escrow < 0" in audit
+
 print("PASS: NPC buy migration, idempotence, pricing, settlement, and read-only audit invariants")
