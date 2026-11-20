@@ -30,6 +30,7 @@ EVEmu is an educational, work-in-progress EVE Online server emulator based on [u
 - [Build from master](#9-build-master-locally-on-windows)
 - [Upgrade and troubleshoot](#10-upgrading-an-existing-server)
 - [Docker/Linux](#docker-and-linux)
+- [Outstanding client and SQL test backlog](#outstanding-test-backlog--crucible-client-server-sql-and-database-20-november-2026)
 
 ## Changes in this fork
 
@@ -480,6 +481,103 @@ docker compose stop
 ~~~
 
 The compose file uses example MariaDB credentials (`evemu/evemu`); change these before shared or public exposure and keep container configuration consistent. Container startup invokes EVEDBTool and is **not** the same as the manual Windows steps above. Linux build artifacts include `sql/evedbtool`, bundled SQL resources and the server installation.
+
+## Outstanding test backlog — Crucible client, server, SQL and database (20 November 2026)
+
+**Status: pending / not certified.** The checklist below records tests that still require a reproducible result against the **final deployed commit**, even where older feature-specific checks or source guards have passed. Do not mark a case successful merely because the server compiles, a scripted source assertion passes, or the functionality was described in a merged PR. Track actual results (PASS / FAIL / BLOCKED / NOT RUN), dates and evidence in the issue tracker. This is an operator acceptance backlog, **not a claim that every C++ or SQL file has been reviewed**.
+
+**Test baseline and preparation:** Confirm `BUILD-INFO.txt`, Crucible-era client build, operating system, MariaDB version, schema/migration state and matching server SHA. Use a **disposable, backed-up staging DB** for destructive, restart, failed-SQL and fault-injection tests; preserve player accounts, inventory and wallets. Use two clients/characters for visibility, trade, PvP and permissions tests. Keep logs, server/client crash dumps, Destiny/network traces, screenshots and SQL read-only before/after snapshots (with secrets and personal data redacted).
+
+**Priority:** **P0** = release-blocking data integrity, startup, login or core gameplay; **P1** = functional and regression coverage; **P2** = performance and edge cases. Unchecked boxes are **NOT RUN** unless the linked issue records fresh evidence; **known unimplemented features are not to be enabled just to make a test pass**. For earlier test procedures see [client gameplay checklist](docs/CRUCIBLE_CLIENT_GAMEPLAY_VERIFICATION_CHECKLIST_2026-11-16.md), [subsystem test matrix](docs/GAMEPLAY_SUBSYSTEMS_AUDIT_TEST_MATRIX_2026-11-16.md), [stability worklog](STABILITY_WORKLOG.md), and [open issues](https://github.com/xrizonx/evemu_Crucible/issues).
+
+### A. Distribution, startup, connection and character/session integrity
+- [ ] **P0 ENV-01** — Re-run Linux GCC, Windows UCRT64, Docker and MariaDB seed jobs on the **final merged SHA**; record artifact links, CTest inventory/results and checksum verification.
+- [ ] **P0 ENV-02** — Clean-install Windows ZIP and Linux/Docker package with bundled DLLs/SQL/config; start and stop the server three times without a missing dependency, malformed XML or unexpected DB migration.
+- [ ] **P0 ENV-03** — Upgrade a copied existing database using `status`, `up -dryrun` and reviewed migrations; compare entity, character, market, wallet and job counts and verify restore procedure. Never use historical `install` or `seed -force` against a populated production DB.
+- [ ] **P0 LOGIN-01** — Connect a compatible **Crucible-era** client, create/login two accounts, undock/dock, character-switch, disconnect/reconnect and relog with consistent session and inventory state.
+- [ ] **P0 LOGIN-02** — Load stations with agent thumbnail URLs (including missing/old 50px portrait caches); verify no station-load crash, broken HTTP response or unsafe redirect; capture client dump and image-server trace if it fails ([#48](https://github.com/xrizonx/evemu_Crucible/issues/48)).
+- [ ] **P0 LOGIN-03** — Open/reopen ship cargo (including Machariel), item hangar and corporate hangar before/after undock, dock, ship swap and relog; verify quantities, IDs and window refresh ([#48](https://github.com/xrizonx/evemu_Crucible/issues/48)).
+- [ ] **P1 LOGIN-04** — Test client image request bursts and absent Character, Corporation, Alliance and Type images; check correct status, caching and no client crash.
+- [ ] **P1 LOGIN-05** — Test a forced server restart during session change; require a clean relog and no duplicate ships/entities or stale character-online state.
+
+### B. Destiny movement, warp, gates and docking
+- [ ] **P0 MOVE-01** — Execute at least 20 consecutive manual warps from different grids/hulls; verify **visible warp tunnel**, arrival position and motion state on client and server, with packet ordering captured on any miss ([#45](https://github.com/xrizonx/evemu_Crucible/issues/45)).
+- [ ] **P0 MOVE-02** — Verify warp-to-zero on gates and stations, jump/dock at the 2,500m interaction limit, and correct separation for small, large and capital radii; test manual and autopilot approach.
+- [ ] **P0 MOVE-03** — Warp immediately after jump/undock, while aligning, with drones out or after stopping; verify restrictions, ship velocity, cloak/invulnerability and no teleport or invisible ship.
+- [ ] **P0 MOVE-04** — With a second observer client, check bubble membership, visible warp effects, grid transitions and no ghost/double balls after repeated warp or system jump ([#45](https://github.com/xrizonx/evemu_Crucible/issues/45)).
+- [ ] **P1 MOVE-05** — Approach, keep-at-range, orbit and stop on stations, ships, wrecks and asteroids; verify stable standoff, no overshoot/NaN and no repeated Destiny errors.
+- [ ] **P1 MOVE-06** — Repeat autopilot across several gates and docking destinations; verify timer handling, session transitions and post-jump destination rather than just successful teleport.
+- [ ] **P1 MOVE-07** — Test tackle, warp scramblers and interrupted pre-warp alignment; confirm supported Crucible client behavior without inventing newer-client mechanics.
+
+### C. NPC AI, targeting, drones, combat and weapons
+- [ ] **P0 COMBAT-01** — Belt/anomaly NPC spawns across security tiers, faction/type selection and respawn persistence; verify orbit, lock, aggression, damage and loot without stale-entity crashes.
+- [ ] **P0 COMBAT-02** — Lock/unlock multiple targets, break locks on death/warp and exercise target painters/webs/ECM during dock and jump; monitor target-manager safety and historic crash regressions.
+- [ ] **P0 COMBAT-03** — Test turret optimal, falloff and tracking versus angular/radial motion; verify in-range/out-of-range hits and damage calculation against comparable hulls.
+- [ ] **P0 COMBAT-04** — Test missile explosion radius/velocity, flight and damage; exercise defenders, smartbomb area effect, bomb detonation and invalid/dead target handling.
+- [ ] **P0 DRONE-01** — Combat drone launch, engage, focus-fire, passive/aggressive state, return, scoop and disconnect/relog; no stuck/orphan drones or double damage.
+- [ ] **P0 DRONE-02** — Mining drone approach, orbit, harvest, return and unload to correct ship hold, from local and **AU-scale overview distances**; reconcile asteroid quantity and ship inventory ([#48](https://github.com/xrizonx/evemu_Crucible/issues/48)).
+- [ ] **P0 DRONE-03** — Interrupt mining via recall, new order, pilot movement, asteroid depletion, warp, lost ship or drone destruction; no duplicate/lost ore or infinite mining timer ([#48](https://github.com/xrizonx/evemu_Crucible/issues/48)).
+- [ ] **P1 COMBAT-05** — Test remote shield/armor transfers, tractor beam ownership/range, looting and salvaging across fleet/corporation/unauthorized targets.
+- [ ] **P1 COMBAT-06** — Confirm module online/offline/reload/capacitor effects and invalid fitted-item or missing-target safeguards; include server restart and long fights.
+
+### D. Missions, exploration and rewards
+- [ ] **P0 MISSION-01** — Accept, journal-display, expire/fail/reaccept and complete normal security and courier missions; verify objectives only visible to authorized character.
+- [ ] **P0 MISSION-02** — Run Blockade mission: expected cruiser/battlecruiser fleet, 12 target kills, warp-in/out persistence, journal completion and **one** ISK/standing payout.
+- [ ] **P0 MISSION-03** — Generate DED/Officer expedition: targetable enemies (excluding known invalid Grigori), combat completion, boss loot/wreck contents and pocket cleanup.
+- [ ] **P0 MISSION-04** — Disconnect or restart mid-mission and relog; verify mission offer/item/dungeon persistence, expiry and no duplicated mission reward.
+- [ ] **P1 MISSION-05** — Validate mission standings, LP, faction reward, reward items and level-specific agent availability versus Crucible rules.
+- [ ] **P1 MISSION-06** — Scan signatures/anomalies, bookmark and re-enter a dungeon; verify scanner cone geometry, repeat visits and safe cleanup after reset.
+
+### E. Player and NPC market, 100M mineral/ore buys and wallet integrity
+- [ ] **P0 MARKET-01** — On a **staging snapshot**, audit seeded mineral group 18/ore category 25 with [read-only 100M audit SQL](sql/diagnostics/2026-11-19-mineral-ore-npc-buy-100m-audit.sql): published types, station coverage, up-to-100M volume, 10T ISK cap, min volume and unique orders.
+- [ ] **P0 MARKET-02** — With recorded player ISK/items, sell partial/full stacks into static NPC bids and verify price = stored order price, exactly-once wallet credit, consumed items and remaining volume/escrow ([#46](https://github.com/xrizonx/evemu_Crucible/issues/46)).
+- [ ] **P0 MARKET-03** — Buy and sell player orders with two clients, corporation wallets, insufficient funds/space, permissions and invalid quantities; reconcile tax/fees and no duplicate debit/credit.
+- [ ] **P0 MARKET-04** — Fault-inject DB failure/restart at each settlement step **only in isolated MariaDB staging**; confirm order, wallet, inventory and history commit atomically or roll back and retry safely. This is an **open architecture risk**, not a resolved fix ([#46](https://github.com/xrizonx/evemu_Crucible/issues/46)).
+- [ ] **P0 MARKET-05** — Verify seed idempotence and player-order preservation with an isolated fixture. Review `seed -buy-only -force -dryrun` and a verified backup **before** any intentionally forced static-NPC-buy refresh; never reseed live data for testing.
+- [ ] **P1 MARKET-06** — Verify normal Trader Joe/NPC sells versus static buys, baseline 100%-base-price policy, correct displayed bid/ask results and no stock depletion/negative escrow.
+- [ ] **P1 MARKET-07** — Measure large-catalog market open/search/order latency, page and cache behavior, SQL `EXPLAIN` plans, index usage and regional seed load time; record before/after timings.
+
+### F. Sovereignty, IHub upgrades, POS and structures
+- [ ] **P0 SOV-01** — Claim/unclaim sovereignty via TCU, restart, and check ownership, FILETIME persistence, notification and station/system status.
+- [ ] **P0 SOV-02** — Validate SBU distinct-gate counting, online/offline state, jump gates, bridge links, permission boundaries and structure cleanup.
+- [ ] **P0 SOV-03** — Confirm `/sovindex5` is restricted to authorized DEV/ADMIN roles and does not permanently replace genuine activity-based progression; check override persistence/clearance ([#49](https://github.com/xrizonx/evemu_Crucible/issues/49)).
+- [ ] **P0 SOV-04** — Install/uninstall IHub upgrades across required military/industrial levels, restart and confirm upgrade flags **and actual unlockable services**, not UI-only availability ([#49](https://github.com/xrizonx/evemu_Crucible/issues/49)).
+- [ ] **P0 POS-01** — Anchor/online/offline a large tower, verify forcefield is **visible in client**, has correct permissions/range and survives restart ([#49](https://github.com/xrizonx/evemu_Crucible/issues/49)).
+- [ ] **P1 POS-02** — Exercise silos, storage, corp ownership, tower fuel, structures, anchoring/unanchoring and safe access denial across characters.
+- [ ] **P1 POS-03** — Test POS laboratory/array job line discoverability separately from actual job creation/delivery; incomplete POS job support remains tracked ([#47](https://github.com/xrizonx/evemu_Crucible/issues/47), [#49](https://github.com/xrizonx/evemu_Crucible/issues/49)).
+
+### G. Manufacturing, research, blueprint copies and invention
+- [ ] **P0 IND-01** — Install/deliver/cancel station manufacturing jobs; verify materials, BPO/BPC owner/location, run count, output and wallet charges.
+- [ ] **P0 IND-02** — Run BPO ME/PE research and copying across normal/capped levels, skills and run boundaries; verify timing, persistence and actual returned blueprint stats.
+- [ ] **P0 IND-03** — Force failure after wallet charge, material reservation, job creation and delivery **on disposable staging**; prove rollback or document non-atomic behavior ([#47](https://github.com/xrizonx/evemu_Crucible/issues/47)).
+- [ ] **P0 IND-04** — Reject invalid runs/materials/blueprint access/remote or corp permissions without money, input, blueprint or job loss.
+- [ ] **P0 IND-05** — Confirm invention still **rejects before charging** and never produces fictitious T2 output; real invention stays **unimplemented**, not a passed feature ([#47](https://github.com/xrizonx/evemu_Crucible/issues/47)).
+- [ ] **P1 IND-06** — Verify offline/restart job recovery, overlapping job lines, slot capacity and POS/remote jobs **only after** their missing transaction-safe lifecycle is implemented ([#47](https://github.com/xrizonx/evemu_Crucible/issues/47)).
+
+### H. Inventory, corporation, contracts, mail and permissions
+- [ ] **P0 ITEM-01** — Split, merge, assemble, package, fit, move and transfer stacks/containers across station and ship cargo, with correct item IDs, quantities and owner flags.
+- [ ] **P0 ITEM-02** — Restart immediately after inventory mutation; compare `entity`, `entity_attributes` and item/cargo ownership with before/after snapshots; no disappearing or duplicated items.
+- [ ] **P0 ITEM-03** — Test newly guarded startup cleanup in staging: stored scanner/survey probes **outside** 30,000,000–32,000,000 location range must retain their attributes; in-space stale probes and unreferenced wormholes should be cleaned, referenced wormholes preserved.
+- [ ] **P1 ITEM-04** — Test entity cleanup with a NULL signature item ID (if staging schema allows it); orphan detection must not be suppressed by SQL `NOT IN` NULL semantics.
+- [ ] **P1 CORP-01** — Test corp office rent/visibility, wallet journal/tax, member roles and POS/inventory access before/after station relog and restart.
+- [ ] **P1 SOCIAL-01** — Mail send, read/unread, recipient-only deletion, list administration and invalid ID handling; no cross-character access or corruption.
+- [ ] **P1 SOCIAL-02** — Contracts create/accept/cancel/complete with item movement, correct assignees, owner checks, escrow and private visibility; verify failure paths do not lose assets.
+- [ ] **P1 SOCIAL-03** — Fleet invites, standing changes, multi-client chat updates and permission checks over reconnect and session change.
+
+### I. SQL correctness, resilience, observability and performance
+- [ ] **P0 SQL-01** — Compare `evedbtool status` to applied migration files; review historical destructive market migrations (including old `TRUNCATE mktOrders` changes) without replaying them on populated data.
+- [ ] **P0 SQL-02** — Verify migration/seed scripts on a **fresh disposable schema**, then upgrade a populated staging copy; compare row counts, constraints, order ownership and seed migration markers.
+- [ ] **P0 SQL-03** — Verify no orphaned inventory attributes, stranded industry jobs, duplicated market rows or negative player balances after controlled SQL failure/restart scenarios; record actual repair needs rather than auto-deleting rows.
+- [ ] **P1 SQL-04** — Check query plans/indexes for market order search, settlement, player inventory, corporation access, drone updates and industry jobs under realistic table sizes.
+- [ ] **P1 SQL-05** — Audit float/decimal price rounding, overflow/unsigned range, escrow caps and NULL join/subquery handling; test large quantities and currency boundaries.
+- [ ] **P1 PERF-01** — Profile startup static-data load, market/material price bulk loading, large corporation hangars, numerous system entities and DB connection churn.
+- [ ] **P1 PERF-02** — Run multi-hour soak with two+ clients, repeated gate/warp, NPC combat, drone cycles, mission turn-in and market activity; capture memory, CPU, DB connections and log/error trends.
+- [ ] **P2 PERF-03** — Review remaining per-row SQL writes (material price updates, industry/job and market settlement paths) for safe batching/transaction boundaries; benchmark before optimizing.
+- [ ] **P2 PERF-04** — Repeat soak and migration/seed checks on **both** Windows UCRT64 and Linux/Docker, including graceful shutdown and abrupt staging-only restart.
+
+### Completion and filing results
+
+For each ID record: `test ID | PASS/FAIL/BLOCKED/NOT RUN | UTC date | server SHA | Crucible client build | OS | MariaDB/schema | reproducible steps | expected/actual | artifact/log/SQL evidence | issue URL`. File independently reproducible failures in [GitHub Issues](https://github.com/xrizonx/evemu_Crucible/issues/new), linking existing [#45–#49](https://github.com/xrizonx/evemu_Crucible/issues) when applicable; do not close a tracker issue without validated resolution and rerun. The source-level cleanup regression check lives in `tools/verify_subsystems_audit.py`; it is **not** a substitute for ITEM-03/04 database-integrity testing.
 
 ## Further information and legal
 
