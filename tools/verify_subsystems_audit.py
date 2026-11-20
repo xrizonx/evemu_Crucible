@@ -258,4 +258,20 @@ lookup_app = corp_database.split("bool CorporationDB::GetCurrentApplicationInfo(
 assert "sDatabase.DoEscapeString(escaped, aInfo.appText);" in lookup_app
 assert "aInfo.corpID, escaped.c_str()))" in lookup_app
 
+# Unmarshaling a packed row must NOT reinterpret the generic PyObjectEx
+# returned by LoadRep as a C++ DBRowDescriptor. This previously passed normal
+# builds but tripped UBSan's invalid-downcast check in EVEMarshalTest.
+unmarshal_impl = source("src/eve-common/marshal/EVEUnmarshal.cpp")
+packed_row = unmarshal_impl.split("PyRep* UnmarshalStream::LoadPackedRow()", 1)[1].split(
+    "PyRep* UnmarshalStream::LoadError()", 1)[0]
+assert "new DBRowDescriptor()" in packed_row
+assert 'content() != "blue.DBRowDescriptor"' in packed_row
+assert "descriptor->AddColumn(" in packed_row
+assert "PyDecRef(header_element);" in packed_row
+assert "new PyPackedRow(descriptor)" in packed_row
+assert "(DBRowDescriptor*)header_element" not in packed_row
+marshal_test = source("src/eve-test/marshal/EVEMarshalTest.cpp")
+assert 'decoded->header()->ColumnCount() != 6' in marshal_test
+assert 'decoded->GetField(5)->AsInt()->value() != 254' in marshal_test
+
 print("Source-level gameplay safety guards passed")
