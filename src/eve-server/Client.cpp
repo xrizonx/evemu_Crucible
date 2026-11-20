@@ -24,6 +24,8 @@
     Updates:    Allan (rewrite), AlTahir(DaVinci)
 */
 
+#include <memory>
+
 #include "EVE_Consts.h"
 #include "EVE_MovementFormulas.h"
 #include "EVE_Player.h"
@@ -240,21 +242,23 @@ bool Client::ProcessNet()
     if (state != TCPConnection::STATE_CONNECTED)
         return false;
 
-    PyPacket *p(nullptr);
-    while ((p = PopPacket())) {
+    // Each PopPacket() transfers a new packet to the caller. DispatchPacket()
+    // only borrows it; do not discard the pointer before releasing it. RAII
+    // also covers exceptions from dispatch or error reporting.
+    while (PyPacket* p = PopPacket()) {
+        std::unique_ptr<PyPacket> packet(p);
         try {
-            if (!DispatchPacket(p))
-                sLog.Error("Client", "%s: Failed to dispatch packet of type %s (%i).", m_char->name(), MACHONETMSG_TYPE_NAMES[ p->type ], (int)p->type);
+            if (!DispatchPacket(p)) {
+                const char* name = (m_char.get() != nullptr) ? m_char->name() : "(unselected)";
+                sLog.Error("Client", "%s: Failed to dispatch packet of type %s (%i).",
+                           name, MACHONETMSG_TYPE_NAMES[p->type], (int)p->type);
+            }
         }
         catch(PyException& e) {
             _SendException(p->dest, p->source.callID, p->type, WRAPPEDEXCEPTION, &e.ssException);
         }
-
-        p = nullptr;
     }
 
-    // cleanup
-    SafeDelete(p);
     // send queue
     _SendQueuedUpdates();
 
