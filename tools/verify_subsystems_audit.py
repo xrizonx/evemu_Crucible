@@ -173,4 +173,16 @@ assert "std::unique_ptr<PyPacket> packet(p);" in packet_loop
 assert "p = nullptr;" not in packet_loop
 assert 'm_char.get() != nullptr' in packet_loop
 
+# ElementParser is owned as a base-class pointer in XMLParser and holds
+# derived MemberElementParser/ValueParser instances. Deletion through the base
+# requires a virtual destructor; ASan caught a new-delete-type-mismatch when
+# eve-xmlpktgen generated packet headers under sanitizer instrumentation.
+xml_parser_header = source("src/eve-core/utils/XMLParser.h")
+element_interface = xml_parser_header.split("class ElementParser", 1)[1].split(
+    "    };", 1)[0]
+assert "virtual bool Parse(" in element_interface
+assert "virtual ~ElementParser() = default;" in element_interface
+xml_parser_impl = source("src/eve-core/utils/XMLParser.cpp")
+assert "SafeDelete(cur.second);" in xml_parser_impl
+
 print("Source-level gameplay safety guards passed")
