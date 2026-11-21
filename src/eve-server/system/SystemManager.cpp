@@ -747,8 +747,21 @@ SystemEntity* DynamicEntityFactory::BuildEntity(SystemManager& sysMgr, const DBS
                     if (wreck.get() == nullptr)
                         return nullptr;
                     /** @todo make error msg here */
+                    // Damaged persistent wreck rows may not have a loadable
+                    // inventory. Do not dereference a null inventory during
+                    // first-player login when the system boots.
+                    Inventory* wreckInventory = wreck->GetMyInventory();
+                    if (wreckInventory == nullptr) {
+                        sLog.Error("DynamicEntityFactory::BuildEntity",
+                                   "Skipping wreck %u in system %u: inventory unavailable.",
+                                   entity.itemID, sysMgr.GetID());
+                        return nullptr;
+                    }
                     WreckSE* wSE = new WreckSE(wreck, sysMgr.GetServiceMgr(), &sysMgr, data);
-                    wreck->GetMyInventory()->LoadContents();
+                    if (!wreckInventory->LoadContents()) {
+                        sLog.Warning("DynamicEntityFactory::BuildEntity",
+                                     "Wreck %u inventory contents failed to load.", entity.itemID);
+                    }
                     wreck->SetMySE(wSE);
                     _log(ITEM__TRACE, "DynamicEntityFactory::BuildEntity() making WreckSE for %s (%u)", entity.itemName.c_str(), entity.itemID);
                     return wSE;
@@ -762,8 +775,18 @@ SystemEntity* DynamicEntityFactory::BuildEntity(SystemManager& sysMgr, const DBS
                     if (contRef.get() == nullptr)
                         return nullptr;
                     /** @todo make error msg here */
+                    Inventory* containerInventory = contRef->GetMyInventory();
+                    if (containerInventory == nullptr) {
+                        sLog.Error("DynamicEntityFactory::BuildEntity",
+                                   "Skipping cargo container %u in system %u: inventory unavailable.",
+                                   entity.itemID, sysMgr.GetID());
+                        return nullptr;
+                    }
                     ContainerSE* cSE = new ContainerSE(contRef, sysMgr.GetServiceMgr(), &sysMgr, data);
-                    contRef->GetMyInventory()->LoadContents();
+                    if (!containerInventory->LoadContents()) {
+                        sLog.Warning("DynamicEntityFactory::BuildEntity",
+                                     "Container %u inventory contents failed to load.", entity.itemID);
+                    }
                     contRef->SetMySE(cSE);
                     _log(ITEM__TRACE, "DynamicEntityFactory::BuildEntity() making ContainerSE for %s (%u)", entity.itemName.c_str(), entity.itemID);
                     return cSE;
@@ -846,8 +869,18 @@ SystemEntity* DynamicEntityFactory::BuildEntity(SystemManager& sysMgr, const DBS
                 if (contRef.get() == nullptr)
                     return nullptr;
                 /** @todo make error msg here */
+                Inventory* spawnInventory = contRef->GetMyInventory();
+                if (spawnInventory == nullptr) {
+                    sLog.Error("DynamicEntityFactory::BuildEntity",
+                               "Skipping spawn container %u in system %u: inventory unavailable.",
+                               entity.itemID, sysMgr.GetID());
+                    return nullptr;
+                }
                 ContainerSE* cSE = new ContainerSE(contRef, sysMgr.GetServiceMgr(), &sysMgr, data);
-                contRef->GetMyInventory()->LoadContents();
+                if (!spawnInventory->LoadContents()) {
+                    sLog.Warning("DynamicEntityFactory::BuildEntity",
+                                 "Spawn container %u inventory contents failed to load.", entity.itemID);
+                }
                 contRef->SetMySE(cSE);
                 _log(ITEM__TRACE, "DynamicEntityFactory::BuildEntity() making ContainerSE for %s (%u)", entity.itemName.c_str(), entity.itemID);
                 return cSE;
