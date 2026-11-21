@@ -1400,7 +1400,10 @@ bool SpawnMgr::PrepSpawn(SystemBubble* pBubble, uint8 sClass/*Spawn::Class::None
             // frigate slot into a battleship just because of its typeID.
             Inv::GrpData group = {};
             sDataMgr.GetGroup(mapping->second, group);
-            if (group.id == 0 || !EvEBeltRats::MatchesGroupHull(shipClass, group.name)) {
+            if (group.id == 0
+                || (group.catID != EVEDB::invCategories::Entity
+                    && group.catID != EVEDB::invCategories::Drone)
+                || !EvEBeltRats::MatchesGroupHull(shipClass, group.name)) {
                 _log(SPAWN__WARNING,
                      "Belt spawn: faction %u shipClass %u has mismatched group %u (%s).",
                      factionID, shipClass, mapping->second, group.name.c_str());
