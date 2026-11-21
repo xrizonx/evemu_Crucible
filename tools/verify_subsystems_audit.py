@@ -389,6 +389,9 @@ assert '"SystemBoot", "System %s(%u): loading player dynamics."' in boot_system
 assert '"SystemBoot", "System %s(%u): dynamics ready; initializing structures."' in boot_system
 assert "if (cur.second == nullptr)" in boot_system
 assert "if (pos != nullptr)" in boot_system
+assert system_impl.count("pSE = DynamicEntityFactory::BuildEntity(*this, cur);") == 2
+assert system_impl.count("dynamic item %u (type %u, group %u) threw during restoration") == 2
+assert system_impl.count("catch (const std::exception& e)") >= 2
 
 npc_factory = system_impl.split("SystemEntity* DynamicEntityFactory::BuildEntity(", 1)[1].split(
     "void SystemManager::AddClient(", 1
