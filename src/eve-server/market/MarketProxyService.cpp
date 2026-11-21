@@ -141,6 +141,12 @@ PyResult MarketProxyService::CorpGetNewTransactions(PyCallArgs& call, PyRep* sel
 }
 
 PyResult MarketProxyService::GetOrders(PyCallArgs &call, PyInt* typeID) {
+    // Negative and zero type IDs are not valid market types. In particular,
+    // don't allow a signed ID to wrap into the unsigned database lookup.
+    if (typeID->value() <= 0) {
+        _log(MARKET__DB_ERROR, "GetOrders called with invalid type ID %i.", typeID->value());
+        return PyStatic.NewNone();
+    }
     PyRep* result(nullptr);
     std::string method_name ("GetOrders_");
     method_name += std::to_string(call.client->GetRegionID());
@@ -153,8 +159,12 @@ PyResult MarketProxyService::GetOrders(PyCallArgs &call, PyInt* typeID) {
         //this method is not in cache yet, load up the contents and cache it.
         result = MarketDB::GetOrders(call.client->GetRegionID(), typeID->value());
         if (result == nullptr) {
-            _log(MARKET__DB_ERROR, "Failed to load cache, generating empty contents.");
-            result = PyStatic.NewNone();
+            // A DB outage must not permanently poison the per-region/type
+            // cache with None: subsequent client refreshes must retry SQL.
+            _log(MARKET__DB_ERROR,
+                 "Unable to fetch market orders for region %u type %i; no failed response cached.",
+                 call.client->GetRegionID(), typeID->value());
+            return PyStatic.NewNone();
         }
         this->m_cache->GiveCache(method_id, &result);
     }
