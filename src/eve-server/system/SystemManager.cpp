@@ -161,15 +161,42 @@ bool SystemManager::BootSystem() {
     sLog.Blue("SystemBoot", "System %s(%u): dynamics ready; initializing structures.",
               m_data.name.c_str(), m_data.systemID);
 
-    // check for operational static entities which need to be initialized (such as sovereignty structures)
-    for (auto cur: m_opStaticEntities)
-        if (cur.second ->IsOperSE())
-            cur.second->GetPOSSE()->Init();
+    // Saved POS/sovereignty state can contain an invalid pointer or a
+    // missing POS interface. A bad item should be logged and skipped, not
+    // terminate a player's first login while booting the entire system.
+    for (const auto& cur : m_opStaticEntities) {
+        if (cur.second == nullptr) {
+            sLog.Warning("SystemBoot", "System %u: operational entity %u is null.",
+                         m_data.systemID, cur.first);
+            continue;
+        }
+        if (cur.second->IsOperSE()) {
+            auto* pos = cur.second->GetPOSSE();
+            if (pos != nullptr)
+                pos->Init();
+            else
+                sLog.Warning("SystemBoot", "System %u: operational entity %u lacks a POS interface.",
+                             m_data.systemID, cur.first);
+        }
+    }
 
-    // system is loaded.  check for items that need initialization
-    for (auto cur : m_ticEntities)
-        if (cur.second->IsPOSSE())
-            cur.second->GetPOSSE()->Init();
+    for (const auto& cur : m_ticEntities) {
+        if (cur.second == nullptr) {
+            sLog.Warning("SystemBoot", "System %u: ticking entity %u is null.",
+                         m_data.systemID, cur.first);
+            continue;
+        }
+        if (cur.second->IsPOSSE()) {
+            auto* pos = cur.second->GetPOSSE();
+            if (pos != nullptr)
+                pos->Init();
+            else
+                sLog.Warning("SystemBoot", "System %u: ticking POS %u lacks a POS interface.",
+                             m_data.systemID, cur.first);
+        }
+    }
+    sLog.Blue("SystemBoot", "System %s(%u): structure initialization complete.",
+              m_data.name.c_str(), m_data.systemID);
 
     // check planets for colony/customs office
     /* does not work as intended
