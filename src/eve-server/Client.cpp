@@ -2608,8 +2608,7 @@ void Client::QueueDestinyUpdate(PyTuple **update, bool DoPackage /*false*/, bool
         PyTuple* t = dum.Encode();
         if (is_log_enabled(CLIENT__QUEUE_DUMP))
             t->Dump(CLIENT__QUEUE_DUMP, "");
-        SendNotification("DoDestinyUpdate", "clientID", &t, false);
-        PyDecRef(t);
+        SendNotification("DoDestinyUpdate", "clientID", t, false);
     } else {
         act.update = *update;
         m_packaged = true;
@@ -2626,8 +2625,7 @@ void Client::_SendQueuedUpdates() {
             PyTuple* t = dum.Encode();
             if (is_log_enabled(CLIENT__QUEUE_DUMP))
                 t->Dump(CLIENT__QUEUE_DUMP, "");
-            SendNotification("DoDestinyUpdate", "clientID", &t);
-            PyDecRef(t);
+            SendNotification("DoDestinyUpdate", "clientID", t);
         } else {
             DoDestinyUpdateMain dum;
                 dum.updates = new PyList(*m_destinyUpdateQueue);
@@ -2636,8 +2634,7 @@ void Client::_SendQueuedUpdates() {
             PyTuple* t = dum.Encode();
             if (is_log_enabled(CLIENT__QUEUE_DUMP))
                 t->Dump(CLIENT__QUEUE_DUMP, "");
-            SendNotification("DoDestinyUpdate", "clientID", &t);
-            PyDecRef(t);
+            SendNotification("DoDestinyUpdate", "clientID", t);
         }
     } else if (!m_destinyEventQueue->empty()) {
         Notify_OnMultiEvent nom;
@@ -2645,8 +2642,7 @@ void Client::_SendQueuedUpdates() {
         PyTuple* t = nom.Encode();
         if (is_log_enabled(CLIENT__QUEUE_DUMP))
             t->Dump(CLIENT__QUEUE_DUMP, "");
-        SendNotification("OnMultiEvent", "charid", &t);
-        PyDecRef(t);
+        SendNotification("OnMultiEvent", "charid", t);
     } //else nothing to be sent ...
 
     // clear the queues now, after the packets have been sent
@@ -2709,9 +2705,7 @@ void Client::SendNotification(const PyAddress &dest, EVENotificationStream &noti
 
     packet->userid = GetUserID();
 
-    // noti.args is borrowed from the caller, which may release its tuple
-    // immediately after sending. Retain it independently for the async
-    // outgoing packet: packet encoding adopts the supplied reference.
+    // The notification owns its arguments. Its encoded packet needs a separate reference.
     PySafeIncRef(noti.args);
     packet->payload = noti.Encode();
 

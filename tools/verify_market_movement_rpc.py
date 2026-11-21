@@ -22,19 +22,23 @@ assert "handled < kMaxPacketsPerTick" in network
 assert "std::unique_ptr<PyPacket> packet(PopPacket());" in network
 assert 'Slow packet dispatch for %s' in network
 assert "_SendQueuedUpdates();" in network
-# Outgoing packets are queued asynchronously. The mutable per-client queues
-# must not be cleared before the outgoing notification owns its own snapshot.
+# The notification consumes its tuple. Keep the snapshot alive independently
+# of the mutable per-client queues and transfer it once when sending.
 flush = client.split("void Client::_SendQueuedUpdates()", 1)[1].split(
     "void Client::SendNotification(", 1
 )[0]
 assert flush.count("new PyList(*m_destinyUpdateQueue)") == 2
 assert "new PyList(*m_destinyEventQueue)" in flush
-assert flush.count("PyDecRef(t);") == 3
+assert flush.count('SendNotification("DoDestinyUpdate", "clientID", t);') == 2
+assert 'SendNotification("OnMultiEvent", "charid", t);' in flush
+assert "PyDecRef(t);" not in flush
 assert "m_destinyUpdateQueue->clear();" in flush
 pack = client.split("void Client::QueueDestinyUpdate(", 1)[1].split(
     "void Client::_SendQueuedUpdates()", 1
 )[0]
 assert "paList->AddItem(new PyList(*m_destinyUpdateQueue));" in pack
+assert 'SendNotification("DoDestinyUpdate", "clientID", t, false);' in pack
+assert "PyDecRef(t);" not in pack
 notification = client.split(
     "void Client::SendNotification(const PyAddress &dest", 1
 )[1].split("void Client::DisconnectClient()", 1)[0]

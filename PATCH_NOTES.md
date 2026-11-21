@@ -2,7 +2,7 @@
 
 ## 21 November 2026 — Login RPC crash
 
-- Incoming login RPCs retain their payload and arguments until dispatch completes. The decoder accepts both call envelopes and releases malformed packets safely. The outgoing login state, session changes, RPC replies and errors retain their contents independently through serialization. The marshaling regression covers both envelope sizes, omitted and present named arguments, wrapped packets and malformed payloads.
+- Incoming login RPCs retain their payload and arguments until dispatch completes. The decoder accepts both call envelopes and releases malformed packets safely. The outgoing login state, session changes, RPC replies and errors retain their contents independently through serialization. Movement and character-event notifications transfer their encoded tuples exactly once. The marshaling regression covers both envelope sizes, omitted and present named arguments, wrapped packets and malformed payloads.
 
 ## 21 November 2026 — Attribute implants
 
