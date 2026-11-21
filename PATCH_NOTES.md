@@ -8,6 +8,7 @@
 
 - Standard training-attribute implants can be installed from a character's personal station hangar or active ship cargo. The server checks ownership, prerequisites and the target slot before splitting a stack. Installed implants persist in the active clone and are destroyed on unplugging or pod loss.
 - The character sheet returns the installed items, effective attributes and actual modifier rows. Active skill training keeps earned points and recalculates queued finish times when a bonus changes, including half-point secondary-attribute gains.
+- The `/giveallskills` command now saves new and upgraded skills immediately. Removing the last completed entry also clears the persisted training queue.
 - Hardwirings, pirate-set effects, combat boosters and jump-clone implant storage remain unsupported. The install call rejects those items before changing inventory. Live Crucible login and implant checks are pending.
 
 ## 21 November 2026 — Name lookup and worker validation follow-up

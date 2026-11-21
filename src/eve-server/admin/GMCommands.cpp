@@ -619,6 +619,9 @@ PyResult Command_giveallskills(Client* who, CommandDB* db, EVEServiceManager &se
                 skill->Move(ownerID, flagSkill, true);
             }
 
+            // Persist both newly injected and upgraded skills before reporting the grant.
+            skill->SaveItem();
+
             const uint32 skillPoints = skill->GetSPForLevel(level);
             OnAdminSkillChange oasc;
             oasc.skillItemID = skill->itemID();

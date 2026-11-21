@@ -1237,7 +1237,11 @@ void Character::SkillQueueLoop(bool update/*true*/)
     _log(SKILL__QUEUE, "%s(%u) calling SkillQueueLoop() - update %s", name(), m_itemID, update?"true":"false");
 
     if (m_skillQueue.empty()) {
-        GetEndOfTraining();
+        if (m_inTraining != nullptr) {
+            m_inTraining->SetFlag(flagSkill, true);
+            m_inTraining = nullptr;
+            UpdateSkillQueueEndTime();
+        }
         return;
     }
     if (m_inTraining != nullptr && m_inTraining->typeID() != m_skillQueue.front().typeID)
