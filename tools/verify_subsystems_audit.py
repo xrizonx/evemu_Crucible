@@ -377,4 +377,39 @@ assert "append(asteroidItems," in location_lookup
 assert "LOCATE('{asteroidType}', a.itemName)" in location_lookup
 assert "LEFT JOIN invTypes AS t ON t.typeID = a.typeID" in location_lookup
 
+# A newly selected character boots its solar system immediately after the
+# AnomalyMgr initialization log. Invalid persisted NPC/wreck/containter state
+# must never be registered as a valid entity or crash the entire server.
+system_impl = source("src/eve-server/system/SystemManager.cpp")
+boot_system = system_impl.split("bool SystemManager::BootSystem()", 1)[1].split(
+    "bool SystemManager::LoadCosmicMgrs()", 1
+)[0]
+assert '"SystemBoot", "System %s(%u): cosmic managers ready; loading system dynamics."' in boot_system
+assert '"SystemBoot", "System %s(%u): loading player dynamics."' in boot_system
+assert '"SystemBoot", "System %s(%u): dynamics ready; initializing structures."' in boot_system
+assert "if (cur.second == nullptr)" in boot_system
+assert "if (pos != nullptr)" in boot_system
+
+npc_factory = system_impl.split("SystemEntity* DynamicEntityFactory::BuildEntity(", 1)[1].split(
+    "void SystemManager::AddClient(", 1
+)[0]
+assert "if (npcSE == nullptr || !npcSE->Load())" in npc_factory
+assert "SafeDelete(npcSE);" in npc_factory
+assert "inventory unavailable." in npc_factory
+assert "if (wreckInventory == nullptr)" in npc_factory
+assert "if (containerInventory == nullptr)" in npc_factory
+assert "if (spawnInventory == nullptr)" in npc_factory
+
+client_boot = source("src/eve-server/Client.cpp")
+character_selection = client_boot.split("bool Client::SelectCharacter(", 1)[1].split(
+    "void Client::ProcessClient()", 1
+)[0]
+assert "if (m_system == nullptr || pShipSE == nullptr || pShipSE->DestinyMgr() == nullptr)" in character_selection
+assert 'CloseClientConnection();' in character_selection
+destiny_setup = client_boot.split("void Client::SetDestiny(", 1)[1].split(
+    "void Client::SetBallPark()", 1
+)[0]
+assert "if (m_system == nullptr || m_ship.get() == nullptr)" in destiny_setup
+assert "if (pShipSE == nullptr || pShipSE->DestinyMgr() == nullptr" in destiny_setup
+
 print("Source-level gameplay safety guards passed")
