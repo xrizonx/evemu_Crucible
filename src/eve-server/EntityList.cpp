@@ -26,6 +26,7 @@
 
 #include "eve-server.h"
 
+#include <exception>
 #include <utility>
 
 #include "EVE_Mail.h"
@@ -308,8 +309,22 @@ SystemManager* EntityList::FindOrBootSystem(uint32 systemID) {
     if (itr != m_systems.end())
         return itr->second;
 
-    SystemManager* pSM = new SystemManager(systemID, *m_services);
-    if ((pSM == nullptr) or (!pSM->BootSystem())) {
+    SystemManager* pSM = nullptr;
+    bool booted = false;
+    try {
+        pSM = new SystemManager(systemID, *m_services);
+        booted = pSM != nullptr && pSM->BootSystem();
+    } catch (const std::exception& e) {
+        // Invalid dynamic item data and out-of-range lookups may throw while
+        // booting a system for the first player. Keep other players online
+        // and report the exact exception instead of terminating the server.
+        sLog.Error("EntityList::FindOrBootSystem",
+                   "System %u boot threw a C++ exception: %s", systemID, e.what());
+    } catch (...) {
+        sLog.Error("EntityList::FindOrBootSystem",
+                   "System %u boot threw a non-standard exception.", systemID);
+    }
+    if (!booted) {
         _log(SERVER__INIT_ERR, "BootSystem() - Booting system %u failed", systemID);
         SafeDelete(pSM);
         return nullptr;
