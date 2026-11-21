@@ -45,7 +45,10 @@ MarketMgr::~MarketMgr()
 void MarketMgr::Close()
 {
     /** @todo put a save method here which will save anything changed before shutdown */
-    PyDecRef(m_marketGroups);
+    // Startup may have failed to load groups. Avoid a null dereference at
+    // shutdown; also prevent a second Close() from releasing stale memory.
+    PySafeDecRef(m_marketGroups);
+    m_marketGroups = nullptr;
     sLog.Warning("        MarketMgr", "Market Manager has been closed." );
 }
 
