@@ -244,9 +244,11 @@ void SystemBubble::ProcessWander(std::vector<SystemEntity *> &wanderers) {
 
     pDSE = nullptr;
 
-    if (!m_players.empty() and m_spawned) {
-        ResetBubbleRatSpawn();
-    }
+    // ProcessWander is a periodic membership reconciliation, not an NPC
+    // depopulation event. Previously it reset *every* occupied, spawned belt,
+    // allowing another spawn timer while the existing rats were still alive
+    // or in the middle of their warp-in. SpawnMgr::SpawnKilled handles the
+    // genuine last-rat death and resets the belt at that point.
 }
 
 void SystemBubble::Add(SystemEntity* pSE) {
