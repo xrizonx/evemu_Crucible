@@ -148,7 +148,7 @@ PyResult InvBrokerBound::GetInventoryFromId(PyCallArgs &call, PyRep* inventoryID
         if (!mode->IsNone()) {
             if (!mode->IsBool() && !mode->IsInt() && !mode->IsLong())
                 throw CustomError("GetInventoryFromId passive mode must be boolean or integer.");
-            passiveMode = (PyRep::IntegerValue(mode) != 0);
+            passiveMode = mode->IsBool() ? mode->AsBool()->value() : (PyRep::IntegerValue(mode) != 0);
         }
     }
 
