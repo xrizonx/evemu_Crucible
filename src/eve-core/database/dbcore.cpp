@@ -161,7 +161,9 @@ bool DBcore::Reconnect()
     if (pStatus == Connected)
         _log(DATABASE__MESSAGE, "DBCore recovery successful.  Continuing.");
 
-    return pStatus;
+    // Error is enum value 2, so returning pStatus as bool incorrectly
+    // reported a failed reconnect as success. Only Connected is success.
+    return pStatus == Connected;
 }
 
 void DBcore::Initialize(std::string host, std::string user, std::string password, std::string database, bool compress/*false*/,
