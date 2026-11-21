@@ -55,7 +55,15 @@ public:
 
     bool NeedsUpdate()                                  { return m_timeStamp > GetFileTimeNow()?false:true; }
 
-    PyRep* GetMarketGroups()                            { PyIncRef(m_marketGroups); return m_marketGroups; }
+    PyRep* GetMarketGroups()
+    {
+        // Missing market-group data is a recoverable DB initialization error;
+        // never dereference null and crash a market-opening RPC.
+        if (m_marketGroups == nullptr)
+            return PyStatic.NewNone();
+        PyIncRef(m_marketGroups);
+        return m_marketGroups;
+    }
     // cached
     PyRep* GetNewPriceHistory(uint32 regionID, uint32 typeID);
     // cached
