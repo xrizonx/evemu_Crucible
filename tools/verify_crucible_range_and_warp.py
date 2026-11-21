@@ -121,7 +121,12 @@ warp_order = destiny.split("void DestinyManager::WarpTo(", 1)[1].split(
 assert "GotoPoint(" not in warp_order and "Follow(" not in warp_order
 assert warp_order.index("capNeeded > currentCap") < warp_order.index("BeginMovement();")
 assert "throttle.fraction = m_userSpeedFraction;" in warp_order
-assert "updates{throttle.Encode(), wt.Encode(), EncodeWarpEffect(true)}" in warp_order
+assert "throttleUpdate = throttle.Encode()" in warp_order
+assert "warpUpdate = wt.Encode()" in warp_order
+assert "warpEffect = EncodeWarpEffect(true)" in warp_order
+assert "updates{throttleUpdate, warpUpdate, warpEffect}" in warp_order
+for payload in ("throttleUpdate", "warpUpdate", "warpEffect"):
+    assert warp_order.index("SendDestinyUpdate(updates)") < warp_order.index(f"PyDecRef({payload})")
 begin_movement = destiny.split("void DestinyManager::BeginMovement()", 1)[1].split(
     "void DestinyManager::Follow(SystemEntity", 1)[0]
 assert "if (HasWarpOrder() || (m_userSpeedFraction < 0.02f && m_timeFraction < 0.02f))" in begin_movement

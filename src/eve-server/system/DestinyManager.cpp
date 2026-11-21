@@ -2308,8 +2308,15 @@ void DestinyManager::WarpTo(const GPoint& where, int32 distance/*0*/) {
     CmdSetSpeedFraction throttle;
     throttle.entityID = mySE->GetID();
     throttle.fraction = m_userSpeedFraction;
-    std::vector<PyTuple*> updates{throttle.Encode(), wt.Encode(), EncodeWarpEffect(true)};
+    PyTuple* throttleUpdate = throttle.Encode();
+    PyTuple* warpUpdate = wt.Encode();
+    PyTuple* warpEffect = EncodeWarpEffect(true);
+    std::vector<PyTuple*> updates{throttleUpdate, warpUpdate, warpEffect};
     SendDestinyUpdate(updates);
+    // Recipients retain their own references. The broadcast may clear updates.
+    PyDecRef(throttleUpdate);
+    PyDecRef(warpUpdate);
+    PyDecRef(warpEffect);
     if (npcWarp)
         return;
 
@@ -2318,7 +2325,8 @@ void DestinyManager::WarpTo(const GPoint& where, int32 distance/*0*/) {
     bm.entityID = mySE->GetID();
     bm.is_massive = false;       // disable client-side bump checks
     PyTuple *up = bm.Encode();
-    SendSingleDestinyUpdate(&up, true);   // consumed
+    SendSingleDestinyUpdate(&up, true);
+    PyDecRef(up);
 
     _log(DESTINY__WARP_TRACE, "Warp landing for %s(%u): %.2f, %.2f, %.2f; distance %.2f m.",
          mySE->GetName(), mySE->GetID(), m_targetPoint.x, m_targetPoint.y, m_targetPoint.z,
@@ -3645,15 +3653,14 @@ void DestinyManager::SendDestinyUpdate( std::vector<PyTuple*>& updates, std::vec
         }
 
         //Get all clients in the system which the SE is in
-        /** @todo  this isnt right....will segfault.  needs to be fixed */
         std::vector<Client*> cv;
 
         mySE->SystemMgr()->GetClientList(cv);
 
-        for(auto const& value: cv) {
-             if (value->GetShipSE() != nullptr) {
-                value->GetShipSE()->SysBubble()->BubblecastDestiny(updates, events, "destiny");
-            }
+        for (Client* client : cv) {
+            ShipSE* ship = client->GetShipSE();
+            if (ship != nullptr && ship->SysBubble() != nullptr)
+                ship->SysBubble()->BubblecastDestiny(updates, events, "destiny");
         }
     } else if (mySE->SysBubble() != nullptr) {
         if (is_log_enabled(DESTINY__UPDATES)) {

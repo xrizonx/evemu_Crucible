@@ -259,8 +259,19 @@ assert "(corporationID, characterID, applicationText, roles, grantableRoles," in
 assert "status, applicationDateTime, deleted, lastCorpUpdaterID)" in insert_app
 lookup_app = corp_database.split("bool CorporationDB::GetCurrentApplicationInfo(", 1)[1].split(
     "bool CorporationDB::InsertApplication(", 1)[0]
-assert "sDatabase.DoEscapeString(escaped, aInfo.appText);" in lookup_app
-assert "aInfo.corpID, escaped.c_str()))" in lookup_app
+assert "WHERE characterID = %u AND corporationID = %u AND deleted = 0 ORDER BY applicationID DESC LIMIT 1" in sql_from_cpp(lookup_app)
+assert "AND applicationText =" not in lookup_app
+update_offer = registry.split("PyResult CorpRegistryBound::UpdateApplicationOffer(", 1)[1].split(
+    "PyResult CorpRegistryBound::DeleteApplication(", 1)[0]
+assert update_offer.index("CreateMemberAttributeUpdate(") < update_offer.index("m_db.UpdateApplication(")
+withdraw_app = registry.split("PyResult CorpRegistryBound::DeleteApplication(", 1)[1].split(
+    "void CorpRegistryBound::FillOCApplicationChange(", 1)[0]
+assert "CorpNotify(targetCorpID," in withdraw_app
+home_stations = source("src/eve-server/corporation/CorpStationMgr.cpp").split(
+    "PyResult CorpStationMgrIMBound::GetPotentialHomeStations(", 1
+)[1].split("PyResult CorpStationMgrIMBound::", 1)[0]
+assert home_stations.index("for (auto cur : stVec)") < home_stations.index("PyDict* dict = new PyDict()")
+assert "if (!stDataMgr.GetStationData(cur, data))\n            continue;" in home_stations
 
 # Unmarshaling a packed row must NOT reinterpret the generic PyObjectEx
 # returned by LoadRep as a C++ DBRowDescriptor. This previously passed normal
@@ -325,6 +336,12 @@ assert "spawnEntry.itemID = iRef->itemID();" in respawn_function
 assert "return true;" in respawn_function
 assert "itr->second.stamp = sEntityList.GetStamp() + sConfig.npc.RespawnTimer;" in belt_spawns
 assert "if (!ReSpawn(spawnBubble, itr->second)) {" in belt_spawns
+assert "itr->second.enabled && itr->second.spawnClass <= Spawn::Class::Insane" in belt_spawns
+assert "iRef->Delete();" in respawn_function
+roaming = source("src/eve-server/npc/NPCAI.cpp").split("void NPCAIMgr::WarpOut()", 1)[1].split(
+    "void NPCAIMgr::SetWander()", 1)[0]
+assert roaming.index("!spawns->HasRoomForRoamingRat(*destination)") < roaming.index("m_destiny->WarpTo(")
+assert roaming.index("m_destiny->HasWarpOrder()") < roaming.index("spawns->MoveSpawn(")
 assert "MakeRandomFloat() < 0.08" not in belt_spawns
 
 belt_policy = source("src/eve-common/EVE_BeltRatSpawnHelpers.h")

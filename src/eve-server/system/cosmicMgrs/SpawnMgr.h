@@ -36,6 +36,7 @@ public:
     void WarpOutSpawn(NPC* pNPC, SystemBubble* pBubble);
     // update SpawnMgr on npcs new location (change bubbles)
     void MoveSpawn(NPC* pNPC, SystemBubble* pBubble);
+    bool HasRoomForRoamingRat(SystemBubble& bubble) const;
 
     std::string GetSpawnClassName(int8 sClass);
     std::string GetSpawnGroupName(int8 sGroup);

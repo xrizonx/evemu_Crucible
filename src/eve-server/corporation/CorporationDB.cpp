@@ -1472,18 +1472,16 @@ PyRep *CorporationDB::GetApplications(uint32 corpID) {
 }
 
 bool CorporationDB::GetCurrentApplicationInfo(Corp::ApplicationInfo& aInfo) {
-    // applicationText originates from the client; escape it before building
-    // the existing lookup query (quotes must not break SQL).
-    std::string escaped;
-    sDatabase.DoEscapeString(escaped, aInfo.appText);
+    // Withdrawals identify the application by corporation and character.
     DBQueryResult res;
     if (!sDatabase.RunQuery(res,
         " SELECT"
         " applicationID, applicationText, roles, grantableRoles, status,"
         " applicationDateTime, lastCorpUpdaterID, deleted"
         " FROM crpApplications"
-        " WHERE characterID = %u AND corporationID = %u AND applicationText = '%s'",
-        aInfo.charID, aInfo.corpID, escaped.c_str()))
+        " WHERE characterID = %u AND corporationID = %u AND deleted = 0"
+        " ORDER BY applicationID DESC LIMIT 1",
+        aInfo.charID, aInfo.corpID))
     {
         codelog(CORP__DB_ERROR, "Error in query: %s", res.error.c_str());
         aInfo.valid = false;

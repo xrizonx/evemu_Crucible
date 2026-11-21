@@ -298,7 +298,7 @@ PyResult CorpRegistryBound::GetMember(PyCallArgs &call, PyInt* characterID)
     _log(CORP__CALL, "CorpRegistryBound::Handle_GetMember()");
     PyRep* rep = m_db.GetMember(characterID->value());
 
-    if (is_log_enabled(CORP__RSP_DUMP))
+    if (rep != nullptr && is_log_enabled(CORP__RSP_DUMP))
         rep->Dump(CORP__RSP_DUMP, "");
 
     return rep;
@@ -382,28 +382,6 @@ PyResult CorpRegistryBound::GetMembers(PyCallArgs &call)
             [PyInt 3]
     */
 
-
-    PyList* headers = new PyList;
-
-    headers->AddItemString ("characterID");
-    headers->AddItemString ("corporationID");
-    headers->AddItemString ("divisionID");
-    headers->AddItemString ("squadronID");
-    headers->AddItemString ("title");
-    headers->AddItemString ("roles");
-    headers->AddItemString ("grantableRoles");
-    headers->AddItemString ("startDateTime");
-    headers->AddItemString ("baseID");
-    headers->AddItemString ("rolesAtHQ");
-    headers->AddItemString ("grantableRolesAtHQ");
-    headers->AddItemString ("rolesAtBase");
-    headers->AddItemString ("grantableRolesAtBase");
-    headers->AddItemString ("rolesAtOther");
-    headers->AddItemString ("grantableRolesAtOther");
-    headers->AddItemString ("titleMask");
-    headers->AddItemString ("accountKey");
-    headers->AddItemString ("rowDate");
-    headers->AddItemString ("blockRoles");
 
     // TODO: rewrite this to properly use different services, right now any calls to the MembersSparseRowset will be directed here
     PyDict *dict = new PyDict();
@@ -501,8 +479,10 @@ PyResult CorpRegistryBound::GetMembersByIds(PyCallArgs &call, PyList* memberIDs)
     call.Dump(CORP__CALL_DUMP);
 
     PyList* list = new PyList();
-    for (PyList::const_iterator itr = memberIDs->begin(); itr != memberIDs->end(); ++itr)
-        list->AddItem(new PyObject("util.KeyVal", m_db.GetMember(PyRep::IntegerValueU32(*itr))));
+    for (PyRep* memberID : *memberIDs) {
+        if (PyRep* member = m_db.GetMember(PyRep::IntegerValueU32(memberID)))
+            list->AddItem(new PyObject("util.KeyVal", member));
+    }
 
     if (is_log_enabled(CORP__RSP_DUMP))
         list->Dump(CORP__RSP_DUMP, "");
@@ -1537,26 +1517,35 @@ PyResult CorpRegistryBound::UpdateApplicationOffer(PyCallArgs &call, PyInt* char
     _log(CORP__CALL, "CorpRegistryBound::Handle_UpdateApplicationOffer() size=%lli", call.tuple->size());
     call.Dump(CORP__CALL_DUMP);
 
-    // can we send app to non-player corp?
-    if (!IsPlayerCorp(m_corpID))
-        return nullptr;
+    if (!IsPlayerCorp(m_corpID) || call.client->GetCorporationID() != m_corpID)
+        throw CustomError("You cannot manage applications for another corporation.");
 
-    Corp::ApplicationInfo oldInfo = Corp::ApplicationInfo();
-        oldInfo.valid = true;
-        oldInfo.appText = PyRep::StringContent(applicationText);
-        oldInfo.charID = characterID->value();
-        oldInfo.corpID = m_corpID;  // is this applicants current corpID or applied-to corpID??
+    if (!(call.client->GetCorpRole() & (Corp::Role::Director | Corp::Role::PersonnelManager))
+        && m_db.GetCorporationCEO(m_corpID) != call.client->GetCharacterID())
+        throw CustomError("You do not have permission to manage corporation applications.");
+
+    Corp::ApplicationInfo oldInfo{};
+    oldInfo.charID = characterID->value();
+    oldInfo.corpID = m_corpID;
     if (!m_db.GetCurrentApplicationInfo(oldInfo)) {
         codelog(SERVICE__ERROR, "%s: Failed to query application for char %u corp %u", call.client->GetName(), characterID->value(), m_corpID);
         return nullptr;
     }
 
+    const bool accepting = status->value() == Corp::AppStatus::AcceptedByCorporation;
+    MemberAttributeUpdate change;
+    if (accepting) {
+        if (!m_db.CreateMemberAttributeUpdate(m_corpID, oldInfo.charID, change))
+            return nullptr;
+        if (PyRep::IntegerValueU32(change.corporationIDOld) == m_corpID)
+            return nullptr;
+    } else if (oldInfo.status == status->value()) {
+        return nullptr;
+    }
+
     Corp::ApplicationInfo newInfo = oldInfo;
-        newInfo.valid = true;  // allow saving of this update. we'll null it later.
-        // these are populated as we're still saving new status in db.  subject to change as system progresses
-        newInfo.status = status->value();
-        newInfo.lastCID = call.client->GetCharacterID();
-        //newInfo.appTime = GetFileTimeNow();  // not used here.
+    newInfo.status = status->value();
+    newInfo.lastCID = call.client->GetCharacterID();
     if (!m_db.UpdateApplication(newInfo)) {
         codelog(SERVICE__ERROR, "%s: Failed to update application for char %u corp %u", call.client->GetName(), characterID->value(), m_corpID);
         return nullptr;
@@ -1570,13 +1559,7 @@ PyResult CorpRegistryBound::UpdateApplicationOffer(PyCallArgs &call, PyInt* char
         ocac.corpID = m_corpID;
     FillOCApplicationChange(ocac, oldInfo, newInfo);
 
-    if (status->value() == Corp::AppStatus::AcceptedByCorporation) {
-        MemberAttributeUpdate change;
-        if (!m_db.CreateMemberAttributeUpdate(oldInfo.corpID, characterID->value(), change)) {
-            codelog(SERVICE__ERROR, "%s: Failed to update application for char %u corp %u", call.client->GetName(), characterID->value(), m_corpID);
-            return nullptr;
-        }
-
+    if (accepting) {
         sEntityList.CorpNotify(m_corpID, Notify::Types::CorpAppAccept, "OnCorporationApplicationChanged", "*corpid&corprole", ocac.Encode());
 
         // this should come from the SparseRowset instance, not from here...
@@ -1650,8 +1633,17 @@ PyResult CorpRegistryBound::DeleteApplication(PyCallArgs & call, PyInt* corporat
     _log(CORP__CALL, "CorpRegistryBound::Handle_DeleteApplication() size=%lli", call.tuple->size());
     call.Dump(CORP__CALL_DUMP);
 
+    const uint32 targetCorpID = corporationID->value();
+    if (characterID->value() != call.client->GetCharacterID()) {
+        if (call.client->GetCorporationID() != targetCorpID)
+            return PyStatic.NewFalse();
+        if (!(call.client->GetCorpRole() & (Corp::Role::Director | Corp::Role::PersonnelManager))
+            && m_db.GetCorporationCEO(targetCorpID) != call.client->GetCharacterID())
+            return PyStatic.NewFalse();
+    }
+
     OnCorporationApplicationChanged ocac;
-        ocac.corpID = corporationID->value();
+    ocac.corpID = targetCorpID;
         ocac.charID = characterID->value();
     Corp::ApplicationInfo newInfo = Corp::ApplicationInfo();
         newInfo.valid = false;
@@ -1670,7 +1662,7 @@ PyResult CorpRegistryBound::DeleteApplication(PyCallArgs & call, PyInt* corporat
         return PyStatic.NewFalse();
     }
 
-    sEntityList.CorpNotify(m_corpID, Notify::Types::CorpAppNew, "OnCorporationApplicationChanged", "*corpid&corprole", ocac.Encode());
+    sEntityList.CorpNotify(targetCorpID, Notify::Types::CorpAppNew, "OnCorporationApplicationChanged", "*corpid&corprole", ocac.Encode());
 
     return PyStatic.NewTrue();
 }

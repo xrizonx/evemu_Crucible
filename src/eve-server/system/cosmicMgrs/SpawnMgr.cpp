@@ -216,11 +216,11 @@ void SpawnMgr::Process() {
             bool killTimer = true;
             SpawnEntryDef::iterator itr = m_spawns.begin(), end = m_spawns.end();
             while (itr != end) {
-                if (itr->second.enabled) {
-                    killTimer = false;
+                if (itr->second.enabled && itr->second.spawnClass <= Spawn::Class::Insane) {
                     // stamp is the earliest permitted respawn time, not
                     // an expiry; retain entries until their delay has elapsed.
                     if (itr->second.stamp > sEntityList.GetStamp()) {
+                        killTimer = false;
                         ++itr;
                         continue;
                     }
@@ -234,6 +234,7 @@ void SpawnMgr::Process() {
                             itr->second.spawnID, &itr->second);
                     // this means check SpawnEntry for 'missing' SpawnGroup members and respawn as needed.
                     if (!ReSpawn(spawnBubble, itr->second)) {
+                        killTimer = false;
                         // Do not discard a killed NPC's slot if item creation
                         // or loading fails. Retry after the normal delay.
                         itr->second.stamp = sEntityList.GetStamp() + sConfig.npc.RespawnTimer;
@@ -251,6 +252,13 @@ void SpawnMgr::Process() {
 
     if (sConfig.debug.UseProfiling)
         sProfiler.AddTime(Profile::spawn, GetTimeUSeconds() - profileStartTime);
+}
+
+bool SpawnMgr::HasRoomForRoamingRat(SystemBubble& bubble) const
+{
+    const auto cap = EvEBeltRats::ForSecurity(m_system->GetSystemSecurityRating()).maxShips;
+    // The registry includes rats already headed to this belt.
+    return m_spawns.count(bubble.GetID()) < cap && bubble.CountNPCs() < cap;
 }
 
 void SpawnMgr::MoveSpawn(NPC* pNPC, SystemBubble* pBubble)
@@ -1678,6 +1686,7 @@ bool SpawnMgr::ReSpawn(SystemBubble* pBubble, SpawnEntry& spawnEntry)
     if (!pNPC->Load()) {
         _log(SPAWN__ERROR, "Failed to load NPC data for NPC %u with type %u, depoping.", pNPC->GetID(), pNPC->GetSelf()->typeID());
         SafeDelete(pNPC);
+        iRef->Delete();
         return false;
     }
 
