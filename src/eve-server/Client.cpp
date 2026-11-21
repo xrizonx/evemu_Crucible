@@ -2576,7 +2576,9 @@ void Client::QueueDestinyUpdate(PyTuple **update, bool DoPackage /*false*/, bool
             PyList* paList = new PyList();
                 paList->AddItem(*update);
             if (!m_destinyUpdateQueue->empty())
-                paList->AddItem(m_destinyUpdateQueue);
+                // The original queue is cleared after flush; an outgoing
+                // packet must own a snapshot, not the mutable live queue.
+                paList->AddItem(new PyList(*m_destinyUpdateQueue));
             PackagedAction pa;
                 pa.substream = new PySubStream(paList);
             act.update = pa.Encode();
@@ -2602,7 +2604,7 @@ void Client::_SendQueuedUpdates() {
     if (!m_destinyUpdateQueue->empty()) {
         if (m_destinyEventQueue->empty()) {
             DoDestinyUpdateMain_2 dum;
-                dum.updates = m_destinyUpdateQueue;
+                dum.updates = new PyList(*m_destinyUpdateQueue);
                 dum.waitForBubble = m_bubbleWait;
             PyTuple* t = dum.Encode();
             if (is_log_enabled(CLIENT__QUEUE_DUMP))
@@ -2610,8 +2612,8 @@ void Client::_SendQueuedUpdates() {
             SendNotification("DoDestinyUpdate", "clientID", &t);
         } else {
             DoDestinyUpdateMain dum;
-                dum.updates = m_destinyUpdateQueue;
-                dum.events = m_destinyEventQueue;
+                dum.updates = new PyList(*m_destinyUpdateQueue);
+                dum.events = new PyList(*m_destinyEventQueue);
                 dum.waitForBubble = m_bubbleWait;
             PyTuple* t = dum.Encode();
             if (is_log_enabled(CLIENT__QUEUE_DUMP))
@@ -2620,7 +2622,7 @@ void Client::_SendQueuedUpdates() {
         }
     } else if (!m_destinyEventQueue->empty()) {
         Notify_OnMultiEvent nom;
-            nom.events = m_destinyEventQueue;
+            nom.events = new PyList(*m_destinyEventQueue);
         PyTuple* t = nom.Encode();
         if (is_log_enabled(CLIENT__QUEUE_DUMP))
             t->Dump(CLIENT__QUEUE_DUMP, "");
@@ -2687,6 +2689,10 @@ void Client::SendNotification(const PyAddress &dest, EVENotificationStream &noti
 
     packet->userid = GetUserID();
 
+    // noti.args is borrowed from the caller, which may release its tuple
+    // immediately after sending. Retain it independently for the async
+    // outgoing packet: packet encoding adopts the supplied reference.
+    PySafeIncRef(noti.args);
     packet->payload = noti.Encode();
 
     if (seq) {
