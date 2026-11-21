@@ -355,4 +355,16 @@ belt_cmake = source("src/eve-test/CMakeLists.txt")
 assert "utils/BeltRatSpawnTest.cpp" in belt_cmake
 assert 'ADD_TEST( NAME "BeltRatSpawnTest"' in belt_cmake
 
+# The virtual buyer must resolve even when the client requests only that
+# owner and there is no SQL result from which to infer the response schema.
+owner_lookup = source("src/eve-server/config/ConfigDB.cpp").split(
+    "PyRep *ConfigDB::GetMultiAllianceShortNamesEx", 1
+)[0]
+assert "if (IsTraderJoe(cur))" in owner_lookup
+assert 'row->SetItemString(1, "Trader Joe");' in owner_lookup
+assert "row->SetItem(0, new PyInt(npcTraderJoe));" in owner_lookup
+assert 'cols->SetItemString(4, "ownerNameID");' in owner_lookup
+assert "res.ColumnName(" not in owner_lookup
+assert owner_lookup.count("NULL AS ownerNameID") == 5
+
 print("Source-level gameplay safety guards passed")

@@ -38,8 +38,11 @@ PyRep *ConfigDB::GetMultiOwnersEx(const std::vector<int32> &entityIDs) {
     npc.clear();
     station.clear();
 
+    bool traderJoe = false;
     for (auto cur : entityIDs) {
-        if (IsCorp(cur)) {
+        if (IsTraderJoe(cur)) {
+            traderJoe = true;
+        } else if (IsCorp(cur)) {
             corp.push_back(cur);
         } else if (IsAlliance(cur)) {
             ally.push_back(cur);
@@ -53,8 +56,6 @@ PyRep *ConfigDB::GetMultiOwnersEx(const std::vector<int32> &entityIDs) {
             owner.push_back(cur);
         }
 
-        // add check here for trader joe.
-        //  will have to hardcode data, then run thru db query cause i dont know how to build packet for this return
     }
 
     /**
@@ -63,6 +64,17 @@ PyRep *ConfigDB::GetMultiOwnersEx(const std::vector<int32> &entityIDs) {
      * from bits of different queries.
      */
     PyList *results = new PyList();
+    if (traderJoe) {
+        // Wallet entries and market transactions reference this virtual owner.
+        auto* row = new PyList(5);
+        row->SetItem(0, new PyInt(npcTraderJoe));
+        row->SetItemString(1, "Trader Joe");
+        row->SetItem(2, new PyInt(0)); // virtual owner, like the System owner
+        row->SetItem(3, PyStatic.NewNone());
+        row->SetItem(4, PyStatic.NewNone());
+        results->AddItem(row);
+    }
+
     DBQueryResult res;
     std::string ids = "";
 
@@ -148,7 +160,9 @@ PyRep *ConfigDB::GetMultiOwnersEx(const std::vector<int32> &entityIDs) {
             "SELECT "
             "  corporationID AS ownerID,"
             "  corporationName AS ownerName,"
-            "  2 AS typeID"                    // corp typeID
+            "  2 AS typeID,"
+            "  false AS gender,"
+            "  NULL AS ownerNameID"
             " FROM crpCorporation"
             " WHERE corporationID IN (SELECT corporationID FROM staStations WHERE stationID IN (%s))", ids.c_str()))
         {
@@ -177,19 +191,24 @@ PyRep *ConfigDB::GetMultiOwnersEx(const std::vector<int32> &entityIDs) {
         }
     }
 
-    if (!results->empty()) {
-        uint32 cc = res.ColumnCount();
-        PyTuple *response = new PyTuple(2);
-        PyList *cols = new PyList(cc);
-        for(uint32 r(0); r < cc; ++r)
-            cols->SetItemString(r, res.ColumnName(r));
-        response->items[0] = cols;
-        response->items[1] = results;
-
-        return response;
-    } else {
+    if (results->empty()) {
+        PyDecRef(results);
         return new PyTuple(0);
     }
+
+    // The response schema is independent of the last SQL query or a cache
+    // request containing only a virtual owner.
+    auto* cols = new PyList(5);
+    cols->SetItemString(0, "ownerID");
+    cols->SetItemString(1, "ownerName");
+    cols->SetItemString(2, "typeID");
+    cols->SetItemString(3, "gender");
+    cols->SetItemString(4, "ownerNameID");
+
+    auto* response = new PyTuple(2);
+    response->SetItem(0, cols);
+    response->SetItem(1, results);
+    return response;
 }
 
 PyRep *ConfigDB::GetMultiAllianceShortNamesEx(const std::vector<int32> &entityIDs) {
