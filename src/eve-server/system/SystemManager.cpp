@@ -145,15 +145,21 @@ bool SystemManager::BootSystem() {
         return false;
     }
 
+    sLog.Blue("SystemBoot", "System %s(%u): cosmic managers ready; loading system dynamics.",
+              m_data.name.c_str(), m_data.systemID);
     if (!LoadSystemDynamics()) {
         _log(SERVICE__ERROR, "Unable to load System Dynamics during boot of system %u.", m_data.systemID);
         return false;
     }
 
+    sLog.Blue("SystemBoot", "System %s(%u): loading player dynamics.",
+              m_data.name.c_str(), m_data.systemID);
     if (!LoadPlayerDynamics()) {
-        _log(SERVICE__ERROR, "Unable to load System Dynamics during boot of system %u.", m_data.systemID);
+        _log(SERVICE__ERROR, "Unable to load Player Dynamics during boot of system %u.", m_data.systemID);
         return false;
     }
+    sLog.Blue("SystemBoot", "System %s(%u): dynamics ready; initializing structures.",
+              m_data.name.c_str(), m_data.systemID);
 
     // check for operational static entities which need to be initialized (such as sovereignty structures)
     for (auto cur: m_opStaticEntities)
@@ -494,7 +500,9 @@ bool SystemManager::LoadSystemDynamics() {
     }
 
     SystemEntity* pSE(nullptr);
-    for (auto cur : entities) {
+    for (const auto& cur : entities) {
+        _log(ITEM__TRACE, "System %u: loading dynamic item %u (category %u, group %u, type %u).",
+             m_data.systemID, cur.itemID, cur.categoryID, cur.groupID, cur.typeID);
         pSE = DynamicEntityFactory::BuildEntity(*this, cur);
         if (pSE == nullptr) {
             sLog.Error( "SystemManager::LoadSystemDynamics()", "Failed to create entity for item %u (grp: %u, type %u)",
@@ -527,7 +535,9 @@ bool SystemManager::LoadPlayerDynamics() {
     }
 
     SystemEntity* pSE(nullptr);
-    for (auto cur : entities) {
+    for (const auto& cur : entities) {
+        _log(ITEM__TRACE, "System %u: loading player dynamic item %u (category %u, group %u, type %u).",
+             m_data.systemID, cur.itemID, cur.categoryID, cur.groupID, cur.typeID);
         pSE = DynamicEntityFactory::BuildEntity(*this, cur);
         if (pSE == nullptr) {
             sLog.Error( "SystemManager::LoadPlayerDynamics()", "Failed to create entity for item %u (grp: %u, type %u)", cur.itemID, cur.groupID, cur.typeID);
@@ -890,7 +900,16 @@ SystemEntity* DynamicEntityFactory::BuildEntity(SystemManager& sysMgr, const DBS
                     return nullptr;
                 /** @todo make error msg here */
                 NPC* npcSE = new NPC(npcRef, sysMgr.GetServiceMgr(), &sysMgr, data);
-                npcSE->Load();
+                // Failed NPC initialization is not a valid world entity. The
+                // old factory ignored Load(), so the system loader could
+                // register an uninitialized AI/Destiny object during login.
+                if (npcSE == nullptr || !npcSE->Load()) {
+                    sLog.Error("DynamicEntityFactory::BuildEntity",
+                               "Skipping NPC item %u (type %u, group %u) in system %u: NPC::Load failed.",
+                               entity.itemID, entity.typeID, entity.groupID, sysMgr.GetID());
+                    SafeDelete(npcSE);
+                    return nullptr;
+                }
                 sEntityList.AddNPC();
                 _log(ITEM__TRACE, "DynamicEntityFactory::BuildEntity() making NPCSE for %s (%u)", entity.itemName.c_str(), entity.itemID);
                 return npcSE;
