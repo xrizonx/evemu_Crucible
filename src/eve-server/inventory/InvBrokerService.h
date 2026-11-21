@@ -56,7 +56,7 @@ public:
 
 protected:
     PyResult GetContainerContents(PyCallArgs& call, PyInt* containerID, PyInt* locationID);
-    PyResult GetInventoryFromId(PyCallArgs& call, PyInt* inventoryID, PyInt* passive);
+    PyResult GetInventoryFromId(PyCallArgs& call, PyRep* inventoryID, std::optional<PyRep*> passive);
     PyResult GetInventory(PyCallArgs& call, PyInt* containerID, std::optional <PyInt*> ownerID);
     PyResult SetLabel(PyCallArgs& call, PyInt* itemID, PyRep* itemName);
     PyResult TrashItems(PyCallArgs& call, PyList* itemIDs, PyInt* locationID);
