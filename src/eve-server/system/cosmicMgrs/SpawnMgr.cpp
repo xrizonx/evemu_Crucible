@@ -9,6 +9,7 @@
   */
 
 #include "EVEServerConfig.h"
+#include "EVE_BeltRatSpawnHelpers.h"
 #include <algorithm>
 #include <cctype>
 
@@ -1255,53 +1256,37 @@ bool SpawnMgr::PrepSpawn(SystemBubble* pBubble, uint8 sClass/*Spawn::Class::None
         _log(SPAWN__MESSAGE, "SpawnMgr::PrepSpawn() - faction: %s, region %u. (config set %s)", \
                 sDataMgr.GetFactionName(factionID).c_str(), m_system->GetRegionID(), (sConfig.npc.RatFaction?"true":"false"));
 
-    // if rat, get possible spawn groups for this secRating.
-    if (sClass == Spawn::Class::None) {
-        if ((secRating < 0.2) and pBubble->IsBelt()) {   // check for hauler, commander, officer spawn, but ONLY in a belt
-            //NOTE  random checks here are for TESTING only....all rates are high.  make config option later?
-            double rand = MakeRandomFloat();
-            if (rand < 0.1) { // officer spawn
-                if (factionID != factionRogueDrones) {  //but not for drones.  they dont have officers..make this the rare drone hauler spawn (which isnt written yet)
-                    sClass = Spawn::Class::Officer;
-                } else {
-                    sClass = Spawn::Class::Hauler;
-                }
-            } else if (rand < 0.15) { // commander spawn
-                sClass = Spawn::Class::Commander;
-            } else if (rand < 0.25) { // hauler spawn
-                if (factionID != factionRogueDrones)
-                    sClass = Spawn::Class::Hauler;
-            }
-        }
-    } else {
-        // we were called from anomaly, incursion or mission to spawn npcs
+    // Historic prototype used a 10% officer chance plus two hauler rolls,
+    // even in high security. Rare belt encounters must not bypass the security
+    // hull limits or replace ordinary NPC groups on every few visits.
+    if (sClass == Spawn::Class::None && pBubble->IsBelt()
+        && factionID != factionRogueDrones) {
+        const double rareRoll = MakeRandomFloat();
+        if (EvEBeltRats::AllowOfficer(secRating) && rareRoll < 0.0005)
+            sClass = Spawn::Class::Officer;
+        else if (EvEBeltRats::AllowCommander(secRating) && rareRoll < 0.005)
+            sClass = Spawn::Class::Commander;
+        else if (EvEBeltRats::AllowHauler(secRating) && rareRoll < 0.010)
+            sClass = Spawn::Class::Hauler;
+    } else if (sClass != Spawn::Class::None) {
+        // Explicit caller-specified classes are mission/anomaly waves.
         anomaly = true;
     }
 
     if (sClass == Spawn::Class::None) {
         if (pBubble->IsBelt()) {
-            if ((factionID != factionRogueDrones) and (MakeRandomFloat() < 0.08)) { // second chance for hauler spawn, but include ALL secRating in this one
-                sClass = Spawn::Class::Hauler;
-            } else { // gonna be a 'regular' trusec-based spawn in a belt.
-                if (secRating < -0.7) {
-                    sClass = Spawn::Class::Insane;
-                } else if (secRating < -0.4) {
-                    sClass = Spawn::Class::Crazy;
-                } else if (secRating < -0.1) {
-                    sClass = Spawn::Class::Hard;
-                } else if (secRating < 0.3) {
-                    sClass = Spawn::Class::Medium;
-                } else if (secRating < 0.6) {
-                    sClass = Spawn::Class::Average;
-                } else if (secRating < 0.85) {
-                    sClass = Spawn::Class::Fair;
-                } else {
-                    sClass = Spawn::Class::Easy;
-                }
-            }
-            if ((secRating < 0) and  (sClass < Spawn::Class::Hauler))
-                if (MakeRandomFloat() < 0.1)
-                    sClass = Spawn::Class::Hell;
+            // Select a template by the security value shown to players.
+            // Its contents will still be filtered by exact hull class below.
+            const int sec = EvEBeltRats::SecurityTenths(secRating);
+            if (sec <= -7) sClass = Spawn::Class::Insane;
+            else if (sec <= -4) sClass = Spawn::Class::Crazy;
+            else if (sec <= 0) sClass = Spawn::Class::Hard;
+            else if (sec <= 3) sClass = Spawn::Class::Medium;
+            else if (sec == 4) sClass = Spawn::Class::Average;
+            else if (sec <= 7) sClass = Spawn::Class::Fair;
+            else sClass = Spawn::Class::Easy;
+            if (sec <= 0 && MakeRandomFloat() < 0.01)
+                sClass = Spawn::Class::Hell;
         } else if (pBubble->IsGate()) { // gate spawns are smaller/easier than roid spawns
             if (secRating < -0.7) {
                 sClass = Spawn::Class::Hard;
