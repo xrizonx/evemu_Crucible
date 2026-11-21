@@ -1,5 +1,13 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 21 November 2026 — Docker invbroker MachoBindObject IncRef fatal
+
+- Screenshot shows the Linux server exiting code 139 immediately after `invbroker::MachoBindObject()`, with `IncRef()` on deleted object. This indicates a memory-safety fault in the C++ server process; the MariaDB aborted-connection line follows the termination.
+- In `BindableService::MachoBindObject`, nested `CallMachoBindObject_call.arguments` is passed to `PyCallArgs`, whose destructor decrements the tuple. Retain a dedicated reference before constructing `PyCallArgs` to avoid releasing the decoded envelope's tuple during nested dispatch cleanup. Reject a missing nested tuple before dispatch.
+- This is a shared Windows/Linux/Docker source fix. It complements prior RPC result and `RefPtr` lifetime fixes. No database/schema/content changes.
+- The screenshot uses the previous `FATAL: IncRef() called on deleted object! Type:` message rather than the newer address-and-count diagnostic, suggesting that Docker executable may predate the latest source changes. Ensure deployed binary was built from the current hotfix branch. Fix is committed but compilation and runtime resolution are unverified.
+
+
 ## 21 November 2026 — New-character inventory moniker binding compatibility
 
 - During new-character login the Crucible client reports a session change through godma.Prime, invcache.GetInventoryFromId and invbroker moniker binding, ending in TypeError: 'NoneType' object is not iterable. This is a client exception, not proof the server C++ process crashed at the same location.
