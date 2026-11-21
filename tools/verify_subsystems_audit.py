@@ -300,7 +300,7 @@ assert "%.4f m3 required for %d unit(s); %.4f m3 available." in validate_add
 # NPC encounter missions and anomaly waves deliberately keep separate logic.
 belt_spawns = source("src/eve-server/system/cosmicMgrs/SpawnMgr.cpp")
 belt_bubbles = source("src/eve-server/system/SystemBubble.cpp")
-wander = belt_bubbles.split("void SystemBubble::ProcessWander()", 1)[1].split(
+wander = belt_bubbles.split("void SystemBubble::ProcessWander(", 1)[1].split(
     "void SystemBubble::Add(", 1
 )[0]
 assert "ResetBubbleRatSpawn();" not in wander
