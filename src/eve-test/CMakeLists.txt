@@ -43,7 +43,8 @@ SET( utils_SOURCE
      "utils/ContainerAssemblyTest.cpp"
      "utils/StationOfficeIntegrityTest.cpp"
      "utils/ImageCompatibilityTest.cpp"
-     "utils/AsteroidSpawnTest.cpp" )
+     "utils/AsteroidSpawnTest.cpp"
+     "utils/BeltRatSpawnTest.cpp" )
 SET( test_SUPPORT_SOURCE
      "ProfilerTestStub.cpp" )
 
@@ -119,3 +120,5 @@ ADD_TEST( NAME "ImageCompatibilityTest"
           COMMAND "${TARGET_NAME}" "utils/ImageCompatibilityTest" )
 ADD_TEST( NAME "AsteroidSpawnTest"
           COMMAND "${TARGET_NAME}" "utils/AsteroidSpawnTest" )
+ADD_TEST( NAME "BeltRatSpawnTest"
+          COMMAND "${TARGET_NAME}" "utils/BeltRatSpawnTest" )
