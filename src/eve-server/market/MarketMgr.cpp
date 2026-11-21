@@ -63,6 +63,8 @@ void MarketMgr::Populate()
 {
     double start = GetTimeMSeconds();
     m_marketGroups = MarketDB::GetMarketGroups();
+    if (m_marketGroups == nullptr)
+        sLog.Error("MarketMgr", "Unable to load market groups; next market request will retry.");
 
     Process();
 
@@ -170,8 +172,10 @@ PyRep *MarketMgr::GetNewPriceHistory(uint32 regionID, uint32 typeID) {
 
         result = DBResultToCRowset(res);
         if (result == nullptr) {
-            _log(MARKET__DB_ERROR, "Failed to load cache, generating empty contents.");
-            result = PyStatic.NewNone();
+            // Do not cache a temporary DB failure as an empty market history.
+            // The next client refresh should be able to retry the query.
+            _log(MARKET__DB_ERROR, "Price history query failed; leaving cache invalid for retry.");
+            return PyStatic.NewNone();
         }
         this->m_cache->GiveCache(method_id, &result);
     }
@@ -211,8 +215,10 @@ PyRep *MarketMgr::GetOldPriceHistory(uint32 regionID, uint32 typeID) {
 
         result = DBResultToCRowset(res);
         if (result == nullptr) {
-            _log(MARKET__DB_ERROR, "Failed to load cache, generating empty contents.");
-            result = PyStatic.NewNone();
+            // Do not cache a temporary DB failure as an empty market history.
+            // The next client refresh should be able to retry the query.
+            _log(MARKET__DB_ERROR, "Price history query failed; leaving cache invalid for retry.");
+            return PyStatic.NewNone();
         }
         this->m_cache->GiveCache(method_id, &result);
     }
