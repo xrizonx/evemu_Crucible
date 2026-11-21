@@ -120,6 +120,7 @@ EVEServerConfig::EVEServerConfig()
     market.OldPriceLimit = 10;
     market.NewPriceLimit = 10;
     market.HistoryUpdateTime = 6/*h*/;
+    market.OrderReadWorkers = -1;
     market.UseOrderRange = true;//N
     market.DeleteOldTransactions = false;
     market.salesTax = 1.0f;
@@ -484,6 +485,7 @@ bool EVEServerConfig::ProcessMarket(const TiXmlElement* ele)
     AddValueParser( "UseOrderRange",                market.UseOrderRange);
     AddValueParser( "DeleteOldTransactions",        market.DeleteOldTransactions);
     AddValueParser( "HistoryUpdateTime",            market.HistoryUpdateTime);
+    AddValueParser( "OrderReadWorkers",              market.OrderReadWorkers);
     AddValueParser( "SalesTax",                     market.salesTax);
 
     const bool result = ParseElementChildren( ele );

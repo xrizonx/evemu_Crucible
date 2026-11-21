@@ -139,13 +139,16 @@ protected:
 };
 
 class DBcore
-: public Singleton<DBcore>
 {
 public:
     enum eStatus { Closed, Connected, Error };
 
     DBcore();
-    ~DBcore() { /* do nothing here */ }
+    ~DBcore();
+    static DBcore& get();
+
+    DBcore(const DBcore&) = delete;
+    DBcore& operator=(const DBcore&) = delete;
 
     void    Close();
     void    Initialize(std::string host, std::string user, std::string password, std::string database, bool compress=false, bool SSL=false,
@@ -180,7 +183,7 @@ protected:
 
     void Connect(uint* errnum = 0, char* errbuf = 0);
 
-    bool Reconnect();
+    bool ReconnectLocked();
     //void CallShutdown();
 
 private:

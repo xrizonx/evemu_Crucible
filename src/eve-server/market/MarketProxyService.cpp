@@ -51,7 +51,6 @@ MarketProxyService::MarketProxyService(EVEServiceManager& mgr) :
     Service("marketProxy"),
     m_manager (mgr)
 {
-    m_cache = this->m_manager.Lookup <ObjCacheService>("objectCaching");
 
     this->Add("StartupCheck", &MarketProxyService::StartupCheck);
     this->Add("GetStationAsks", &MarketProxyService::GetStationAsks);
@@ -141,35 +140,13 @@ PyResult MarketProxyService::CorpGetNewTransactions(PyCallArgs& call, PyRep* sel
 }
 
 PyResult MarketProxyService::GetOrders(PyCallArgs &call, PyInt* typeID) {
-    PyRep* result(nullptr);
-    std::string method_name ("GetOrders_");
-    method_name += std::to_string(call.client->GetRegionID());
-    method_name += "_";
-    method_name += std::to_string(typeID->value());
-    ObjectCachedMethodID method_id(GetName().c_str(), method_name.c_str());
-    //check to see if this method is in the cache already.
-    if (!this->m_cache->IsCacheLoaded(method_id))
-    {
-        //this method is not in cache yet, load up the contents and cache it.
-        result = MarketDB::GetOrders(call.client->GetRegionID(), typeID->value());
-        if (result == nullptr) {
-            _log(MARKET__DB_ERROR, "Failed to load cache, generating empty contents.");
-            result = PyStatic.NewNone();
-        }
-        this->m_cache->GiveCache(method_id, &result);
+    // Negative and zero type IDs are not valid market types. In particular,
+    // don't allow a signed ID to wrap into the unsigned database lookup.
+    if (typeID->value() <= 0) {
+        _log(MARKET__DB_ERROR, "GetOrders called with invalid type ID %i.", typeID->value());
+        return PyStatic.NewNone();
     }
-
-    //now we know its in the cache one way or the other, so build a
-    //cached object cached method call result.
-    result = this->m_cache->MakeObjectCachedMethodCallResult(method_id);
-
-    /*{'FullPath': u'UI/Messages', 'messageID': 258616, 'label': u'MktMarketOpeningTitle'}(u'Market not open yet', None, None)
-     * {'FullPath': u'UI/Messages', 'messageID': 258617, 'label': u'MktMarketOpeningBody'}
-     * (u'{region} market region is currently opening up for business and is not yet ready.
-     * Please try again in a few minutes, or refer to another market region for your trading needs.',
-     * None, {u'{region}': {'conditionalValues': [], 'variableType': 10, 'propertyName': None, 'args': 0, 'kwargs': {}, 'variableName': 'region'}})
-     */
-    return result;
+    return sMktMgr.GetOrders(call, typeID->value());
 }
 
 PyResult MarketProxyService::PlaceCharOrder(PyCallArgs &call, PyInt* stationID, PyInt* typeID, PyFloat* price, PyInt* quantity, PyInt* bid, PyInt* orderRange, std::optional <PyInt*> itemID, PyInt* minVolume, PyInt* duration, PyBool* useCorp, std::optional<PyRep*> located) {

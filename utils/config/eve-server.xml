@@ -117,6 +117,7 @@ boolean can use either 0/1 OR true/false.
     </rates>
 
     <market>
+        <OrderReadWorkers>-1</OrderReadWorkers><!-- -1: auto (up to 16), 0: synchronous, 1-128: explicit worker count -->
         <FindBuyOrder>10</FindBuyOrder><!-- integer  - number of orders to return (lower = less bandwidth)  default: 10  limit: 256 -->
         <FindSellOrder>10</FindSellOrder><!-- integer  - number of orders to return (lower = less bandwidth)  default: 10  limit: 256 -->
         <OldPriceLimit>10</OldPriceLimit><!-- integer  - number of orders to return (lower = less bandwidth)  default: 10  limit: 256 -->

@@ -36,6 +36,7 @@ public:
     void WarpOutSpawn(NPC* pNPC, SystemBubble* pBubble);
     // update SpawnMgr on npcs new location (change bubbles)
     void MoveSpawn(NPC* pNPC, SystemBubble* pBubble);
+    bool HasRoomForRoamingRat(SystemBubble& bubble) const;
 
     std::string GetSpawnClassName(int8 sClass);
     std::string GetSpawnGroupName(int8 sGroup);
@@ -66,8 +67,8 @@ public:
 protected:
     bool FindSpawnForBubble(uint16 bubbleID);
     bool PrepSpawn(SystemBubble* pBubble, uint8 sClass = Spawn::Class::None, uint8 level = 0, uint32 factionOverride = 0);
-    void MakeSpawn(SystemBubble* pBubble, uint32 factionID, uint8 sClass, uint8 level, bool anomaly=false);
-    void ReSpawn(SystemBubble* pBubble, SpawnEntry& spawnEntry);
+    bool MakeSpawn(SystemBubble* pBubble, uint32 factionID, uint8 sClass, uint8 level, bool anomaly=false);
+    bool ReSpawn(SystemBubble* pBubble, SpawnEntry& spawnEntry);
     void RemoveSpawn(uint16 bubbleID, uint32 itemID);
 
     uint8 GetSpawnGroup(uint8 sClass);

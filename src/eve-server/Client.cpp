@@ -24,6 +24,8 @@
     Updates:    Allan (rewrite), AlTahir(DaVinci)
 */
 
+#include <memory>
+
 #include "EVE_Consts.h"
 #include "EVE_MovementFormulas.h"
 #include "EVE_Player.h"
@@ -143,8 +145,23 @@ Client::Client(EVEServiceManager& services, EVETCPConnection** con)
 }
 
 Client::~Client() {
-    if (!m_loaded)
+    if (!m_loaded) {
+        // A failed or interrupted login still allocated these objects in the
+        // constructor. Previously returning here leaked the session and both
+        // pending destiny queues on every pre-login disconnect.
+        for (auto channel : m_channels)
+            channel->LeaveChannel(this);
+        for (auto cur = m_bindSet.rbegin(); cur != m_bindSet.rend(); ++cur)
+            m_services.ClearBoundObject(*cur, this);
+
+        SafeDelete(m_TS);
+        SafeDelete(m_scan);
+        SafeDelete(pShipSE);
+        SafeDelete(pSession);
+        PyDecRef(m_destinyEventQueue);
+        PyDecRef(m_destinyUpdateQueue);
         return;
+    }
 
     m_loaded = false;
 
@@ -225,25 +242,62 @@ bool Client::ProcessNet()
     if (state != TCPConnection::STATE_CONNECTED)
         return false;
 
-    PyPacket *p(nullptr);
-    while ((p = PopPacket())) {
+    ProcessDeferredCalls();
+
+    // The main EntityList loop processes client RPCs and system movement on
+    // the same thread. Draining an unlimited input queue here can starve
+    // everyone else's calls and all Destiny movement ticks under load.
+    // Keep unprocessed packets queued for the next server loop iteration.
+    static constexpr size_t kMaxPacketsPerTick = 64;
+    for (size_t handled = 0; handled < kMaxPacketsPerTick; ++handled) {
+        // PopPacket transfers ownership; DispatchPacket only borrows it.
+        std::unique_ptr<PyPacket> packet(PopPacket());
+        if (!packet)
+            break;
+        PyPacket* p = packet.get();
+        const double dispatchStart = GetTimeMSeconds();
         try {
-            if (!DispatchPacket(p))
-                sLog.Error("Client", "%s: Failed to dispatch packet of type %s (%i).", m_char->name(), MACHONETMSG_TYPE_NAMES[ p->type ], (int)p->type);
+            if (!DispatchPacket(p)) {
+                const char* name = (m_char.get() != nullptr) ? m_char->name() : "(unselected)";
+                sLog.Error("Client", "%s: Failed to dispatch packet of type %s (%i).",
+                           name, MACHONETMSG_TYPE_NAMES[p->type], (int)p->type);
+            }
         }
-        catch(PyException& e) {
+        catch (PyException& e) {
             _SendException(p->dest, p->source.callID, p->type, WRAPPEDEXCEPTION, &e.ssException);
         }
-
-        p = nullptr;
+        const double elapsedMs = GetTimeMSeconds() - dispatchStart;
+        if (elapsedMs > 1000.0) {
+            sLog.Warning("Client::ProcessNet",
+                         "Slow packet dispatch for %s: %.1fms, message type %i.",
+                         (m_char.get() != nullptr) ? m_char->name() : "(unselected)",
+                         elapsedMs, static_cast<int>(p->type));
+        }
     }
 
-    // cleanup
-    SafeDelete(p);
-    // send queue
+    // Ship movement updates must still be flushed under an RPC backlog.
     _SendQueuedUpdates();
 
     return true;
+}
+
+void Client::ProcessDeferredCalls()
+{
+    const auto now = std::chrono::steady_clock::now();
+    auto call = m_deferredCalls.begin();
+    while (call != m_deferredCalls.end()) {
+        PyResult result;
+        if (now < call->deadline && !call->poll(result)) {
+            ++call;
+            continue;
+        }
+
+        SendSessionChange();
+        if (result.ssResult == nullptr)
+            result = nullptr;
+        _SendCallReturn(call->source, call->callID, result);
+        call = m_deferredCalls.erase(call);
+    }
 }
 
 bool Client::SelectCharacter(int32 charID/*0*/)
@@ -2543,7 +2597,9 @@ void Client::QueueDestinyUpdate(PyTuple **update, bool DoPackage /*false*/, bool
             PyList* paList = new PyList();
                 paList->AddItem(*update);
             if (!m_destinyUpdateQueue->empty())
-                paList->AddItem(m_destinyUpdateQueue);
+                // The original queue is cleared after flush; an outgoing
+                // packet must own a snapshot, not the mutable live queue.
+                paList->AddItem(new PyList(*m_destinyUpdateQueue));
             PackagedAction pa;
                 pa.substream = new PySubStream(paList);
             act.update = pa.Encode();
@@ -2569,29 +2625,32 @@ void Client::_SendQueuedUpdates() {
     if (!m_destinyUpdateQueue->empty()) {
         if (m_destinyEventQueue->empty()) {
             DoDestinyUpdateMain_2 dum;
-                dum.updates = m_destinyUpdateQueue;
+                dum.updates = new PyList(*m_destinyUpdateQueue);
                 dum.waitForBubble = m_bubbleWait;
             PyTuple* t = dum.Encode();
             if (is_log_enabled(CLIENT__QUEUE_DUMP))
                 t->Dump(CLIENT__QUEUE_DUMP, "");
             SendNotification("DoDestinyUpdate", "clientID", &t);
+            PyDecRef(t);
         } else {
             DoDestinyUpdateMain dum;
-                dum.updates = m_destinyUpdateQueue;
-                dum.events = m_destinyEventQueue;
+                dum.updates = new PyList(*m_destinyUpdateQueue);
+                dum.events = new PyList(*m_destinyEventQueue);
                 dum.waitForBubble = m_bubbleWait;
             PyTuple* t = dum.Encode();
             if (is_log_enabled(CLIENT__QUEUE_DUMP))
                 t->Dump(CLIENT__QUEUE_DUMP, "");
             SendNotification("DoDestinyUpdate", "clientID", &t);
+            PyDecRef(t);
         }
     } else if (!m_destinyEventQueue->empty()) {
         Notify_OnMultiEvent nom;
-            nom.events = m_destinyEventQueue;
+            nom.events = new PyList(*m_destinyEventQueue);
         PyTuple* t = nom.Encode();
         if (is_log_enabled(CLIENT__QUEUE_DUMP))
             t->Dump(CLIENT__QUEUE_DUMP, "");
         SendNotification("OnMultiEvent", "charid", &t);
+        PyDecRef(t);
     } //else nothing to be sent ...
 
     // clear the queues now, after the packets have been sent
@@ -2654,6 +2713,10 @@ void Client::SendNotification(const PyAddress &dest, EVENotificationStream &noti
 
     packet->userid = GetUserID();
 
+    // noti.args is borrowed from the caller, which may release its tuple
+    // immediately after sending. Retain it independently for the async
+    // outgoing packet: packet encoding adopts the supplied reference.
+    PySafeIncRef(noti.args);
     packet->payload = noti.Encode();
 
     if (seq) {
@@ -3019,6 +3082,7 @@ bool Client::Handle_CallReq(PyPacket* packet, PyCallStream& req)
 {
     // build arguments
     PyCallArgs args(this, req.arg_tuple, req.arg_dict);
+    args.allowDeferredReply = m_deferredCalls.size() < MaxDeferredCalls;
     PyResult result;
     uint32 nodeID = 0, bindID = 0;
 
@@ -3067,6 +3131,13 @@ bool Client::Handle_CallReq(PyPacket* packet, PyCallStream& req)
         sLog.Error("Client::CallReq", "Unable to find service to handle call to: %s", packet->dest.service.c_str());
         packet->dest.Dump(CLIENT__CALL_DUMP, "    ");
         throw UserError("ServiceNotFound"); // this message is invalid (message not found)
+    }
+
+    if (args.deferredReply) {
+        m_deferredCalls.push_back({packet->dest, packet->source.callID,
+            std::chrono::steady_clock::now() + std::chrono::seconds(15),
+            std::move(args.deferredReply)});
+        return true;
     }
 
     SendSessionChange();  //send out the session change before the return.

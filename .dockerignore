@@ -1,17 +1,5 @@
-# Keep the Docker build context explicit and independent of local Git metadata.
-.git
-.gitignore
-build/
-cmake-build-*/
-**/CMakeFiles/
-**/CMakeCache.txt
-**/*.o
-**/*.a
-**/*.so
-**/*.dll
-**/*.exe
-
-# Source and build inputs
+# Include only inputs consumed by the Docker build.
+**
 !CMakeLists.txt
 !config.h.in
 !cmake/
@@ -24,3 +12,16 @@ cmake-build-*/
 !utils/**
 !sql/
 !sql/**
+!tools/
+!tools/evedbtool/
+!tools/evedbtool/command_seed.go
+
+**/CMakeFiles/
+**/CMakeCache.txt
+**/*.o
+**/*.a
+**/*.so
+**/*.dll
+**/*.exe
+sql/evedbtool
+sql/evedb.yaml

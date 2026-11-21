@@ -26,6 +26,8 @@
 #ifndef EVE_UNMARSHAL_H
 #define EVE_UNMARSHAL_H
 
+#include <cstring>
+
 #include "python/PyRep.h"
 
 
@@ -73,14 +75,27 @@ public:
 protected:
     /** Peeks element from stream. */
     template<typename T>
-    const T& Peek() const { return *Peek<T>( 1 ); }
+    T Peek() const
+    {
+        // Marshal fields are densely byte packed and not aligned to T.
+        const auto bytes = Peek<uint8>( sizeof(T) );
+        T value;
+        std::memcpy( &value, &*bytes, sizeof(T) );
+        return value;
+    }
     /** Peeks elements from stream. */
     template<typename T>
     Buffer::const_iterator<T> Peek( size_t count ) const { return mInItr.As<T>(); }
 
     /** Reads element from stream. */
     template<typename T>
-    const T& Read() { return *Read<T>( 1 ); }
+    T Read()
+    {
+        const auto bytes = Read<uint8>( sizeof(T) );
+        T value;
+        std::memcpy( &value, &*bytes, sizeof(T) );
+        return value;
+    }
     /** Reads elements from stream. */
     template<typename T>
     Buffer::const_iterator<T> Read( size_t count )
@@ -123,7 +138,15 @@ protected:
      *
      * @return Storage index.
      */
-    uint32 GetStorageIndex() { return *mStoreIndexItr++; }
+    uint32 GetStorageIndex()
+    {
+        // Index entries can also begin at arbitrary byte offsets.
+        uint32 value;
+        const auto bytes = mStoreIndexItr.As<uint8>();
+        std::memcpy( &value, &*bytes, sizeof(value) );
+        ++mStoreIndexItr;
+        return value;
+    }
     /**
      * @brief Obtains previously stored object.
      *

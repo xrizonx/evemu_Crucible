@@ -75,6 +75,7 @@ PyObject *DBRowToKeyVal(DBResultRow &row);
 PyObject *DBRowToRow(DBResultRow &row, const char *type = "util.Row");
 PyPackedRow *DBRowToPackedRow(DBResultRow &row);
 
+void FillPackedRow(const DBResultRow& row, PyPackedRow* into);
 PyPackedRow* CreatePackedRow( const DBResultRow& row, DBRowDescriptor* header );
 
 #endif

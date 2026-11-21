@@ -146,6 +146,7 @@ public:
         uint8 OldPriceLimit;
         uint8 NewPriceLimit;
         uint8 HistoryUpdateTime;
+        int16 OrderReadWorkers;
         float salesTax;
     } market;
 

@@ -11,6 +11,11 @@
   *
   */
 
+#include <condition_variable>
+#include <deque>
+#include <future>
+#include <thread>
+
 #include "Client.h"
 #include "EVEServerConfig.h"
 #include "StaticDataMgr.h"
@@ -31,6 +36,135 @@
  * MARKET__DB_TRACE
  */
 
+namespace {
+using OrderKey = std::pair<uint32, uint32>;
+using OrderClock = std::chrono::steady_clock;
+
+std::string OrderCacheName(const OrderKey& key)
+{
+    return "GetOrders_" + std::to_string(key.first) + "_" + std::to_string(key.second);
+}
+}
+
+class MarketOrderReader
+{
+public:
+    struct Read {
+        const OrderClock::time_point expires = OrderClock::now() + std::chrono::seconds(15);
+        std::promise<std::unique_ptr<DBQueryResult>> result;
+        std::future<std::unique_ptr<DBQueryResult>> rows = result.get_future();
+        bool invalidated = false; // accessed only by the game thread
+    };
+
+    explicit MarketOrderReader(unsigned count) : m_database(sConfig.database)
+    {
+        try {
+            for (unsigned i = 0; i < count; ++i)
+                m_workers.emplace_back(&MarketOrderReader::Run, this);
+        } catch (...) {
+            Stop();
+            throw;
+        }
+    }
+
+    ~MarketOrderReader() { Stop(); }
+
+    std::shared_ptr<Read> Submit(const OrderKey& key)
+    {
+        // Only the game thread accesses m_reads. Keep it bounded when clients
+        // disconnect or rapidly browse through different items.
+        for (auto it = m_reads.begin(); it != m_reads.end();) {
+            if (it->second.expired())
+                it = m_reads.erase(it);
+            else
+                ++it;
+        }
+        if (auto pos = m_reads.find(key); pos != m_reads.end()) {
+            auto pending = pos->second.lock();
+            if (pending && OrderClock::now() < pending->expires)
+                return pending;
+        }
+
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_jobs.size() >= 128)
+            return {};
+        auto read = std::make_shared<Read>();
+        m_reads[key] = read;
+        m_jobs.emplace_back(key, read);
+        m_ready.notify_one();
+        return read;
+    }
+
+    void Invalidate(const OrderKey& key)
+    {
+        auto pos = m_reads.find(key);
+        if (pos == m_reads.end())
+            return;
+        if (auto read = pos->second.lock())
+            read->invalidated = true;
+        m_reads.erase(pos);
+    }
+
+private:
+    void Stop()
+    {
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_stopping = true;
+            m_jobs.clear();
+        }
+        m_ready.notify_all();
+        for (auto& worker : m_workers)
+            worker.join();
+    }
+
+    void Run()
+    {
+        DBcore connection;
+        bool initialized = false;
+        while (true) {
+            std::pair<OrderKey, std::shared_ptr<Read>> job;
+            {
+                std::unique_lock<std::mutex> lock(m_mutex);
+                m_ready.wait(lock, [this] { return m_stopping || !m_jobs.empty(); });
+                if (m_stopping)
+                    break;
+                job = std::move(m_jobs.front());
+                m_jobs.pop_front();
+            }
+
+            std::unique_ptr<DBQueryResult> rows;
+            if (job.second.use_count() > 1 && OrderClock::now() < job.second->expires) {
+                if (!initialized) {
+                    connection.Initialize(m_database.host, m_database.username, m_database.password,
+                        m_database.db, m_database.compress, m_database.ssl, m_database.port,
+                        m_database.useSocket, false, false);
+                    initialized = true;
+                }
+
+                rows = std::make_unique<DBQueryResult>();
+                if (!MarketDB::ReadOrders(connection, job.first.first, job.first.second, *rows)) {
+                    _log(MARKET__DB_ERROR, "Async market order query failed: %s", rows->error.c_str());
+                    rows.reset();
+                }
+            }
+
+            // mysql_store_result already buffered the complete result. The
+            // client, object cache, and PyRep construction stay on the game thread.
+            job.second->result.set_value(std::move(rows));
+        }
+        connection.Close();
+    }
+
+    const decltype(sConfig.database) m_database;
+    std::map<OrderKey, std::weak_ptr<Read>> m_reads;
+    std::mutex m_mutex;
+    std::condition_variable m_ready;
+    std::deque<std::pair<OrderKey, std::shared_ptr<Read>>> m_jobs;
+    std::vector<std::thread> m_workers;
+    bool m_stopping = false;
+};
+
 MarketMgr::MarketMgr()
 : m_marketGroups(nullptr)
 {
@@ -44,8 +178,12 @@ MarketMgr::~MarketMgr()
 
 void MarketMgr::Close()
 {
+    m_orderReader.reset();
     /** @todo put a save method here which will save anything changed before shutdown */
-    PyDecRef(m_marketGroups);
+    // Startup may have failed to load groups. Avoid a null dereference at
+    // shutdown; also prevent a second Close() from releasing stale memory.
+    PySafeDecRef(m_marketGroups);
+    m_marketGroups = nullptr;
     sLog.Warning("        MarketMgr", "Market Manager has been closed." );
 }
 
@@ -53,6 +191,19 @@ int MarketMgr::Initialize(EVEServiceManager& svc)
 {
     m_cache = svc.Lookup <ObjCacheService>("objectCaching");
     m_timeStamp = MarketDB::GetUpdateTime();
+
+    const int requested = sConfig.market.OrderReadWorkers;
+    const unsigned available = std::max(1u, std::thread::hardware_concurrency());
+    const unsigned workers = requested < 0 ? std::min(available, 16u)
+        : static_cast<unsigned>(std::min(requested, 128));
+    if (workers > 0) {
+        try {
+            m_orderReader = std::make_unique<MarketOrderReader>(workers);
+            sLog.Blue("MarketMgr", "Market order workers: %u", workers);
+        } catch (const std::system_error& error) {
+            sLog.Error("MarketMgr", "Could not start market order workers: %s", error.what());
+        }
+    }
 
     Populate();
     sLog.Blue("        MarketMgr", "Market Manager Initialized.");
@@ -63,6 +214,8 @@ void MarketMgr::Populate()
 {
     double start = GetTimeMSeconds();
     m_marketGroups = MarketDB::GetMarketGroups();
+    if (m_marketGroups == nullptr)
+        sLog.Error("MarketMgr", "Unable to load market groups; next market request will retry.");
 
     Process();
 
@@ -160,7 +313,7 @@ PyRep *MarketMgr::GetNewPriceHistory(uint32 regionID, uint32 typeID) {
             "SELECT historyDate, lowPrice, highPrice, avgPrice, volume, orders"
             " FROM mktHistory "
             " WHERE regionID=%u AND typeID=%u"
-            " AND historyDate > %lli  LIMIT %u",
+            " AND historyDate > %lli ORDER BY historyDate LIMIT %u",
             regionID, typeID, (m_timeStamp - EvE::Time::Day), sConfig.market.NewPriceLimit))
         {
             _log(DATABASE__ERROR, "Error in query: %s", res.error.c_str());
@@ -170,8 +323,10 @@ PyRep *MarketMgr::GetNewPriceHistory(uint32 regionID, uint32 typeID) {
 
         result = DBResultToCRowset(res);
         if (result == nullptr) {
-            _log(MARKET__DB_ERROR, "Failed to load cache, generating empty contents.");
-            result = PyStatic.NewNone();
+            // Do not cache a temporary DB failure as an empty market history.
+            // The next client refresh should be able to retry the query.
+            _log(MARKET__DB_ERROR, "Price history query failed; leaving cache invalid for retry.");
+            return PyStatic.NewNone();
         }
         this->m_cache->GiveCache(method_id, &result);
     }
@@ -201,7 +356,7 @@ PyRep *MarketMgr::GetOldPriceHistory(uint32 regionID, uint32 typeID) {
         if (!sDatabase.RunQuery(res,
             "SELECT historyDate, lowPrice, highPrice, avgPrice, volume, orders"
             " FROM mktHistory WHERE regionID=%u AND typeID=%u"
-            " AND historyDate > %lli AND historyDate < %lli LIMIT %u",
+            " AND historyDate > %lli AND historyDate < %lli ORDER BY historyDate LIMIT %u",
             regionID, typeID, (m_timeStamp - (EvE::Time::Day *3)), (m_timeStamp - EvE::Time::Day), sConfig.market.OldPriceLimit))
         {
             _log(DATABASE__ERROR, "Error in query: %s", res.error.c_str());
@@ -211,8 +366,10 @@ PyRep *MarketMgr::GetOldPriceHistory(uint32 regionID, uint32 typeID) {
 
         result = DBResultToCRowset(res);
         if (result == nullptr) {
-            _log(MARKET__DB_ERROR, "Failed to load cache, generating empty contents.");
-            result = PyStatic.NewNone();
+            // Do not cache a temporary DB failure as an empty market history.
+            // The next client refresh should be able to retry the query.
+            _log(MARKET__DB_ERROR, "Price history query failed; leaving cache invalid for retry.");
+            return PyStatic.NewNone();
         }
         this->m_cache->GiveCache(method_id, &result);
     }
@@ -259,13 +416,68 @@ void MarketMgr::SendOnOwnOrderChanged(Client* pClient, uint32 orderID, uint8 act
 }
 
 
-void MarketMgr::InvalidateOrdersCache(uint32 regionID, uint32 typeID) {
-    std::string method_name ("GetOrders_");
-    method_name += std::to_string(regionID);
-    method_name += "_";
-    method_name += std::to_string(typeID);
-    ObjectCachedMethodID method_id("marketProxy", method_name.c_str());
-    this->m_cache->InvalidateCache(method_id);
+PyResult MarketMgr::GetOrders(PyCallArgs& call, uint32 typeID)
+{
+    const OrderKey key{call.client->GetRegionID(), typeID};
+    auto method = OrderCacheName(key);
+    ObjectCachedMethodID cacheID("marketProxy", method.c_str());
+    if (m_cache->IsCacheLoaded(cacheID))
+        return m_cache->MakeObjectCachedMethodCallResult(cacheID);
+
+    if (!m_orderReader) {
+        DBQueryResult rows;
+        if (!MarketDB::ReadOrders(sDatabase, key.first, key.second, rows))
+            return nullptr;
+        PyRep* result = MarketDB::EncodeOrders(rows);
+        m_cache->GiveCache(cacheID, &result);
+        return m_cache->MakeObjectCachedMethodCallResult(cacheID);
+    }
+
+    if (!call.allowDeferredReply)
+        return nullptr;
+    auto read = m_orderReader->Submit(key);
+    if (!read)
+        return nullptr;
+
+    call.deferredReply = [this, key, read, client = call.client](PyResult& result) mutable {
+        if (!m_orderReader || client->GetRegionID() != key.first)
+            return true;
+
+        auto name = OrderCacheName(key);
+        ObjectCachedMethodID cacheID("marketProxy", name.c_str());
+        if (!m_cache->IsCacheLoaded(cacheID)) {
+            // A settlement can occur while the SELECT is in flight. Discard
+            // that snapshot and join a fresh read before publishing the cache.
+            if (read->invalidated || OrderClock::now() >= read->expires) {
+                read = m_orderReader->Submit(key);
+                if (!read)
+                    return true;
+            }
+            if (!read->rows.valid())
+                return true; // another waiter consumed a failed query
+            if (read->rows.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+                return false;
+
+            auto rows = read->rows.get();
+            if (!rows)
+                return true;
+            PyRep* orders = MarketDB::EncodeOrders(*rows);
+            m_cache->GiveCache(cacheID, &orders);
+        }
+        result = m_cache->MakeObjectCachedMethodCallResult(cacheID);
+        return true;
+    };
+    return nullptr;
+}
+
+void MarketMgr::InvalidateOrdersCache(uint32 regionID, uint32 typeID)
+{
+    const OrderKey key{regionID, typeID};
+    if (m_orderReader)
+        m_orderReader->Invalidate(key);
+    const auto method = OrderCacheName(key);
+    ObjectCachedMethodID cacheID("marketProxy", method.c_str());
+    m_cache->InvalidateCache(cacheID);
 }
 
 /** @todo take off market overhead fees */

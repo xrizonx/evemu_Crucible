@@ -3,6 +3,7 @@
 
 The operator must still verify SQL against MariaDB 11.8 and a Crucible client.
 """
+import re
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
@@ -13,6 +14,9 @@ market_types = (root / "src/eve-common/EVE_Market.h").read_text(encoding="utf-8"
 market_db = (root / "src/eve-server/market/MarketDB.cpp").read_text(encoding="utf-8")
 workflow = (root / ".github/workflows/build-release.yml").read_text(encoding="utf-8")
 audit = (root / "sql/diagnostics/2026-11-17-npc-buy-orders-100pct-audit.sql").read_text(encoding="utf-8")
+mineral_ore_audit = (root / "sql/diagnostics/2026-11-19-mineral-ore-npc-buy-100m-audit.sql").read_text(
+    encoding="utf-8"
+)
 
 # Standard seed and existing installation migrations must coexist.
 assert 'cmdFlags.BoolVar(&buyOnly, "buy-only"' in go
@@ -90,10 +94,29 @@ assert workflow.count("verify_npc_buy_seed.py") == 2
 assert "npc-buy-mariadb:" in workflow
 assert "tools/tests/npc_buy_seed_unsigned_schema.sql" in workflow
 assert "seed -buy-only -force" in workflow
-assert "needs: [linux, windows, docker, npc-buy-mariadb]" in workflow
+# Tagged releases must be gated on every build, DB and sanitizer job.
+# Parse the release job dependency list rather than matching a brittle line
+# that fails when a new safety gate is added.
+release = workflow.split("\n  release:", 1)[1]
+release_needs = re.search(r"^\s*needs:\s*\[([^]]+)\]", release, re.MULTILINE)
+assert release_needs is not None
+required_jobs = {"linux", "windows", "docker", "npc-buy-mariadb", "sanitizers"}
+assert required_jobs.issubset({job.strip() for job in release_needs.group(1).split(",")})
 assert "SELECT" in audit and "DELETE " not in audit and "UPDATE " not in audit
 assert "SET @npc_owner_id = 4000000" in audit
+# The original 17-Nov general audit has four static-seed checks.
+# The separate 19-Nov mineral/ore audit has five; validate each independently.
 assert audit.count("o.orderRange = 0 AND o.duration = 250") == 4
 assert "o.orderRange = -1" not in audit
 assert "orderRange=-1" not in audit
+assert "SELECT" in mineral_ore_audit and "DELETE " not in mineral_ore_audit and "UPDATE " not in mineral_ore_audit
+assert mineral_ore_audit.count("o.orderRange = 0 AND o.duration = 250") == 5
+assert "o.orderRange = -1" not in mineral_ore_audit
+# Invalid-price static NPC seed orders must be visible in the 19-Nov read-only
+# audit, rather than hidden by the positive-price filter in its first query.
+assert "-- 5. Invalid seeded order prices, minimum volumes or escrow." in mineral_ore_audit
+assert "o.price IS NULL OR o.price <= 0" in mineral_ore_audit
+assert "o.minVolume IS NULL OR o.minVolume <> 1" in mineral_ore_audit
+assert "o.volEntered <= 0 OR o.escrow < 0" in mineral_ore_audit
+
 print("PASS: NPC buy migration, idempotence, pricing, settlement, and read-only audit invariants")

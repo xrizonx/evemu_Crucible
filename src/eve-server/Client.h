@@ -29,6 +29,10 @@
 #define EVE_CLIENT_H
 
 
+#include <chrono>
+#include <functional>
+#include <vector>
+
 #include "ClientSession.h"
 
 #include "character/Character.h"
@@ -485,6 +489,16 @@ private:
     PyList* m_destinyEventQueue;    //we own these. These are events as used in OnMultiEvent
     PyList* m_destinyUpdateQueue;    //we own these. They are the `update` which go into DoDestinyAction
     void _SendQueuedUpdates();
+    void ProcessDeferredCalls();
+
+    static constexpr size_t MaxDeferredCalls = 8;
+    struct DeferredCall {
+        PyAddress source;
+        int64 callID;
+        std::chrono::steady_clock::time_point deadline;
+        std::function<bool(PyResult&)> poll;
+    };
+    std::vector<DeferredCall> m_deferredCalls;
 
     uint32 m_nextNotifySequence;
 

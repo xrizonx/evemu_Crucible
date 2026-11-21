@@ -38,7 +38,8 @@ class MarketDB
 {
 public:
     static PyRep* GetMarketGroups();
-    static PyRep* GetOrders(uint32 regionID, uint16 typeID);
+    static bool ReadOrders(DBcore& database, uint32 regionID, uint32 typeID, DBQueryResult& rows);
+    static PyRep* EncodeOrders(DBQueryResult& rows);
     static PyRep* GetOrderRow(uint32 orderID);
     static PyRep* GetRegionBest(uint32 regionID);
     static PyRep* GetSystemAsks(uint32 solarSystemID);

@@ -404,16 +404,30 @@ void NPCAIMgr::WarpOut()
      * if there are no players in this system, avoid using proc tics on npcs
      */
 
-    if (pSys->PlayerCount()) {
-        // pSys->GetAnomMgr();
-        uint32 newBeltID = pSys->GetRandBeltID();
-        if (newBeltID == sBubbleMgr.GetBeltID(m_npc->SysBubble()->GetID()))
-            newBeltID = pSys->GetRandBeltID();
-
-        SystemEntity* newSE = pSys->GetSE(newBeltID);
-        m_destiny->WarpTo(newSE->GetPosition());
-        m_npc->GetSpawnMgr()->MoveSpawn(m_npc, sBubbleMgr.FindBubble(newSE));
+    SpawnMgr* spawns = m_npc->GetSpawnMgr();
+    SystemBubble* source = m_npc->SysBubble();
+    if (!pSys->PlayerCount() || spawns == nullptr || source == nullptr) {
+        m_state = NPCAI::State::Idle;
+        return;
     }
+
+    uint32 newBeltID = pSys->GetRandBeltID();
+    if (newBeltID == sBubbleMgr.GetBeltID(source->GetID()))
+        newBeltID = pSys->GetRandBeltID();
+
+    SystemEntity* newSE = pSys->GetSE(newBeltID);
+    SystemBubble* destination = newSE != nullptr ? sBubbleMgr.FindBubble(newSE) : nullptr;
+    if (destination == nullptr || destination == source || !destination->IsBelt()
+        || !spawns->HasRoomForRoamingRat(*destination)) {
+        m_state = NPCAI::State::Idle;
+        return;
+    }
+
+    m_destiny->WarpTo(newSE->GetPosition());
+    if (m_destiny->HasWarpOrder())
+        spawns->MoveSpawn(m_npc, destination);
+    else
+        m_state = NPCAI::State::Idle;
 }
 
 void NPCAIMgr::SetWander()

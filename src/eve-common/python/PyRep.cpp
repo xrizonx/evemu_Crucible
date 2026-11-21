@@ -619,9 +619,11 @@ bool PyToken::visit( PyVisitor& v ) const
 /* PyRep Tuple Class                                                    */
 /************************************************************************/
 PyTuple::PyTuple( size_t item_count ) : PyRep( PyRep::PyTypeTuple ), items( item_count, nullptr ) {}
-PyTuple::PyTuple( const PyTuple& oth ) : PyRep( PyRep::PyTypeTuple ), items(oth.items)
+PyTuple::PyTuple( const PyTuple& oth ) : PyRep( PyRep::PyTypeTuple ), items()
 {
-    //sLog.Cyan("PyTuple()", "Copy C'tor.");
+    // A copied tuple owns independent references, never another tuple's raw
+    // pointers. Assignment already implements a deep element copy.
+    *this = oth;
 }
 
 PyRep* PyTuple::Clone() const
@@ -687,15 +689,14 @@ int32 PyTuple::hash() const
 /* PyRep List Class                                                     */
 /************************************************************************/
 PyList::PyList(size_t item_count) : PyRep(PyRep::PyTypeList), items(item_count, nullptr) { }
-PyList::PyList(const PyList& oth) : PyRep(PyRep::PyTypeList), items(oth.items)
+PyList::PyList(const PyList& oth) : PyRep(PyRep::PyTypeList), items()
 {
-    //sLog.Cyan("PyList()", "Copy C'tor.");
+    *this = oth;
 }
 
 PyList::~PyList()
 {
-    //for (auto cur : items)
-    //    PySafeDecRef(cur);
+    clear();
 }
 
 PyRep* PyList::Clone() const
@@ -741,19 +742,14 @@ PyList& PyList::operator=( const PyList& oth )
 /* PyRep Dict Class                                                     */
 /************************************************************************/
 PyDict::PyDict() : PyRep( PyRep::PyTypeDict ), items() { }
-PyDict::PyDict( const PyDict& oth ) : PyRep( PyRep::PyTypeDict ), items(oth.items)
+PyDict::PyDict( const PyDict& oth ) : PyRep( PyRep::PyTypeDict ), items()
 {
-    //sLog.Cyan("PyDict()", "Copy C'tor.");
+    *this = oth;
 }
 
 PyDict::~PyDict()
 {
-    /*
-    for (auto cur : items) {
-        PyDecRef(cur.first);
-        PySafeDecRef(cur.second);
-    }
-    */
+    clear();
 }
 
 PyRep* PyDict::Clone() const
@@ -883,9 +879,10 @@ bool PyObject::visit( PyVisitor& v ) const
 PyObjectEx::PyObjectEx(bool is_type_2, PyRep* header) : PyRep(PyRep::PyTypeObjectEx),
  mHeader(header), mIsType2(is_type_2), mList(new PyList()), mDict(new PyDict()) { }
 PyObjectEx::PyObjectEx( const PyObjectEx& oth ) : PyRep( PyRep::PyTypeObjectEx ),
-mHeader(oth.header()->Clone()), mIsType2(oth.isType2()), mList(oth.mList), mDict(oth.mDict)
+mHeader(oth.header()->Clone()), mIsType2(oth.isType2()),
+mList(new PyList(oth.list())), mDict(new PyDict(oth.dict()))
 {
-    //sLog.Cyan("PyObjectEx()", "Copy C'tor.");
+    // Extended objects own their list and dictionary. Deep-clone both.
 }
 
 PyObjectEx::~PyObjectEx()
@@ -1111,9 +1108,12 @@ PyTuple* PyObjectEx_Type2::_CreateHeader( PyToken* args, PyDict* keywords, bool 
 PyPackedRow::PyPackedRow(DBRowDescriptor* header)
 : PyRep(PyRep::PyTypePackedRow), mHeader(header), mFields(new PyList(header->ColumnCount()) ) { }
 PyPackedRow::PyPackedRow(const PyPackedRow& oth )
-: PyRep(PyRep::PyTypePackedRow), mHeader(oth.header()), mFields(oth.mFields)
+: PyRep(PyRep::PyTypePackedRow), mHeader(oth.header()),
+  mFields(new PyList(*oth.mFields))
 {
-    //sLog.Cyan("PyPackedRow()", "Copy C'tor.");
+    // A copied row shares its immutable descriptor via an explicit reference,
+    // but owns a deep copy of the mutable field list.
+    PyIncRef(mHeader);
 }
 
 PyPackedRow::~PyPackedRow()

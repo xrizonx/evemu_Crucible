@@ -605,7 +605,8 @@
             <raw name="lastCorpUpdaterIDNew" />
           </tupleInline>
         </dictInlineEntry>
-        <!--
+        <!-- The client builds a new application row from this change dict.
+             Every column of crpApplications must have an old/new pair. -->
         <dictInlineEntry key="roles">
           <tupleInline>
             <raw name="rolesOld" />
@@ -630,7 +631,6 @@
             <raw name="deletedNew" />
           </tupleInline>
         </dictInlineEntry>
-        -->
       </dictInline>
     </tupleInline>
   </elementDef>

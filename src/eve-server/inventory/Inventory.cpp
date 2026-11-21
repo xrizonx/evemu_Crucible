@@ -927,13 +927,15 @@ bool Inventory::ValidateAddItem(EVEItemFlags flag, InventoryItemRef iRef) const
     // check capy for single unit
     if (capacity < volume) { // smallest volume is 0.0025
         if (pClient != nullptr) {
-            std::map<std::string, PyRep *> args;
-            args["volume"] = new PyFloat(volume);
             sItemFactory.UnsetUsingClient();
-            if (IsCargoHoldFlag(flag))
-                throw UserError ("NotEnoughCargoSpace")
-                        .AddAmount ("volume", volume)
-                        .AddAmount ("available", capacity);
+            if (IsCargoHoldFlag(flag)) {
+                // Crucible client builds may display the NotEnoughCargoSpace
+                // localization's {[numeric]volume} placeholders verbatim.
+                // Use an explicit numeric message without changing the
+                // capacity check. Four decimals preserve small ore volumes.
+                throw CustomError("Not enough cargo space: %.4f m3 required for one unit; %.4f m3 available.",
+                                  static_cast<double>(volume), static_cast<double>(capacity));
+            }
             else if (flag == flagShipHangar)
                 throw UserError ("NotEnoughCargoSpaceFor1Unit")
                         .AddAmount ("volume", volume)
@@ -989,9 +991,9 @@ bool Inventory::ValidateAddItem(EVEItemFlags flag, InventoryItemRef iRef) const
                     .AddAmount ("maximum", GetCapacity (flag))
                     .AddAmount ("used", GetStoredVolume (flag));
         else if (IsCargoHoldFlag(flag))
-            throw UserError ("NotEnoughCargoSpace")
-                    .AddAmount ("volume", totalVolume)
-                    .AddAmount ("available", capacity);
+            throw CustomError("Not enough cargo space: %.4f m3 required for %d unit(s); %.4f m3 available.",
+                              static_cast<double>(totalVolume), iRef->quantity(),
+                              static_cast<double>(capacity));
         else
             throw UserError ("NoSpaceForThat")
                     .AddAmount ("volume", totalVolume)

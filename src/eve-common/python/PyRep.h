@@ -632,7 +632,9 @@ public:
         } else {
             *rep = object;
         }
-        PyIncRef( *rep );
+        // SetItem transfers ownership of the supplied reference into this
+        // container (the same convention as PyList::AddItem/PyDict::SetItem).
+        // A caller sharing an existing object must increment it explicitly.
     }
 
     void SetItemInt( size_t index, int32 val )          { SetItem( index, new PyInt( val ) ); }
@@ -644,7 +646,7 @@ public:
     std::vector<PyRep*> items;
 
 protected:
-    virtual ~PyTuple()                                  { /* do nothing here */ }
+    virtual ~PyTuple()                                  { clear(); }
 };
 
 /**
@@ -704,7 +706,9 @@ public:
         } else {
             *rep = object;
         }
-        PyIncRef( *rep );
+        // SetItem transfers ownership of the supplied reference into this
+        // container (the same convention as PyList::AddItem/PyDict::SetItem).
+        // A caller sharing an existing object must increment it explicitly.
     }
     /**
      * @brief Stores Python string.

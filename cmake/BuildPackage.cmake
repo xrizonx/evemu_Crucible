@@ -34,6 +34,15 @@ MACRO( BUILD_PACKAGE PKG )
 
   # If it was not found, proceed with building it
   IF( NOT PKG_FOUND )
+    # Respect the documented opt-in. A missing system development package
+    # must not silently download a large third-party archive during configure.
+    IF( NOT AUTO_DOWNLOAD_DEPENDENCIES )
+      MESSAGE( FATAL_ERROR
+        "Dependency ${PKG} was not found. Install its development package or "
+        "configure with -DAUTO_DOWNLOAD_DEPENDENCIES=ON to allow the "
+        "bundled dependency archive download." )
+    ENDIF()
+
     # Obtain plain archive name
     IF( NOT DEFINED PKG_ARCHIVE )
       GET_FILENAME_COMPONENT( PKG_ARCHIVE "${PKG_URL}" NAME )

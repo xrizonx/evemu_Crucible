@@ -20,6 +20,72 @@ env:
   CCACHE_DIR: ${{ github.workspace }}/.ccache
 
 jobs:
+  sanitizers:
+    name: Linux ASan/UBSan memory and UB smoke
+    runs-on: ubuntu-22.04
+    timeout-minutes: 55
+    env:
+      # Isolate sanitizer objects from optimized Linux/Windows ccache entries.
+      CCACHE_DIR: ${{ github.workspace }}/.ccache-asan
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ccache cmake ninja-build zlib1g-dev libmariadb-dev libboost-system-dev libtinyxml-dev libutfcpp-dev
+      - name: Restore instrumented compiler cache
+        uses: actions/cache/restore@v5
+        with:
+          path: .ccache-asan
+          key: ccache-asan-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-asan-${{ runner.os }}-${{ runner.arch }}-
+      - name: Configure address and undefined-behavior sanitizers
+        run: |
+          ccache --max-size=900M
+          cmake -S . -B build-sanitized -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_C_FLAGS="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined" \
+            -DCMAKE_CXX_FLAGS="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+      # Compile the CTest dependency graph first. Failures in memory/UB tests
+      # then surface without compiling the entire server binary needlessly.
+      - name: Compile instrumented CTest targets
+        run: cmake --build build-sanitized --parallel 2 --target eve-test
+      - name: Run instrumented registered tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          ctest --test-dir build-sanitized -N | tee sanitizer-test-list.txt
+          grep -qE '^  Test #[0-9]+' sanitizer-test-list.txt || { echo "No CTest tests were registered" >&2; exit 1; }
+          ctest --test-dir build-sanitized --output-on-failure --output-junit "$GITHUB_WORKSPACE/sanitizer-test-results.xml"
+      - name: Upload sanitizer test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evemu-sanitizer-ctest-results
+          path: sanitizer-test-results.xml
+          if-no-files-found: warn
+          retention-days: 7
+      # Preserve full server instrumentation/compile coverage on a green run,
+      # but avoid doing its most expensive work before test failures surface.
+      - name: Compile instrumented server after passing tests
+        run: |
+          cmake --build build-sanitized --parallel 2 --target eve-server
+          ccache --show-stats
+      # Ordinary actions/cache post-save is skipped after a failed sanitizer
+      # test. Preserve expensive instrumented compile outputs on failing runs
+      # so the next bugfix iteration can reuse them.
+      - name: Save instrumented compiler cache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: .ccache-asan
+          key: ccache-asan-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
+
   linux:
     name: Linux GCC build
     runs-on: ubuntu-22.04
@@ -31,7 +97,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential ccache cmake ninja-build zlib1g-dev libmariadb-dev libboost-all-dev libtinyxml-dev libutfcpp-dev
+          sudo apt-get install -y build-essential ccache cmake ninja-build zlib1g-dev libmariadb-dev libboost-system-dev libtinyxml-dev libutfcpp-dev
       - name: Cache compiler outputs
         uses: actions/cache@v5
         with:
@@ -56,6 +122,8 @@ jobs:
         run: python3 tools/verify_npc_market_baseprice.py
       - name: Verify standard NPC buy orders at 100 percent
         run: python3 tools/verify_npc_buy_seed.py
+      - name: Verify market RPC and ship movement safety
+        run: python3 tools/verify_market_movement_rpc.py
       - name: Verify gameplay subsystem source invariants
         run: python3 tools/verify_subsystems_audit.py
       - name: Verify 12-ship cruiser and battlecruiser Blockade mission
@@ -119,6 +187,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: evemu-crucible-linux-x86_64
+          compression-level: 0
           path: |
             evemu-crucible-linux-x86_64.tar.gz
             evemu-crucible-linux-x86_64.tar.gz.sha256
@@ -188,6 +257,11 @@ jobs:
         run: |
           python tools/verify_npc_buy_seed.py
           if ($LASTEXITCODE -ne 0) { throw "NPC buy seed regression" }
+      - name: Verify market RPC and ship movement safety
+        shell: pwsh
+        run: |
+          python tools/verify_market_movement_rpc.py
+          if ($LASTEXITCODE -ne 0) { throw "Market RPC/movement regression" }
       - name: Verify gameplay subsystem source invariants
         shell: pwsh
         run: |
@@ -335,6 +409,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: evemu-crucible-windows-x86_64
+          compression-level: 0
           path: |
             evemu-crucible-windows-x86_64.zip
             evemu-crucible-windows-x86_64.zip.sha256
@@ -475,6 +550,57 @@ jobs:
           expect "SELECT COUNT(*) FROM (SELECT stationID,typeID,COUNT(*) AS n FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND duration=250 GROUP BY stationID,typeID HAVING n>1) AS dup" "0"
           rm -f sql/evedb.yaml
           echo "PASS: unsigned orderRange insert, 100% prices, legacy NPC migration, player preservation, rerun and force scope."
+      - name: Verify market indexes and reversible orphan cleanup
+        env:
+          MYSQL_PWD: npc_seed_ci_only
+        run: |
+          set -euo pipefail
+          mariadb --host=127.0.0.1 --user=root -e "CREATE DATABASE market_cleanup_test"
+          cleanup=sql/migrations/20261121143000-archive-orphaned-player-item-attributes.sql
+          indexes=sql/migrations/20261121143100-market-history-and-owner-indexes.sql
+          {
+            cat tools/tests/market_cleanup_schema.sql
+            sed '/^-- +migrate Down/,$d' "$cleanup"
+            sed '/^-- +migrate Down/,$d' "$cleanup"
+            sed '/^-- +migrate Down/,$d' "$indexes"
+            printf '%s\n' 'SELECT COUNT(*) FROM cleanupOrphanedPlayerItemAttributes;' 'SELECT GROUP_CONCAT(itemID ORDER BY itemID) FROM entity_attributes;' \
+              "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND index_name='idx_mkt_history_region_type_date';"
+            printf '%s\n' 'INSERT INTO entity VALUES (140000002);'
+            sed -n '/^-- +migrate Down/,$p' "$cleanup"
+            sed -n '/^-- +migrate Down/,$p' "$indexes"
+            printf '%s\n' 'SELECT GROUP_CONCAT(itemID ORDER BY itemID) FROM entity_attributes;' \
+              "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND index_name='idx_mkt_history_region_type_date';"
+          } | mariadb --host=127.0.0.1 --user=root --database=market_cleanup_test --batch --skip-column-names > "$RUNNER_TEMP/market-cleanup.txt"
+          diff -u <(printf '%s\n' '2' '130000000,140000000,140000001,140000004,140000005,300000000' '3' '130000000,140000000,140000001,140000003,140000004,140000005,300000000' '0') "$RUNNER_TEMP/market-cleanup.txt"
+      - name: Validate market RPC indexes against MariaDB
+        env:
+          MYSQL_PWD: npc_seed_ci_only
+        run: |
+          set -euo pipefail
+          # Use an actual MariaDB instance and the same order schema as the
+          # NPC seed test. Ensure the added indexes apply without data loss.
+          sed '/^-- +migrate Down/,$d' sql/migrations/20261121070000-market-order-rpc-indexes.sql |
+            mariadb --host=127.0.0.1 --user=root --database=EvE
+          actual="$(mariadb --host=127.0.0.1 --user=root --database=EvE --batch --skip-column-names -e \
+            "SELECT COUNT(DISTINCT INDEX_NAME) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='EvE' AND TABLE_NAME='mktOrders' AND INDEX_NAME IN ('idx_mkt_rpc_region','idx_mkt_rpc_station','idx_mkt_rpc_system')")"
+          [[ "$actual" == "3" ]] || { echo "Market RPC indexes missing: $actual" >&2; exit 1; }
+          count="$(mariadb --host=127.0.0.1 --user=root --database=EvE --batch --skip-column-names -e \
+            "SELECT COUNT(*) FROM mktOrders WHERE regionID=10000001 AND typeID=34 AND bid=1 AND volRemaining>0")"
+          # The seed preserves three matching live buy orders: a player bid,
+          # one managed station NPC bid and one legacy regional-range NPC bid.
+          [[ "$count" == "3" ]] || { echo "Market buy order count changed after index migration: $count" >&2; exit 1; }
+          managed="$(mariadb --host=127.0.0.1 --user=root --database=EvE --batch --skip-column-names -e \
+            "SELECT COUNT(*) FROM mktOrders WHERE regionID=10000001 AND typeID=34 AND bid=1 AND ownerID=4000000 AND orderRange=0")"
+          legacy="$(mariadb --host=127.0.0.1 --user=root --database=EvE --batch --skip-column-names -e \
+            "SELECT COUNT(*) FROM mktOrders WHERE regionID=10000001 AND typeID=34 AND bid=1 AND ownerID=4000000 AND orderRange=32767")"
+          player="$(mariadb --host=127.0.0.1 --user=root --database=EvE --batch --skip-column-names -e \
+            "SELECT COUNT(*) FROM mktOrders WHERE regionID=10000001 AND typeID=34 AND bid=1 AND ownerID=90000000")"
+          [[ "$managed" == "1" && "$legacy" == "1" && "$player" == "1" ]] ||
+            { echo "Market index migration failed to preserve all order owners and scopes" >&2; exit 1; }
+          # Exercise the best-ask query's composite index predicates.
+          mariadb --host=127.0.0.1 --user=root --database=EvE --batch --skip-column-names -e \
+            "EXPLAIN SELECT typeID, MIN(price) FROM mktOrders WHERE regionID=10000001 AND bid=0 GROUP BY typeID" > "$RUNNER_TEMP/market-explain.txt"
+          echo "PASS: MariaDB market RPC composite indexes, seeded orders and best-ask query."
 
   docker:
     name: Docker image build
@@ -489,14 +615,20 @@ jobs:
           context: .
           pull: true
           push: false
+          load: true
           tags: evemu-crucible:ci
           cache-from: type=gha,scope=evemu-docker
           cache-to: type=gha,mode=max,scope=evemu-docker
+      - name: Check runtime dependencies and startup script syntax
+        run: |
+          docker compose config --quiet
+          docker run --rm --entrypoint /bin/bash evemu-crucible:ci -ec 'mariadb --version; for script in /src/utils/container-scripts/*.sh; do bash -n "$script"; done'
 
   release:
     name: Publish GitHub release
     if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/tags/stable-rizonx'
-    needs: [linux, windows, docker, npc-buy-mariadb]
+    # Never publish tagged release artifacts if address/UB sanitizers fail.
+    needs: [linux, windows, docker, npc-buy-mariadb, sanitizers]
     runs-on: ubuntu-22.04
     permissions:
       contents: write

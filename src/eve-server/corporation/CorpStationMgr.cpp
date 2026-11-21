@@ -393,11 +393,12 @@ PyResult CorpStationMgrIMBound::GetPotentialHomeStations(PyCallArgs &call) {
      *  other possible stations?  test for min/max potential station count?
      */
 
-    PyDict* dict = new PyDict();
     PyList* list = new PyList();
-    StationData data = StationData();
     for (auto cur : stVec) {
-        stDataMgr.GetStationData(cur, data);
+        StationData data{};
+        if (!stDataMgr.GetStationData(cur, data))
+            continue;
+        PyDict* dict = new PyDict();
         dict->SetItemString("stationID", new PyInt(cur));
         dict->SetItemString("typeID", new PyInt(data.typeID));
         dict->SetItemString("serviceMask", new PyLong(data.serviceMask));

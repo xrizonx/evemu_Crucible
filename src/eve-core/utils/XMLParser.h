@@ -54,7 +54,9 @@ public:
          * @retval false Parsing failed.
          */
         virtual bool Parse( const TiXmlElement* field ) = 0;
-        //virtual ~ElementParser();
+        // Stored and deleted by XMLParser through ElementParser*. A virtual
+        // destructor is required to destroy derived member/value parsers safely.
+        virtual ~ElementParser() = default;
     };
 
     /**
