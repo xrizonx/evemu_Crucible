@@ -233,8 +233,11 @@ void SpawnMgr::Process() {
                     _log(SPAWN__TRACE, "Process() calling Respawn for SpawnEntryID %u (0x%X)", \
                             itr->second.spawnID, &itr->second);
                     // this means check SpawnEntry for 'missing' SpawnGroup members and respawn as needed.
-                    ReSpawn(spawnBubble, itr->second);
-                    itr->second.enabled = false;
+                    if (!ReSpawn(spawnBubble, itr->second)) {
+                        // Do not discard a killed NPC's slot if item creation
+                        // or loading fails. Retry after the normal delay.
+                        itr->second.stamp = sEntityList.GetStamp() + sConfig.npc.RespawnTimer;
+                    }
                 }
                 ++itr;
             }
@@ -1635,14 +1638,14 @@ bool SpawnMgr::MakeSpawn(SystemBubble* pBubble, uint32 factionID, uint8 sClass, 
     return spawnedCount != 0;
 }
 
-void SpawnMgr::ReSpawn(SystemBubble* pBubble, SpawnEntry& spawnEntry)
+bool SpawnMgr::ReSpawn(SystemBubble* pBubble, SpawnEntry& spawnEntry)
 {
     if (pBubble == nullptr)
-        return;
+        return false;
 
     //  we are NOT enabling spawn chaining for officer, hauler, or commander spawns.
     if (spawnEntry.spawnClass > Spawn::Class::Insane)
-        return;
+        return false;
     GPoint startPos(pBubble->GetCenter());
     GPoint warpToPoint(startPos);
     startPos.MakeRandomPointOnSphere(MakeRandomInt(10, 15) *100000); //1-1m5 km from bubble center
@@ -1656,7 +1659,7 @@ void SpawnMgr::ReSpawn(SystemBubble* pBubble, SpawnEntry& spawnEntry)
     InventoryItemRef iRef = sItemFactory.SpawnItem(idata);      // will have to work on this to NOT save npc to db.
     if (iRef.get() == nullptr) {
         _log(SPAWN__ERROR, "Failed to spawn item type %u.", spawnEntry.typeID);
-        return;
+        return false;
     }
 
     _log(SPAWN__POP, "SpawnMgr::ReSpawn - Spawning NPC %s(%u)", iRef->name(), iRef->itemID());
@@ -1669,21 +1672,26 @@ void SpawnMgr::ReSpawn(SystemBubble* pBubble, SpawnEntry& spawnEntry)
     NPC* pNPC = new NPC(iRef, m_services, m_system, data, this);
     if (pNPC == nullptr) {
         _log(SPAWN__ERROR, "Failed to create NPC SE for item type %u.", spawnEntry.typeID);
-        return;
+        return false;
     }
 
     if (!pNPC->Load()) {
         _log(SPAWN__ERROR, "Failed to load NPC data for NPC %u with type %u, depoping.", pNPC->GetID(), pNPC->GetSelf()->typeID());
         SafeDelete(pNPC);
-        return;
+        return false;
     }
 
     m_system->AddNPC(pNPC);
     pNPC->DestinyMgr()->WarpTo(warpToPoint, (MakeRandomInt(-5, 10) *1000));
 
+    // The replacement is a new entity. The old item ID has already died;
+    // without updating this field the next death cannot be matched by
+    // SpawnKilled and subsequent chained respawns break.
+    spawnEntry.itemID = iRef->itemID();
     spawnEntry.stamp = 0;
     spawnEntry.enabled = false;
     _log(SPAWN__TRACE, "ReSpawn() completed for spawnEntryID %u 0x%X in bubble %u.", spawnEntry.spawnID, &spawnEntry, pBubble->GetID());
+    return true;
 }
 
 bool SpawnMgr::FindSpawnForBubble(uint16 bubbleID) {
