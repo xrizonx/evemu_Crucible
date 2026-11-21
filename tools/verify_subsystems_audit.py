@@ -164,14 +164,18 @@ for queued in ("m_destinyEventQueue", "m_destinyUpdateQueue"):
     assert "PyDecRef(" + queued + ");" in partial_logout
 assert "m_services.ClearBoundObject(*cur, this);" in partial_logout
 
-# DispatchPacket only borrows inbound PyPacket pointers. Every iteration
-# of the network receive loop must reclaim the packet, including failures.
+# DispatchPacket only borrows inbound PyPacket pointers. Keep processing
+# bounded so one busy client cannot starve other clients or movement ticks,
+# and reclaim each popped packet even when dispatch throws.
 packet_loop = client.split("bool Client::ProcessNet()", 1)[1].split(
-    "void Client::", 1)[0]
-assert "while (PyPacket* p = PopPacket())" in packet_loop
-assert "std::unique_ptr<PyPacket> packet(p);" in packet_loop
+    "bool Client::SelectCharacter(", 1)[0]
+assert "kMaxPacketsPerTick = 64;" in packet_loop
+assert "handled < kMaxPacketsPerTick" in packet_loop
+assert "std::unique_ptr<PyPacket> packet(PopPacket());" in packet_loop
+assert "PyPacket* p = packet.get();" in packet_loop
 assert "p = nullptr;" not in packet_loop
 assert 'm_char.get() != nullptr' in packet_loop
+assert "_SendQueuedUpdates();" in packet_loop
 
 # ElementParser is owned as a base-class pointer in XMLParser and holds
 # derived MemberElementParser/ValueParser instances. Deletion through the base
