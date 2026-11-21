@@ -301,8 +301,10 @@ void SpawnMgr::WarpOutSpawn(NPC* pNPC, SystemBubble* pBubble)
         rNPC->DestinyMgr()->WarpTo(pBubble->GetCenter(), MakeRandomFloat(10, 30) *100);
         rNPC->GetAIMgr()->DisableWarpOutTimer();
         m_spawns.emplace(pBubble->GetID(), itr->second);
-        m_spawns.erase(itr);
-        ++itr;
+        // std::multimap::erase invalidates the erased iterator. Continue
+        // from the returned next entry; ++itr after erase was undefined
+        // behaviour during rat-group roaming.
+        itr = m_spawns.erase(itr);
     }
 
     pNPC->SysBubble()->SetSpawned(false);
@@ -314,7 +316,9 @@ void SpawnMgr::StartRatTimer()
 {
     if (m_ratTimer.Enabled())
         return;
-    uint16 time = sConfig.npc.RoamingTimer *1000;  //  s to ms
+    // Five-minute timers exceed uint16 milliseconds (65.535 seconds).
+    // The old narrowing conversion silently shortened spawn cadence.
+    uint32 time = sConfig.npc.RoamingTimer * 1000;  // seconds to milliseconds
     if (sConfig.debug.SpawnTest)
         time = 5000; /* 5s for npc spawn testing */
     m_ratTimer.Start(time);
