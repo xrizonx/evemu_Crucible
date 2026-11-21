@@ -124,7 +124,7 @@ PyRep *MarketDB::GetRegionBest(uint32 regionID) {
     return DBResultToIndexRowset(res, "typeID");
 }
 
-PyRep *MarketDB::GetOrders( uint32 regionID, uint16 typeID )
+PyRep *MarketDB::GetOrders( uint32 regionID, uint32 typeID )
 {
     // returns a tuple (sell, buy) of PyObjectEx with data in PyPackedRows
 
