@@ -1,5 +1,12 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 21 November 2026 — Live login reference-count crash follow-up
+
+- Reproduced the defect mechanism in source: `RefPtr` copy/casting assignment released an object's last reference **before** retaining the replacement, so self-assignment could call `IncRef()` on a deleted object. All Windows, Linux and Docker builds share the corrected reference-count ownership implementation. A new `RefPtrLifetimeTest` exercises self/cross-type assignment, aliased copies, moves and destruction in CTest (including sanitizer builds).
+- `PyResult` copy assignment had the same release-before-retain ordering and was made self-assignment-safe. The reference-count error logger now correctly distinguishes `IncRef` from `DecRef` and does not call RTTI on an already-deleted virtual object.
+- Production Inari log confirms cosmic-manager, system/player dynamic and POS boot stages complete. Added explicit LSC/map/character/skill/ship checkpoints to identify any remaining login path fault. **CI and live player login for this patch must be verified separately**; do not consider a successful compile proof of a repaired live crash.
+- Hotfix work: [PR #52](https://github.com/xrizonx/evemu_Crucible/pull/52). No base database rewrite or deletion of player items is needed.
+
 ## 21 November 2026 — Login RPC crash
 
 - Incoming login RPCs retain their payload and arguments until dispatch completes. The decoder accepts both call envelopes and releases malformed packets safely. The outgoing login state, session changes, RPC replies and errors retain their contents independently through serialization. Movement and character-event notifications transfer their encoded tuples exactly once. The marshaling regression covers both envelope sizes, omitted and present named arguments, wrapped packets and malformed payloads.
