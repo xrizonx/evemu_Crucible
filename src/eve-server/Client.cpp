@@ -2998,8 +2998,14 @@ void Client::_SendCallReturn(const PyAddress& source, int64 callID, PyResult &rs
     packet->userid = GetUserID();
 
     packet->payload = new PyTuple(1);
-    PyIncRef(rsp.ssResult);
-    packet->payload->SetItem(0, new PySubStream(rsp.ssResult));
+    // PySubStream takes ownership of its PyRep. The result retains its own
+    // reference until the caller's PyResult is destroyed.
+    PyRep* reply = rsp.ssResult;
+    if (reply != nullptr)
+        PyIncRef(reply);
+    else
+        reply = PyStatic.NewNone();
+    packet->payload->SetItem(0, new PySubStream(reply));
     PySafeIncRef(rsp.ssNamedResult);
     packet->named_payload = rsp.ssNamedResult;
 
@@ -3192,7 +3198,13 @@ bool Client::Handle_CallReq(PyPacket* packet, PyCallStream& req)
         return true;
     }
 
+    // In particular, this bracket distinguishes a completed SelectCharacter
+    // from a failure in session-change encoding or the outgoing RPC reply.
+    sLog.Blue("LoginRPC", "RPC %s::%s: dispatch complete; encoding session changes.",
+              packet->dest.service.c_str(), req.method.c_str());
     SendSessionChange();  //send out the session change before the return.
+    sLog.Blue("LoginRPC", "RPC %s::%s: session changes queued.",
+              packet->dest.service.c_str(), req.method.c_str());
     if (is_log_enabled(CLIENT__OUT_ALL)) {
         if (result.ssResult != nullptr)
             result.ssResult->Dump(CLIENT__OUT_ALL, "    ");
@@ -3201,6 +3213,8 @@ bool Client::Handle_CallReq(PyPacket* packet, PyCallStream& req)
     }
 
     _SendCallReturn(packet->dest, packet->source.callID, result);
+    sLog.Blue("LoginRPC", "RPC %s::%s: response queued.",
+              packet->dest.service.c_str(), req.method.c_str());
 
     return true;
 }
