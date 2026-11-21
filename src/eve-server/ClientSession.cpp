@@ -150,8 +150,14 @@ void ClientSession::EncodeChanges(PyDict* into)
         valueTuple->SetItem (2, PyStatic.NewFalse());
 
         // add the value to the list if it should be persisted
-        if (NONPERSISTVARS.find (cur.first->AsString ()->content ()) == NONPERSISTVARS.end ())
-            into->SetItem (cur.first, new_tuple (valueTuple->GetItem (0), valueTuple->GetItem(1)));
+        if (NONPERSISTVARS.find(cur.first->AsString()->content()) == NONPERSISTVARS.end()) {
+            PyRep* previous = valueTuple->GetItem(0);
+            PyRep* current = valueTuple->GetItem(1);
+            PyIncRef(cur.first);
+            PyIncRef(previous);
+            PyIncRef(current);
+            into->SetItem(cur.first, new_tuple(previous, current));
+        }
     }
 
     mDirty = false;
@@ -166,8 +172,12 @@ void ClientSession::EncodeInitialState (PyDict* into)
         valueTuple->SetItem(2, PyStatic.NewFalse());
 
         // add the value to the initial state only if required
-        if (NONPERSISTVARS.find (cur.first->AsString ()->content ()) == NONPERSISTVARS.end ())
-            into->SetItem (cur.first, cur.second->AsTuple ()->GetItem (1));
+        if (NONPERSISTVARS.find(cur.first->AsString()->content()) == NONPERSISTVARS.end()) {
+            PyRep* current = valueTuple->GetItem(1);
+            PyIncRef(cur.first);
+            PyIncRef(current);
+            into->SetItem(cur.first, current);
+        }
     }
 
     // mark the session as not dirty
@@ -227,7 +237,8 @@ void ClientSession::_Set(const char* name, PyRep* value)
 
     PyRep* current(tuple->GetItem(1)); // copy c'tor
     if (value->hash() != current->hash()) {
-        tuple->SetItem(0, current); /* didn't the session need to store the old value too? */
+        PyIncRef(current);
+        tuple->SetItem(0, current);
         tuple->SetItem(1, value);
         tuple->SetItem(2, PyStatic.NewTrue());
         mDirty = true;

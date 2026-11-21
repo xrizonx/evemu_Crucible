@@ -32,7 +32,7 @@ namespace {
 bool CallPacketRoundTrip(bool channel, bool named, bool wrapped, bool malformed)
 {
     PyCallStream outbound;
-    outbound.method = "GetCharacterSelectionInfo";
+    outbound.method = "GetCharactersToSelect";
     outbound.arg_tuple = new_tuple(new PyInt(42));
     if (named) {
         outbound.arg_dict = new PyDict();

@@ -1335,12 +1335,8 @@ void Client::ResetAfterPopped(GPoint& position)
 }
 
 void Client::ResetAfterPodded() {
-    /** @todo
-     * destroy all implants
-     * check skillpoints vs. clone grade and adjust accordingly.
-     * reset skill effects if clone != current SP and skills lost
-     */
-
+    /** @todo Check skillpoints vs. clone grade and update skill effects if skills were lost. */
+    m_char->DestroyImplants();
     m_autoPilot = false;
 
     CreateNewPod();

@@ -40,6 +40,60 @@
 #include "inventory/Inventory.h"
 #include "ship/Ship.h"
 
+#include <algorithm>
+#include <iterator>
+
+namespace {
+struct TrainingAttribute {
+    uint16 attributeID;
+    uint16 bonusID;
+    uint16 implantEffectID;
+};
+
+// Attribute IDs and additive character effects from the Crucible dogma data.
+constexpr TrainingAttribute kTrainingAttributes[] = {
+    {AttrCharisma,      AttrCharismaBonus,      302},
+    {AttrMemory,       AttrMemoryBonus,       304},
+    {AttrIntelligence, AttrIntelligenceBonus, 306},
+    {AttrWillpower,    AttrWillpowerBonus,    308},
+    {AttrPerception,   AttrPerceptionBonus,   310},
+};
+
+uint16 ImplantBonusAttribute(uint16 attributeID)
+{
+    for (const auto& attribute : kTrainingAttributes) {
+        if (attribute.attributeID == attributeID)
+            return attribute.bonusID;
+    }
+    return 0;
+}
+
+bool IsTrainingImplant(const InventoryItem& implant)
+{
+    if (implant.categoryID() != EVEDB::invCategories::Implant ||
+        implant.GetAttribute(AttrBoosterness).get_int() > 0)
+        return false;
+
+    const auto slot = implant.GetAttribute(AttrImplantness).get_int();
+    if (slot < 1 || slot > 10)
+        return false;
+
+    std::vector<TypeEffects> effects;
+    sFxDataMgr.GetTypeEffect(implant.typeID(), effects);
+    bool hasBonus = false;
+    for (const auto& effect : effects) {
+        const auto matches = [&effect](const TrainingAttribute& attribute) {
+            return attribute.implantEffectID == effect.effectID;
+        };
+        const auto* attribute = std::find_if(std::begin(kTrainingAttributes), std::end(kTrainingAttributes), matches);
+        if (attribute == std::end(kTrainingAttributes))
+            return false;
+        hasBonus |= implant.GetAttribute(attribute->bonusID).get_double() > 0.0;
+    }
+    return hasBonus;
+}
+}
+
 /*
  * CharacterTypeData
  */
@@ -556,11 +610,176 @@ void Character::ClearSkillFlags()
         cur->SetFlag(flagSkill, false);
 }
 
-uint8 Character::GetSPPerMin(Skill* skill)
+double Character::GetSPPerMin(Skill* skill)
 {
-    uint8 primary = GetAttribute(skill->GetAttribute(AttrPrimaryAttribute).get_uint32()).get_uint32();
-    uint8 secondary = GetAttribute(skill->GetAttribute(AttrSecondaryAttribute).get_uint32()).get_uint32();
-    return EvEMath::Skill::PointsPerMinute(primary, secondary);
+    const double primary = GetEffectiveTrainingAttribute(skill->GetAttribute(AttrPrimaryAttribute).get_uint32());
+    const double secondary = GetEffectiveTrainingAttribute(skill->GetAttribute(AttrSecondaryAttribute).get_uint32());
+    return std::max(1.0, EvEMath::Skill::PointsPerMinute(primary, secondary));
+}
+
+std::vector<InventoryItemRef> Character::GetInstalledImplants() const
+{
+    std::vector<InventoryItemRef> implants;
+    if (pInventory == nullptr)
+        return implants;
+
+    pInventory->GetItemsByFlag(flagImplant, implants);
+    implants.erase(std::remove_if(implants.begin(), implants.end(), [this](const InventoryItemRef& item) {
+        return item->ownerID() != m_itemID || item->locationID() != m_itemID ||
+               item->categoryID() != EVEDB::invCategories::Implant;
+    }), implants.end());
+    return implants;
+}
+
+double Character::GetEffectiveTrainingAttribute(uint16 attributeID) const
+{
+    double value = GetAttribute(attributeID).get_double();
+    const uint16 bonusID = ImplantBonusAttribute(attributeID);
+    if (bonusID != 0) {
+        for (const auto& implant : GetInstalledImplants())
+            value += implant->GetAttribute(bonusID).get_double();
+    }
+    return value;
+}
+
+PyList* Character::GetImplantAttributeModifiers(uint16 attributeID) const
+{
+    PyList* result = new PyList();
+    const uint16 bonusID = ImplantBonusAttribute(attributeID);
+    if (bonusID == 0)
+        return result;
+
+    for (const auto& implant : GetInstalledImplants()) {
+        const double bonus = implant->GetAttribute(bonusID).get_double();
+        if (bonus <= 0.0)
+            continue;
+        PyTuple* modifier = new PyTuple(4);
+        modifier->SetItem(0, new PyInt(implant->itemID()));
+        modifier->SetItem(1, new PyInt(implant->typeID()));
+        modifier->SetItem(2, new PyInt(2)); // Additive character attribute modifier
+        modifier->SetItem(3, new PyFloat(bonus));
+        result->AddItem(modifier);
+    }
+    return result;
+}
+
+void Character::InstallImplant(InventoryItemRef implant)
+{
+    if (!IsTrainingImplant(*implant))
+        throw CustomError("This implant's effects are not supported by the server.");
+
+    const auto slot = implant->GetAttribute(AttrImplantness).get_int();
+    for (const auto& installed : GetInstalledImplants()) {
+        if (installed->GetAttribute(AttrImplantness).get_int() == slot)
+            throw CustomError("You already have an implant installed in that slot.");
+    }
+    if (!Skill::FitModuleSkillCheck(implant, CharacterRef(this)))
+        throw CustomError("You do not meet the skill requirements for this implant.");
+
+    if (implant->quantity() > 1) {
+        InventoryItemRef stack = implant;
+        implant = stack->Split(1, true);
+        if (implant.get() == nullptr)
+            throw CustomError("The implant could not be split from its stack.");
+        stack->SaveItem();
+    }
+
+    ChangeImplants(implant, {});
+}
+
+void Character::RemoveImplant(uint32 itemID)
+{
+    for (const auto& implant : GetInstalledImplants()) {
+        if (implant->itemID() == itemID) {
+            ChangeImplants(InventoryItemRef(nullptr), {implant});
+            return;
+        }
+    }
+    throw CustomError("That implant is not installed in your active clone.");
+}
+
+void Character::DestroyImplants()
+{
+    const auto implants = GetInstalledImplants();
+    if (!implants.empty())
+        ChangeImplants(InventoryItemRef(nullptr), implants);
+}
+
+void Character::ChangeImplants(InventoryItemRef install, const std::vector<InventoryItemRef>& remove)
+{
+    // Finish any elapsed skill entries at the old rate before changing attributes.
+    if (!m_skillQueue.empty() &&
+        (m_inTraining == nullptr || m_skillQueue.front().endTime <= GetFileTimeNow()))
+        SkillQueueLoop();
+
+    const int64 now = GetFileTimeNow();
+    if (m_inTraining != nullptr && !m_skillQueue.empty()) {
+        auto& entry = m_skillQueue.front();
+        if (entry.typeID == m_inTraining->typeID() && entry.startTime < now) {
+            const uint32 earned = m_inTraining->GetCurrentSP(this, entry.startTime);
+            m_inTraining->SetAttribute(AttrSkillPoints, earned, true);
+            m_inTraining->SaveItem();
+            entry.startTime = now;
+        }
+    }
+
+    double original[std::size(kTrainingAttributes)];
+    for (size_t i = 0; i < std::size(kTrainingAttributes); ++i)
+        original[i] = GetEffectiveTrainingAttribute(kTrainingAttributes[i].attributeID);
+
+    if (install.get() != nullptr) {
+        install->ChangeSingleton(true);
+        install->Move(m_itemID, flagImplant, true);
+        install->SaveItem();
+    }
+    for (const auto& implant : remove)
+        implant->Delete();
+
+    // Report effective values without saving implant bonuses in the character's base attributes.
+    for (size_t i = 0; i < std::size(kTrainingAttributes); ++i) {
+        const uint16 attributeID = kTrainingAttributes[i].attributeID;
+        const double value = GetEffectiveTrainingAttribute(attributeID);
+        if (value == original[i])
+            continue;
+
+        Notify_OnModuleAttributeChange event;
+        event.ownerID = m_itemID;
+        event.itemKey = new PyInt(m_itemID);
+        event.attributeID = attributeID;
+        event.time = now;
+        event.oldValue = new PyFloat(original[i]);
+        event.newValue = new PyFloat(value);
+        PyTuple* payload = event.Encode();
+        m_pClient->QueueDestinyEvent(&payload);
+    }
+    RecalculateSkillQueue(now);
+}
+
+void Character::RecalculateSkillQueue(int64 now)
+{
+    if (m_skillQueue.empty())
+        return;
+
+    int64 start = std::max(now, m_skillQueue.front().startTime);
+    for (auto& entry : m_skillQueue) {
+        SkillRef skill = GetCharSkillRef(entry.typeID);
+        if (skill.get() == nullptr || entry.level < 1 || entry.level > EvESkill::MAXSKILLLEVEL)
+            continue;
+        const uint32 current = std::max(skill->GetAttribute(AttrSkillPoints).get_uint32(),
+                                        skill->GetSPForLevel(entry.level - 1));
+        const uint32 target = skill->GetSPForLevel(entry.level);
+        entry.startTime = start;
+        entry.endTime = std::max(start, EvEMath::Skill::EndTime(current, target, GetSPPerMin(skill.get()), start));
+        start = entry.endTime + EvE::Time::Second;
+    }
+    UpdateSkillQueueEndTime();
+    if (m_inTraining != nullptr && m_inTraining->typeID() == m_skillQueue.front().typeID) {
+        OnSkillStartTraining event;
+        event.itemID = m_inTraining->itemID();
+        event.endOfTraining = m_skillQueue.front().endTime;
+        PyTuple* payload = event.Encode();
+        m_pClient->QueueDestinyEvent(&payload);
+    }
 }
 
 SkillRef Character::GetCharSkillRef(uint16 skillTypeID) const
@@ -810,6 +1029,9 @@ void Character::LoadPausedSkillQueue(uint16 typeID)
 
     // get first skill, add start history and send begin training packet
     skill = GetCharSkillRef(m_skillQueue.front().typeID).get();
+    if (skill == nullptr)
+        return;
+    m_inTraining = skill;
     skill->SetFlag(flagSkillInTraining, true);
     skill->SaveItem();
 
@@ -1014,17 +1236,15 @@ void Character::SkillQueueLoop(bool update/*true*/)
     double begin(GetTimeMSeconds());
     _log(SKILL__QUEUE, "%s(%u) calling SkillQueueLoop() - update %s", name(), m_itemID, update?"true":"false");
 
-    // anything to do here?
-    if (m_skillQueue.empty())
-        if (m_inTraining == nullptr)
-            return;
-
-    if (m_inTraining->typeID() != m_skillQueue.front().typeID)
+    if (m_skillQueue.empty()) {
+        GetEndOfTraining();
+        return;
+    }
+    if (m_inTraining != nullptr && m_inTraining->typeID() != m_skillQueue.front().typeID)
         CancelSkillInTraining(update);
 
-    // at this point, there is a skill in training, and it is front of queue
     int64 curTime(GetFileTimeNow());
-    if (m_skillQueue.front().endTime > curTime) {
+    if (m_inTraining != nullptr && m_skillQueue.front().endTime > curTime) {
         float timeLeft = (m_skillQueue.front().endTime - curTime) / EvE::Time::Second;
         const char* formatedTime = EvE::FormatTime(timeLeft);
         _log(SKILL__INFO, "%s still training.  %s remaining.", m_inTraining->name(), formatedTime);
@@ -1182,6 +1402,7 @@ void Character::UpdateSkillQueueEndTime()
     if (m_skillQueue.empty()) {
         m_db.UpdateSkillQueueEndTime(0, m_itemID);
         m_pClient->SetTrainingEndTime(0);
+        SaveSkillQueue();
         if (is_log_enabled(SKILL__TRACE))
             _log(SKILL__QUEUE, "%s(%u):  UpdateSkillQueueEndTime() - Queue is empty.", name(), m_itemID);
         return;
@@ -1206,20 +1427,22 @@ PyDict *Character::GetCharInfo() {
     if (!Populate(entry1))
         return nullptr;
 
+    for (const auto& attribute : kTrainingAttributes) {
+        const double effective = GetEffectiveTrainingAttribute(attribute.attributeID);
+        if (effective == GetAttribute(attribute.attributeID).get_double())
+            continue;
+        PyRep*& value = entry1.attributes[attribute.attributeID];
+        PySafeDecRef(value);
+        value = new PyFloat(effective);
+    }
+
     PyDict *result = new PyDict();
     result->SetItem(new PyInt(m_itemID), new PyObject("util.KeyVal", entry1.Encode()));
 
-    //now encode skills...
-    std::vector<InventoryItemRef> skills;
-    skills.clear();
-    //find all the skills contained within ourself.
-    pInventory->GetItemsByFlag(flagSkill, skills );
-    pInventory->GetItemsByFlag(flagSkillInTraining, skills );
-
-    /** @todo  get implants and boosters here once implemented */
-
-    //encode an entry for each one.
-    for (auto cur : skills) {
+    auto items = GetInstalledImplants();
+    pInventory->GetItemsByFlag(flagSkill, items);
+    pInventory->GetItemsByFlag(flagSkillInTraining, items);
+    for (const auto& cur : items) {
         Rsp_CommonGetInfo_Entry entry;
         if (cur->Populate(entry)) {
             result->SetItem(new PyInt(cur->itemID()), new PyObject("util.KeyVal", entry.Encode()));
@@ -1228,7 +1451,6 @@ PyDict *Character::GetCharInfo() {
         }
     }
 
-    /** @todo i dont know how boosters and implants work yet, so may have to set item different for them.  */
 
     return result;
 }
@@ -1284,9 +1506,14 @@ void Character::SaveFullCharacter() {
     m_db.SaveCorpData(m_itemID, m_corpData);
     SaveAttributes();
 
-    if (m_inTraining != nullptr) {
-        m_inTraining->SetAttribute(AttrSkillPoints, m_inTraining->GetCurrentSP(this, m_skillQueue.front().startTime), false);
-        m_inTraining->SaveItem();
+    if (m_inTraining != nullptr && !m_skillQueue.empty()) {
+        auto& entry = m_skillQueue.front();
+        const int64 now = GetFileTimeNow();
+        if (m_inTraining->typeID() == entry.typeID && entry.startTime < now) {
+            m_inTraining->SetAttribute(AttrSkillPoints, m_inTraining->GetCurrentSP(this, entry.startTime), false);
+            m_inTraining->SaveItem();
+            entry.startTime = now;
+        }
     }
 
     SaveSkillQueue();

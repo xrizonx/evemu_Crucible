@@ -30,6 +30,8 @@ Rewrite:    Allan
 #include "character/Skill.h"
 #include "inventory/AttributeEnum.h"
 
+#include <algorithm>
+
 /*
  * SKILL__ERROR
  * SKILL__WARNING
@@ -79,32 +81,21 @@ uint32 Skill::GetSPForLevel(uint8 level) {
 
 uint32 Skill::GetCurrentSP(Character* ch, int64 startTime/*0*/)
 {
-    uint32 currentSP(GetAttribute(AttrSkillPoints).get_uint32());
-    if (flag() == flagSkill)
-        return currentSP;
+    const uint32 current = GetAttribute(AttrSkillPoints).get_uint32();
+    const int64 now = GetFileTimeNow();
+    if (flag() != flagSkillInTraining || startTime <= 0 || now <= startTime)
+        return current;
 
-    if (startTime == 0)
-        return currentSP;
+    const uint32 nextLevel = GetAttribute(AttrSkillLevel).get_uint32() + 1;
+    if (nextLevel > EvESkill::MAXSKILLLEVEL)
+        return current;
 
-    if (startTime > GetFileTimeNow())
-        return currentSP;
+    const uint32 target = GetSPForLevel(nextLevel);
+    if (current >= target)
+        return current;
 
-    uint8 level = GetAttribute(AttrSkillLevel).get_uint32() + 1;
-    if (level > EvESkill::MAXSKILLLEVEL)
-        level = EvESkill::MAXSKILLLEVEL;
-
-    /** @todo this isnt completely right.... */
-    // at this point, the skill is in training.  calculate accumulated sp and return
-    uint32 delta(0);
-    uint32 timeElapsed((GetFileTimeNow() - startTime) / EvE::Time::Second);
-    // skill in training - return updated SP based on elapsed training
-    delta = (timeElapsed / 60) * ch->GetSPPerMin(this);
-    currentSP += delta;
-
-    _log(SKILL__TRACE, "Skill::GetCurrentSP() for %s is %u - delta: %u, elapsed time: %us", \
-            name(), currentSP, delta, timeElapsed);
-
-    return currentSP;
+    const double delta = static_cast<double>(now - startTime) / EvE::Time::Minute * ch->GetSPPerMin(this);
+    return current + static_cast<uint32>(std::min(delta, static_cast<double>(target - current)));
 }
 
 uint32 Skill::GetRemainingSP(Character* ch, int64 curTime/*0*/)

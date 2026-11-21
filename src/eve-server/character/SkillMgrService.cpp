@@ -236,45 +236,38 @@ PyResult SkillMgrBound::RespecCharacter(PyCallArgs &call, PyInt* charisma, PyInt
 
 PyResult SkillMgrBound::GetCharacterAttributeModifiers(PyCallArgs &call, PyInt* attr)
 {
-    //  for (itemID, typeID, operation, value,) in modifiers:
-
-    /*
-     * client sends attrib# of stat in question...
-     *            [PyString "GetCharacterAttributeModifiers"]
-     *            [PyTuple 1 items]
-     *              [PyInt 165]
-     * we return this...
-     *        [PyList 1 items]
-     *          [PyTuple 4 items]
-     *            [PyIntegerVar 1866309449]   << implantID
-     *            [PyInt 9943]                << implantTypeID
-     *            [PyInt 2]                   << operation
-     *            [PyFloat 3]                 << value
-     */
-    CharacterRef cRef(call.client->GetChar());
-    PyList* list = new PyList();
-    // for each implant, make tuple and put into list
-    PyTuple* tuple = new PyTuple(4);
-        tuple->SetItem(0, PyStatic.NewZero());   //implantID
-        tuple->SetItem(1, PyStatic.NewZero());   //implantTypeID
-        tuple->SetItem(2, PyStatic.NewZero());   //operation
-        tuple->SetItem(3, PyStatic.NewZero());   //value
-        list->AddItem(tuple);
-
-    return list;
+    const auto attributeID = attr->value();
+    if (attributeID <= 0 || attributeID > UINT16_MAX)
+        return new PyList();
+    return call.client->GetChar()->GetImplantAttributeModifiers(static_cast<uint16>(attributeID));
 }
 
 PyResult SkillMgrBound::CharAddImplant(PyCallArgs& call, PyInt* itemID)
 {
-    //sends itemid
-    //{'FullPath': u'UI/Messages', 'messageID': 259242, 'label': u'OnlyOneBoosterActiveBody'}(u'You cannot consume the {typeName} as you are already using another similar booster {typeName2}.', None, {u'{typeName}': {'conditionalValues': [], 'variableType': 10, 'propertyName': None, 'args': 0, 'kwargs': {}, 'variableName': 'typeName'}, u'{typeName2}': {'conditionalValues': [], 'variableType': 10, 'propertyName': None, 'args': 0, 'kwargs': {}, 'variableName': 'typeName2'}})
-    //{'FullPath': u'UI/Messages', 'messageID': 259243, 'label': u'OnlyOneImplantActiveBody'}(u'You cannot install the {typeName} as there is already an implant installed in the slot it needs to occupy.', None, {u'{typeName}': {'conditionalValues': [], 'variableType': 10, 'propertyName': None, 'args': 0, 'kwargs': {}, 'variableName': 'typeName'}})
+    if (itemID->value() <= 0)
+        throw CustomError("The implant could not be found.");
 
+    auto* client = call.client;
+    const uint32 characterID = client->GetCharacterID();
+    InventoryItemRef implant = sItemFactory.GetItemRef(itemID->value());
+    if (implant.get() == nullptr || implant->ownerID() != characterID)
+        throw CustomError("The implant must be in your personal hangar or active ship cargo.");
+
+    const bool inHangar = client->IsDocked() && implant->flag() == flagHangar &&
+        implant->locationID() == static_cast<uint32>(client->GetStationID());
+    const bool inCargo = implant->flag() == flagCargoHold && implant->locationID() == client->GetShipID();
+    if ((!inHangar && !inCargo) || (!implant->isSingleton() && implant->quantity() < 1))
+        throw CustomError("The implant must be in your personal hangar or active ship cargo.");
+
+    client->GetChar()->InstallImplant(implant);
     return nullptr;
 }
 
 PyResult SkillMgrBound::RemoveImplantFromCharacter(PyCallArgs& call, PyInt* itemID)
 {
-    //sends itemid
+    if (itemID->value() <= 0)
+        throw CustomError("That implant is not installed in your active clone.");
+
+    call.client->GetChar()->RemoveImplant(itemID->value());
     return nullptr;
 }

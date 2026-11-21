@@ -8,6 +8,7 @@
 //////////////////////////////////////////////////////////////////////////////////////////
 
 #include "../eve-common.h"
+#include <cmath>
 #include <limits>
 
 double EvEMath::Units::MetersToLightYears(double meters) {
@@ -34,21 +35,21 @@ uint8 EvEMath::Skill::LevelForPoints(uint32 currentSP, uint8 rank)
     return (uint8)EvE::min(ret, EvESkill::MAXSKILLLEVEL);
 }
 
-uint8 EvEMath::Skill::PointsPerMinute(uint8 pAttr, uint8 sAttr)
+double EvEMath::Skill::PointsPerMinute(double pAttr, double sAttr)
 {
-    return (pAttr + (0.5f * sAttr));
+    return pAttr + 0.5 * sAttr;
 }
 
-int64 EvEMath::Skill::StartTime(uint32 currentSP, uint32 nextSP, uint8 SPMin, int64 timeNow)
+int64 EvEMath::Skill::StartTime(uint32 currentSP, uint32 nextSP, double SPMin, int64 timeNow)
 {
-    return (timeNow - (((nextSP - currentSP) / SPMin) * EvE::Time::Minute));
+    return timeNow - EndTime(currentSP, nextSP, SPMin, 0);
 }
 
-int64 EvEMath::Skill::EndTime(uint32 currentSP, uint32 nextSP, uint8 SPMin, int64 timeNow)
+int64 EvEMath::Skill::EndTime(uint32 currentSP, uint32 nextSP, double SPMin, int64 timeNow)
 {
-    if (currentSP >= nextSP)
+    if (currentSP >= nextSP || SPMin <= 0.0)
         return 0;
-    return ((((nextSP - currentSP) / SPMin) * EvE::Time::Minute) + timeNow);
+    return timeNow + static_cast<int64>(std::ceil((nextSP - currentSP) * EvE::Time::Minute / SPMin));
 }
 
 

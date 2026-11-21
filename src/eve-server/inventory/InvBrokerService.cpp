@@ -450,6 +450,8 @@ PyResult InvBrokerBound::TrashItems(PyCallArgs &call, PyList* itemIDs, PyInt* lo
             _log(INV__ERROR, "%s: Tried to trash item %u which is not yours. Skipping.", call.client->GetName(), *cur);
         } else if (item->locationID() != locationID->value()) {
             _log(INV__ERROR, "%s: Item %u is not in location %u. Skipping.", call.client->GetName(), *cur, locationID->value());
+        } else if (item->flag() == flagImplant) {
+            _log(INV__WARNING, "%s: Use the implant action to remove installed item %u.", call.client->GetName(), *cur);
         } else {
             item->Delete();
             // these below dont work...

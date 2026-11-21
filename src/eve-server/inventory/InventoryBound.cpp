@@ -441,6 +441,9 @@ PyRep* InventoryBound::MoveItems(Client* pClient, std::vector< int32 >& items, E
         _log(INV__ERROR, "IB::MoveItems: invalid client or destination inventory %u.", m_itemID);
         return nullptr;
     }
+    if (toFlag == flagImplant)
+        throw CustomError("Use the implant action to install an implant.");
+
     ScopedInventoryClient factoryClient(pClient);
     RefreshOwnedShipInventory(pClient);
     ShipItem* pShip = pClient->GetShip().get();
@@ -558,6 +561,9 @@ PyRep* InventoryBound::MoveItems(Client* pClient, std::vector< int32 >& items, E
             _log(INV__ERROR, "IB::MoveItems() - item %i not found.  continuing.", (*itr));
             continue;
         }
+        if (iRef->flag() == flagImplant)
+            throw CustomError("Use the implant action to remove an installed implant.");
+
         // Check before splitting, donating or fitting: a rejected nesting
         // request must not mutate the original item/stack.
         if (pInventory->WouldCreateContainmentCycle(iRef)) {

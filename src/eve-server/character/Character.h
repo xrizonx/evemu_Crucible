@@ -244,7 +244,7 @@ public:
     void            GetSkillsList(std::vector<InventoryItemRef>& skills) const;
     void            VerifySP();
     uint32          GetTotalSPTrained()                 { return m_charData.skillPoints; };
-    uint8           GetSPPerMin(Skill* skill);
+    double          GetSPPerMin(Skill* skill);
     int64           GetEndOfTraining();
     uint8           InjectSkillIntoBrain(SkillRef skill);
     void            AddToSkillQueue(uint16 typeID, uint8 level);
@@ -267,6 +267,11 @@ public:
     void            UpdateCertificate( uint32 certificateID, bool pub );
     bool            HasCertificate( uint32 certificateID ) const;
     void            GetCertificates( CertMap& crt );
+
+    void            InstallImplant(InventoryItemRef implant);
+    void            RemoveImplant(uint32 itemID);
+    void            DestroyImplants();
+    PyList*         GetImplantAttributeModifiers(uint16 attributeID) const;
 
     /* Primary public packet builders */
     PyDict*         GetCharInfo();
@@ -455,7 +460,10 @@ private:
 
     uint32 m_loginTime;
 
-    std::map<uint8, InventoryItemRef>  m_implantMap;    // slotID/itemRef
+    std::vector<InventoryItemRef> GetInstalledImplants() const;
+    double GetEffectiveTrainingAttribute(uint16 attributeID) const;
+    void ChangeImplants(InventoryItemRef install, const std::vector<InventoryItemRef>& remove);
+    void RecalculateSkillQueue(int64 now);
 };
 
 #endif /* !__CHARACTER__H__INCL__ */
