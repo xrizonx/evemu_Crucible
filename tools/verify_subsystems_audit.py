@@ -422,4 +422,32 @@ assert "catch (...)" in entity_boot
 assert "if (!booted)" in entity_boot
 assert "SafeDelete(pSM);" in entity_boot
 
+# Actual login reference crash: assignment must retain its next reference
+# before releasing the previous one, including self and cross-type aliases.
+refptr = source("src/eve-core/memory/RefPtr.h")
+copy_assign = refptr.split("RefPtr& AssignRef(X* next)", 1)[1].split(
+    "/// The pointer to the reference-counted object.", 1
+)[0]
+assert "if (next == mPtr)" in copy_assign
+assert copy_assign.index("next->IncRef();") < copy_assign.index("previous->DecRef();")
+assert "RefPtr& operator=(RefPtr&& oth) noexcept" in refptr
+assert "oth.mPtr = nullptr;" in refptr
+assert 'FATAL: DecRef() on deleted object' in refptr
+assert 'FATAL: IncRef() on deleted object' in refptr
+assert 'std::cerr << "FATAL: IncRef() called on deleted object!' not in refptr
+
+callable = source("src/eve-server/services/Callable.cpp")
+result_copy = callable.split("PyResult& PyResult::operator=(const PyResult& oth)", 1)[1]
+assert "if (this == &oth)" in result_copy
+assert result_copy.index("PyIncRef(nextResult);") < result_copy.index("PySafeDecRef(ssResult);")
+assert result_copy.index("PySafeIncRef(nextNamed);") < result_copy.index("PySafeDecRef(ssNamedResult);")
+assert "RefPtrLifetimeTest.cpp" in source("src/eve-test/CMakeLists.txt")
+assert 'ADD_TEST( NAME "RefPtrLifetimeTest"' in source("src/eve-test/CMakeLists.txt")
+
+system_boot = source("src/eve-server/system/SystemManager.cpp")
+assert "LSC channels ready." in system_boot
+assert "startup complete." in system_boot
+login = source("src/eve-server/Client.cpp")
+assert login.count('"LoginStage"') >= 7
+
 print("Source-level gameplay safety guards passed")
