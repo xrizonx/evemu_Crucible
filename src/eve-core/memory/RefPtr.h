@@ -89,8 +89,12 @@ protected:
     {
         // ---modulefix; issue with installing and uninstalling modules caused a soft freeze and unable to make changes to modules in fit screen.
         if (mDeleted) {
-            _log(REFPTR__ERROR, "IncRef() - Attempted to increase ref count on deleted object! Current Count: %u", mRefCount);
-            std::cerr << "FATAL: IncRef() called on deleted object! Type: " << typeid(*this).name() << std::endl;
+            _log(REFPTR__ERROR, "IncRef() on deleted object %p (refcount %u)", static_cast<const void*>(this), mRefCount);
+            // The dynamic type is no longer valid after destruction. Calling
+            // typeid(*this) dereferences a destroyed vtable and can crash
+            // before the useful stack trace is printed.
+            std::fprintf(stderr, "FATAL: IncRef() on deleted object %p (count %u)\n",
+                         static_cast<const void*>(this), mRefCount);
             EvE::traceStack();
 
             // Optional: Either abort to catch error early, or return to avoid crashing.
@@ -109,8 +113,9 @@ protected:
     {
         if (mDeleted) {
             // ---modulefix; issue with installing and uninstalling modules caused a soft freeze and unable to make changes to modules in fit screen.
-            _log(REFPTR__ERROR, "IncRef() - Attempted to increase ref count on deleted object! Current Count: %u", mRefCount);
-            std::cerr << "FATAL: IncRef() called on deleted object! Type: " << typeid(*this).name() << std::endl;
+            _log(REFPTR__ERROR, "DecRef() on deleted object %p (refcount %u)", static_cast<const void*>(this), mRefCount);
+            std::fprintf(stderr, "FATAL: DecRef() on deleted object %p (count %u)\n",
+                         static_cast<const void*>(this), mRefCount);
             EvE::traceStack();
             return;
         }
