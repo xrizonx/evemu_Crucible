@@ -349,6 +349,15 @@ bool Client::SelectCharacter(int32 charID/*0*/)
     //  fleet data is zeroed when char item is created
 
     SetPodItem();
+    if (m_pod.get() == nullptr) {
+        sLog.Error("Client::SelectCharacter",
+                   "Character %u has no loadable capsule and a replacement could not be created.",
+                   charID);
+        sItemFactory.UnsetUsingClient();
+        SendErrorMsg("Your character's capsule could not be initialized. Contact the server administrator.");
+        CloseClientConnection();
+        return false;
+    }
 
     m_ship = sItemFactory.GetShipRef(m_shipId);
     if (m_ship.get() == nullptr) {
