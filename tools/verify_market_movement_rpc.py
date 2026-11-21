@@ -118,4 +118,9 @@ for name, columns in [
 assert "DELETE FROM mktOrders" not in index_sql
 assert "TRUNCATE" not in index_sql
 
+server = read("src/eve-server/eve-server.cpp")
+assert "std::chrono::milliseconds(m_sleepTime - start)" in server
+assert "m_stopSignal.store(sig_num, std::memory_order_relaxed)" in server
+assert "m_run = sConsole.Process();" not in server
+
 print("PASS: market RPC, recovery, SQL timeouts and login-movement safety guards")

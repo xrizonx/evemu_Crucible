@@ -28,6 +28,8 @@
 // version
 #include "../eve-common/EVEVersion.h"
 
+#include <atomic>
+
 #include "EVEServerConfig.h"
 #include "NetService.h"
 // data managers
@@ -187,7 +189,8 @@ static const char* const SRV_CONFIG_FILE = EVEMU_ROOT "/etc/eve-server.xml";
 static void SetupSignals();
 static void CatchSignal( int sig_num );
 
-static volatile bool m_run = true;
+static std::atomic<int> m_stopSignal{0};
+static_assert(std::atomic<int>::is_always_lock_free, "Signal state must be lock-free");
 
 CommandDispatcher* g_dispatcher = nullptr; // ---commandlist update
 
@@ -896,7 +899,7 @@ int main( int argc, char* argv[] )
      * THE MAIN LOOP
      * Everything except IO should happen in this loop, in this thread context.
      */
-    while (m_run) {
+    while (m_stopSignal.load(std::memory_order_relaxed) == 0) {
         Timer::SetCurrentTime();
         start = GetTickCount();
 
@@ -911,13 +914,18 @@ int main( int argc, char* argv[] )
         sEntityList.Process();
 
         /*  process console commands, if any, and check for 'exit' command */
-        m_run = sConsole.Process();
+        if (!sConsole.Process())
+            break;
 
         /* do the stuff for thread sleeping */
         start = GetTickCount() - start;
         if (m_sleepTime > start)
-            std::this_thread::sleep_for(std::chrono::milliseconds(start));
+            std::this_thread::sleep_for(std::chrono::milliseconds(m_sleepTime - start));
     }
+
+    const int stopSignal = m_stopSignal.load(std::memory_order_relaxed);
+    if (stopSignal != 0)
+        sLog.Warning("Signal System", "Stopping after signal %d", stopSignal);
 
     /*
      * end of main loop
@@ -1026,12 +1034,7 @@ static void SetupSignals()
 
 static void CatchSignal( int sig_num )
 {
-    sLog.Error( "    Signal System", "Caught signal: %d", sig_num );
-    if (sConfig.debug.StackTrace)
-        EvE::traceStack();
-    //SafeSave();
-    m_run = false;
-    //CleanUp();
+    m_stopSignal.store(sig_num, std::memory_order_relaxed);
 }
 
 static void CleanUp() {
