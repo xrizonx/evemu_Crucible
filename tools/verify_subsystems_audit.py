@@ -296,4 +296,36 @@ assert "std::map<std::string, PyRep *> args;" not in validate_add
 assert "%.4f m3 required for one unit; %.4f m3 available." in validate_add
 assert "%.4f m3 required for %d unit(s); %.4f m3 available." in validate_add
 
+# Belt rat patrols must be security limited, small, and spawned once.
+# NPC encounter missions and anomaly waves deliberately keep separate logic.
+belt_spawns = source("src/eve-server/system/cosmicMgrs/SpawnMgr.cpp")
+belt_bubbles = source("src/eve-server/system/SystemBubble.cpp")
+wander = belt_bubbles.split("void SystemBubble::ProcessWander()", 1)[1].split(
+    "void SystemBubble::Add(", 1
+)[0]
+assert "ResetBubbleRatSpawn();" not in wander
+assert "EvEBeltRats::SecurityTenths(secRating)" in belt_spawns
+assert "EvEBeltRats::ForSecurity(secRating).maxShips" in belt_spawns
+assert "EvEBeltRats::AllowsShipClass(secRating, shipClass, sClass)" in belt_spawns
+assert "EvEBeltRats::MatchesGroupHull(shipClass, group.name)" in belt_spawns
+assert "std::reverse(m_toSpawn.begin(), m_toSpawn.end())" in belt_spawns
+assert "remaining -= group.quantity;" in belt_spawns
+assert "m_toSpawn.erase(std::remove_if(" in belt_spawns
+assert "m_spawns.count(pBubble->GetID()) != 0 || pBubble->CountNPCs() != 0" in belt_spawns
+assert "return MakeSpawn(pBubble, factionID, sClass, level, anomaly);" in belt_spawns
+assert "return spawnedCount != 0;" in belt_spawns
+assert "rareRoll < 0.0005" in belt_spawns
+assert "MakeRandomFloat() < 0.08" not in belt_spawns
+
+belt_policy = source("src/eve-common/EVE_BeltRatSpawnHelpers.h")
+for rule in ("if (sec >= 8) return {Frigate, 2}",
+             "if (sec >= 5) return {Cruiser, 3}",
+             "if (sec == 4) return {Cruiser, 3}",
+             "if (sec >= 1) return {Battlecruiser, 4}",
+             "return {Battleship, 5}"):
+    assert rule in belt_policy
+belt_cmake = source("src/eve-test/CMakeLists.txt")
+assert "utils/BeltRatSpawnTest.cpp" in belt_cmake
+assert 'ADD_TEST( NAME "BeltRatSpawnTest"' in belt_cmake
+
 print("Source-level gameplay safety guards passed")
