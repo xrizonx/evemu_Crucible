@@ -1,5 +1,11 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 21 November 2026 — Inventory MachoBindObject RPC lifetime hotfix
+
+- Fixed `BindableService::MachoBindObject` response tuple ownership in `src/eve-server/services/BoundService.h`: the transient `PyResult` retains its own reference, while `PyTuple::SetItem` receives a separately retained reference. Previously the `PyResult` destructor could release the object while the response tuple still referenced it, creating a use-after-free risk during `invbroker` binding.
+- Kept the existing `RefPtr` and `PyResult` lifetime changes on PR #52. No database schema, character data, or protocol wire layout changes.
+- This is a best-effort source correction derived from the reported Windows post-channel-login termination and Linux `IncRef() on deleted object` failure; no live execution or build verification was performed for this follow-up.
+
 ## 21 November 2026 — Live login reference-count crash follow-up
 
 - Reproduced the defect mechanism in source: `RefPtr` copy/casting assignment released an object's last reference **before** retaining the replacement, so self-assignment could call `IncRef()` on a deleted object. All Windows, Linux and Docker builds share the corrected reference-count ownership implementation. A new `RefPtrLifetimeTest` exercises self/cross-type assignment, aliased copies, moves and destruction in CTest (including sanitizer builds).
