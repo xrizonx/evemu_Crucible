@@ -11,10 +11,12 @@ services:
       - "26000:26000"
       - "26001:26001"
     depends_on:
-      - db
-    links:
-      - "db"
+      db:
+        condition: service_healthy
     environment:
+      - MARIADB_USER=${MARIADB_USER:-evemu}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD:-evemu}
+      - MARIADB_DATABASE=${MARIADB_DATABASE:-evemu}
       - SEED_MARKET=${SEED_MARKET:-FALSE} # Set to TRUE to seed the market when the server starts for the first time
       - SEED_SATURATION=${SEED_SATURATION:-80} # Set saturation level of seed
       - SEED_REGIONS=${SEED_REGIONS:-Derelik,The Citadel,The Forge,Essence} # Define regions to be seeded
@@ -32,11 +34,16 @@ services:
     # If you want to connect to the Database pick your host port to map it to, (host-port:container-port) below. 
     #ports:
     #  - "3306:3306"  
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
     environment:
       - MARIADB_RANDOM_ROOT_PASSWORD=true
-      - MARIADB_USER=evemu
-      - MARIADB_PASSWORD=evemu
-      - MARIADB_DATABASE=evemu
+      - MARIADB_USER=${MARIADB_USER:-evemu}
+      - MARIADB_PASSWORD=${MARIADB_PASSWORD:-evemu}
+      - MARIADB_DATABASE=${MARIADB_DATABASE:-evemu}
 
 volumes:
   db:

@@ -124,47 +124,38 @@ PyRep *MarketDB::GetRegionBest(uint32 regionID) {
     return DBResultToIndexRowset(res, "typeID");
 }
 
-PyRep *MarketDB::GetOrders( uint32 regionID, uint32 typeID )
+bool MarketDB::ReadOrders(DBcore& database, uint32 regionID, uint32 typeID, DBQueryResult& rows)
 {
-    // returns a tuple (sell, buy) of PyObjectEx with data in PyPackedRows
-
-    PyTuple* tup = new PyTuple(2);
-    DBQueryResult res;
-    //query sell orders
-    if (!sDatabase.RunQuery(res,
+    // Fetch both sides in one statement so the client sees the same snapshot.
+    return database.RunQuery(rows,
         "SELECT"
-        "    price, volRemaining, typeID, orderRange AS `range`, orderID,"
-        "   volEntered, minVolume, bid, issued as issueDate, duration,"
+        "   price, volRemaining, typeID, orderRange AS `range`, orderID,"
+        "   volEntered, minVolume, bid, issued AS issueDate, duration,"
         "   stationID, regionID, solarSystemID, jumps"
-        " FROM mktOrders "
-        " WHERE regionID=%u AND typeID=%u AND bid=%u", regionID, typeID, Market::Type::Sell))
-    {
-        codelog( MARKET__DB_ERROR, "Error in query: %s", res.error.c_str() );
-        PyDecRef(tup);
-        return nullptr;
-    }
-    _log(MARKET__DB_TRACE, "GetOrders() - Fetched %u sell orders for type %u", res.GetRowCount(), typeID);
-    tup->SetItem(0, DBResultToCRowset( res ) );
+        " FROM mktOrders"
+        " WHERE regionID=%u AND typeID=%u AND bid IN (%u,%u)",
+        regionID, typeID, Market::Type::Sell, Market::Type::Buy);
+}
 
-    //query buy orders
-    if (!sDatabase.RunQuery(res,
-        "SELECT"
-        "    price, volRemaining, typeID, orderRange AS `range`, orderID,"
-        "   volEntered, minVolume, bid, issued as issueDate, duration,"
-        "   stationID, regionID, solarSystemID, jumps"
-        " FROM mktOrders "
-        " WHERE regionID=%u AND typeID=%u AND bid=%u", regionID, typeID, Market::Type::Buy))
-    {
-        codelog( MARKET__DB_ERROR, "Error in query: %s", res.error.c_str() );
-        PyDecRef( tup );
-        return nullptr;
+PyRep* MarketDB::EncodeOrders(DBQueryResult& rows)
+{
+    auto* sellHeader = new DBRowDescriptor(rows);
+    auto* buyHeader = new DBRowDescriptor(rows);
+    auto* sell = new CRowSet(&sellHeader);
+    auto* buy = new CRowSet(&buyHeader);
+    DBResultRow row;
+    while (rows.GetRow(row)) {
+        constexpr uint32 bidColumn = 7;
+        const bool isBuy = row.ColumnType(bidColumn) == DBTYPE_BOOL
+            ? row.GetBool(bidColumn) : row.GetUInt(bidColumn) == Market::Type::Buy;
+        auto* side = isBuy ? buy : sell;
+        FillPackedRow(row, side->NewRow());
     }
-    _log(MARKET__DB_TRACE, "GetOrders() - Fetched %u buy orders for type %u", res.GetRowCount(), typeID);
-    tup->SetItem(1, DBResultToCRowset( res ) );
 
-    if (is_log_enabled(MARKET__DUMP))
-        tup->Dump(MARKET__DUMP, "    ");
-    return tup;
+    auto* result = new PyTuple(2);
+    result->SetItem(0, sell);
+    result->SetItem(1, buy);
+    return result;
 }
 
 PyRep* MarketDB::GetOrdersForOwner(uint32 ownerID)

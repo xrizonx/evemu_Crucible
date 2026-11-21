@@ -242,6 +242,8 @@ bool Client::ProcessNet()
     if (state != TCPConnection::STATE_CONNECTED)
         return false;
 
+    ProcessDeferredCalls();
+
     // The main EntityList loop processes client RPCs and system movement on
     // the same thread. Draining an unlimited input queue here can starve
     // everyone else's calls and all Destiny movement ticks under load.
@@ -277,6 +279,25 @@ bool Client::ProcessNet()
     _SendQueuedUpdates();
 
     return true;
+}
+
+void Client::ProcessDeferredCalls()
+{
+    const auto now = std::chrono::steady_clock::now();
+    auto call = m_deferredCalls.begin();
+    while (call != m_deferredCalls.end()) {
+        PyResult result;
+        if (now < call->deadline && !call->poll(result)) {
+            ++call;
+            continue;
+        }
+
+        SendSessionChange();
+        if (result.ssResult == nullptr)
+            result = nullptr;
+        _SendCallReturn(call->source, call->callID, result);
+        call = m_deferredCalls.erase(call);
+    }
 }
 
 bool Client::SelectCharacter(int32 charID/*0*/)
@@ -3061,6 +3082,7 @@ bool Client::Handle_CallReq(PyPacket* packet, PyCallStream& req)
 {
     // build arguments
     PyCallArgs args(this, req.arg_tuple, req.arg_dict);
+    args.allowDeferredReply = m_deferredCalls.size() < MaxDeferredCalls;
     PyResult result;
     uint32 nodeID = 0, bindID = 0;
 
@@ -3109,6 +3131,13 @@ bool Client::Handle_CallReq(PyPacket* packet, PyCallStream& req)
         sLog.Error("Client::CallReq", "Unable to find service to handle call to: %s", packet->dest.service.c_str());
         packet->dest.Dump(CLIENT__CALL_DUMP, "    ");
         throw UserError("ServiceNotFound"); // this message is invalid (message not found)
+    }
+
+    if (args.deferredReply) {
+        m_deferredCalls.push_back({packet->dest, packet->source.callID,
+            std::chrono::steady_clock::now() + std::chrono::seconds(15),
+            std::move(args.deferredReply)});
+        return true;
     }
 
     SendSessionChange();  //send out the session change before the return.

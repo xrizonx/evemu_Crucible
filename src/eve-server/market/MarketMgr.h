@@ -13,6 +13,8 @@
 #define _EVE_SERVER_MARKET_MANAGER_H__
 
 
+#include <memory>
+
 #include "../eve-server.h"
 
 #include "EntityList.h"
@@ -20,6 +22,7 @@
 #include "cache/ObjCacheService.h"
 
 class Client;
+class MarketOrderReader;
 
 class MarketMgr
 : public Singleton< MarketMgr >
@@ -51,6 +54,7 @@ public:
     //forces a refresh of market data.
     void SendOnOwnOrderChanged(Client* pClient, uint32 orderID, uint8 action, bool isCorp = false, PyRep* order = nullptr);
 
+    PyResult GetOrders(PyCallArgs& call, uint32 typeID);
     void InvalidateOrdersCache(uint32 regionID, uint32 typeID);
 
     bool NeedsUpdate()                                  { return m_timeStamp > GetFileTimeNow()?false:true; }
@@ -84,6 +88,7 @@ protected:
     void Populate();
 
 private:
+    std::unique_ptr<MarketOrderReader> m_orderReader;
     MarketDB m_db;
     ObjCacheService* m_cache;
 

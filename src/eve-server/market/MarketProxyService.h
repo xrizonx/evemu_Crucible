@@ -59,7 +59,6 @@ protected:
 
 private:
     EVEServiceManager& m_manager;
-    ObjCacheService* m_cache;
 };
 
 #endif

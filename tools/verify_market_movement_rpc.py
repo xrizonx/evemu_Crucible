@@ -61,22 +61,33 @@ assert "DoQuery_locked(err, query, querylen, false)" in do_query
 
 market_db_h = read("src/eve-server/market/MarketDB.h")
 market_db = read("src/eve-server/market/MarketDB.cpp")
-assert "GetOrders(uint32 regionID, uint32 typeID)" in market_db_h
-assert "GetOrders( uint32 regionID, uint32 typeID )" in market_db
+assert "ReadOrders(DBcore& database, uint32 regionID, uint32 typeID" in market_db_h
+assert "AND bid IN (%u,%u)" in market_db
+assert "row.GetBool(bidColumn)" in market_db
+assert "result->SetItem(0, sell);" in market_db
+assert "result->SetItem(1, buy);" in market_db
 assert "pyrow->SetField((uint32)0, pid->Clone());" in market_db
 proxy = read("src/eve-server/market/MarketProxyService.cpp")
 orders = proxy.split("PyResult MarketProxyService::GetOrders(", 1)[1].split(
     "PyResult MarketProxyService::PlaceCharOrder(", 1
 )[0]
 assert "typeID->value() <= 0" in orders
-assert "no failed response cached." in orders
 assert "return PyStatic.NewNone();" in orders
-assert "this->m_cache->GiveCache(method_id, &result);" in orders
-assert orders.index("return PyStatic.NewNone();", orders.index("MarketDB::GetOrders(")) < orders.index(
-    "this->m_cache->GiveCache(method_id, &result);"
-)
+assert "sMktMgr.GetOrders(call, typeID->value())" in orders
 
 market_mgr = read("src/eve-server/market/MarketMgr.cpp")
+worker = market_mgr.split("    void Run()", 1)[1].split("MarketMgr::MarketMgr()", 1)[0]
+assert "DBcore connection;" in worker
+assert "MarketDB::ReadOrders(connection," in worker
+assert "MarketDB::EncodeOrders(" not in worker and "m_cache" not in worker
+assert "m_jobs.size() >= 128" in market_mgr
+assert "m_deferredCalls.size() < MaxDeferredCalls" in client
+assert "ProcessDeferredCalls();" in network
+assert "call->deadline" in network
+assert "read->rows.wait_for(std::chrono::seconds(0))" in market_mgr
+assert "read->invalidated || OrderClock::now() >= read->expires" in market_mgr
+assert "m_orderReader->Invalidate(key);" in market_mgr
+assert "mysql_server_end()" not in dbcore
 history = market_mgr.split("PyRep *MarketMgr::GetNewPriceHistory(", 1)[1].split(
     "void MarketMgr::SendOnOwnOrderChanged(", 1
 )[0]

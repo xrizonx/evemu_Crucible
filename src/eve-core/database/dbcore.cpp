@@ -60,6 +60,18 @@ pPort(3306)
     mysql = mysql_init(nullptr);
 }
 
+DBcore::~DBcore()
+{
+    if (mysql != nullptr)
+        Close();
+}
+
+DBcore& DBcore::get()
+{
+    static DBcore database;
+    return database;
+}
+
 void DBcore::Connect(uint* errnum, char* errbuf)
 {
     sLog.Cyan("          DB User", " %s", pUser.c_str());
@@ -120,7 +132,7 @@ void DBcore::Connect(uint* errnum, char* errbuf)
 
     if (pReconnect) {
         bool reconnect = true;
-        if (mysql_options(mysql, MYSQL_OPT_RECONNECT, &reconnect) == 0) // this will enable auto-reconnect...and render my Reconnect() worthless
+        if (mysql_options(mysql, MYSQL_OPT_RECONNECT, &reconnect) == 0) // this will enable auto-reconnect...and render my ReconnectLocked() worthless
             sLog.Green(" DataBase Manager", "DataBase AutoReconnect Enabled");
         else
             sLog.Error(" DataBase Manager", "DataBase AutoReconnect Option Failed");
@@ -147,15 +159,18 @@ void DBcore::Connect(uint* errnum, char* errbuf)
         sLog.Cyan(" DataBase Manager", "DataBase Character set: %s", mysql_character_set_name(mysql));
 }
 
-bool DBcore::Reconnect()
+bool DBcore::ReconnectLocked()
 {
     _log(DATABASE__MESSAGE, "DBCore attempting to recover...");
-    Close();
+    if (mysql != nullptr)
+        mysql_close(mysql);
     mysql = mysql_init(nullptr);
+    pStatus = Error;
+    if (mysql == nullptr)
+        return false;
+
     uint errnum = 0;
-    char errbuf[1024];
-    errbuf[0] = 0;
-    MutexLock lock(MDatabase);
+    char errbuf[1024]{};
     Connect(&errnum, errbuf);
 
     if (pStatus == Connected)
@@ -206,9 +221,11 @@ void DBcore::Initialize(std::string host, std::string user, std::string password
 
 void DBcore::Close() {
     pStatus = Closed;
-    mysql_close(mysql);
-    mysql_server_end();
-    mysql_thread_end();   // this is for each thread used for db connections
+    if (mysql != nullptr) {
+        mysql_close(mysql);
+        mysql = nullptr;
+    }
+    mysql_thread_end();
 }
 
 /*
@@ -354,14 +371,14 @@ bool DBcore::DoQuery_locked(DBerror &err, const char *query, int querylen, bool 
     if (mysql == nullptr) {
         pStatus = Error;
         codelog(DATABASE__ERROR, "DBCore - mysql = null");
-        if (!Reconnect())
+        if (!ReconnectLocked())
             return false;
     }
 
     if (pStatus != Connected) {
         codelog(DATABASE__ERROR, "DBCore - Status != Connected");
         _log(DATABASE__MESSAGE, "DBCore error detected.  Look for error msgs in logs prior to this point.");
-        if (!Reconnect())
+        if (!ReconnectLocked())
             return false;
     }
 
@@ -379,7 +396,7 @@ bool DBcore::DoQuery_locked(DBerror &err, const char *query, int querylen, bool 
         const bool connectionLost = (num == CR_SERVER_LOST || num == CR_SERVER_GONE_ERROR);
         if (connectionLost) {
             pStatus = Error;
-            if (retry && Reconnect())
+            if (retry && ReconnectLocked())
                 return DoQuery_locked(err, query, querylen, false);
         }
 

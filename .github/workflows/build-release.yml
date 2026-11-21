@@ -32,7 +32,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential ccache cmake ninja-build zlib1g-dev libmariadb-dev libboost-all-dev libtinyxml-dev libutfcpp-dev
+          sudo apt-get install -y build-essential ccache cmake ninja-build zlib1g-dev libmariadb-dev libboost-system-dev libtinyxml-dev libutfcpp-dev
       - name: Restore instrumented compiler cache
         uses: actions/cache/restore@v5
         with:
@@ -97,7 +97,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential ccache cmake ninja-build zlib1g-dev libmariadb-dev libboost-all-dev libtinyxml-dev libutfcpp-dev
+          sudo apt-get install -y build-essential ccache cmake ninja-build zlib1g-dev libmariadb-dev libboost-system-dev libtinyxml-dev libutfcpp-dev
       - name: Cache compiler outputs
         uses: actions/cache@v5
         with:
@@ -187,6 +187,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: evemu-crucible-linux-x86_64
+          compression-level: 0
           path: |
             evemu-crucible-linux-x86_64.tar.gz
             evemu-crucible-linux-x86_64.tar.gz.sha256
@@ -408,6 +409,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: evemu-crucible-windows-x86_64
+          compression-level: 0
           path: |
             evemu-crucible-windows-x86_64.zip
             evemu-crucible-windows-x86_64.zip.sha256
@@ -548,6 +550,28 @@ jobs:
           expect "SELECT COUNT(*) FROM (SELECT stationID,typeID,COUNT(*) AS n FROM mktOrders WHERE ownerID=4000000 AND bid=1 AND orderRange=0 AND duration=250 GROUP BY stationID,typeID HAVING n>1) AS dup" "0"
           rm -f sql/evedb.yaml
           echo "PASS: unsigned orderRange insert, 100% prices, legacy NPC migration, player preservation, rerun and force scope."
+      - name: Verify market indexes and reversible orphan cleanup
+        env:
+          MYSQL_PWD: npc_seed_ci_only
+        run: |
+          set -euo pipefail
+          mariadb --host=127.0.0.1 --user=root -e "CREATE DATABASE market_cleanup_test"
+          cleanup=sql/migrations/20261121143000-archive-orphaned-player-item-attributes.sql
+          indexes=sql/migrations/20261121143100-market-history-and-owner-indexes.sql
+          {
+            cat tools/tests/market_cleanup_schema.sql
+            sed '/^-- +migrate Down/,$d' "$cleanup"
+            sed '/^-- +migrate Down/,$d' "$cleanup"
+            sed '/^-- +migrate Down/,$d' "$indexes"
+            printf '%s\n' 'SELECT COUNT(*) FROM cleanupOrphanedPlayerItemAttributes;' 'SELECT GROUP_CONCAT(itemID ORDER BY itemID) FROM entity_attributes;' \
+              "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND index_name='idx_mkt_history_region_type_date';"
+            printf '%s\n' 'INSERT INTO entity VALUES (140000002);'
+            sed -n '/^-- +migrate Down/,$p' "$cleanup"
+            sed -n '/^-- +migrate Down/,$p' "$indexes"
+            printf '%s\n' 'SELECT GROUP_CONCAT(itemID ORDER BY itemID) FROM entity_attributes;' \
+              "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema=DATABASE() AND index_name='idx_mkt_history_region_type_date';"
+          } | mariadb --host=127.0.0.1 --user=root --database=market_cleanup_test --batch --skip-column-names > "$RUNNER_TEMP/market-cleanup.txt"
+          diff -u <(printf '%s\n' '2' '130000000,140000000,140000001,140000004,140000005,300000000' '3' '130000000,140000000,140000001,140000003,140000004,140000005,300000000' '0') "$RUNNER_TEMP/market-cleanup.txt"
       - name: Validate market RPC indexes against MariaDB
         env:
           MYSQL_PWD: npc_seed_ci_only
@@ -591,9 +615,14 @@ jobs:
           context: .
           pull: true
           push: false
+          load: true
           tags: evemu-crucible:ci
           cache-from: type=gha,scope=evemu-docker
           cache-to: type=gha,mode=max,scope=evemu-docker
+      - name: Check runtime dependencies and startup script syntax
+        run: |
+          docker compose config --quiet
+          docker run --rm --entrypoint /bin/bash evemu-crucible:ci -ec 'mariadb --version; for script in /src/utils/container-scripts/*.sh; do bash -n "$script"; done'
 
   release:
     name: Publish GitHub release

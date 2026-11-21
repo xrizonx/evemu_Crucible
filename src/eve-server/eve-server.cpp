@@ -969,6 +969,7 @@ int main( int argc, char* argv[] )
     /* close the db handler */
     sLog.Warning("   ServerShutdown", "Closing DataBase Connection." );
     sDatabase.Close();
+    mysql_library_end();
     /** @todo  the thread system is only implemented for tcp connections at this time. */
     sLog.Warning("   ServerShutdown", "Shutting down Thread Manager." );
     /* join open threads */
@@ -1079,6 +1080,7 @@ static void CleanUp() {
     /* close the db handler */
     sLog.Warning("   ServerShutdown", "Closing DataBase Connection." );
     sDatabase.Close();
+    mysql_library_end();
     /** @todo  the thread system is only implemented for tcp connections at this time. */
     sLog.Warning("   ServerShutdown", "Shutting down Thread Manager." );
     /* join open threads */

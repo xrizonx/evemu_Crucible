@@ -5,12 +5,14 @@
 #ifndef EVEMU_CALLABLE_H
 #define EVEMU_CALLABLE_H
 
+#include <functional>
 #include <map>
 #include <optional>
 
 #include "eve-server.h"
 
 class Client;
+class PyResult;
 
 enum AccessLevel {
     eAccessLevel_None = 0,
@@ -36,6 +38,11 @@ public:
     ~PyCallArgs();
 
     void Dump(LogType type) const;
+
+    // Optional completion polled by the owning client on the game thread.
+    using DeferredReply = std::function<bool(PyResult&)>;
+    bool allowDeferredReply = false;
+    DeferredReply deferredReply;
 
     Client* const client;    //we do not own this
     PyTuple* tuple;        //we own this, but it may be taken
