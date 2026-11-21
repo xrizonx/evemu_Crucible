@@ -411,5 +411,12 @@ destiny_setup = client_boot.split("void Client::SetDestiny(", 1)[1].split(
 )[0]
 assert "if (m_system == nullptr || m_ship.get() == nullptr)" in destiny_setup
 assert "if (pShipSE == nullptr || pShipSE->DestinyMgr() == nullptr" in destiny_setup
+entity_boot = source("src/eve-server/EntityList.cpp").split(
+    "SystemManager* EntityList::FindOrBootSystem(", 1
+)[1].split("void EntityList::AddStation(", 1)[0]
+assert "catch (const std::exception& e)" in entity_boot
+assert "catch (...)" in entity_boot
+assert "if (!booted)" in entity_boot
+assert "SafeDelete(pSM);" in entity_boot
 
 print("Source-level gameplay safety guards passed")
