@@ -562,9 +562,17 @@ jobs:
           [[ "$actual" == "3" ]] || { echo "Market RPC indexes missing: $actual" >&2; exit 1; }
           count="$(mariadb --host=127.0.0.1 --user=root --database=EvE --batch --skip-column-names -e \
             "SELECT COUNT(*) FROM mktOrders WHERE regionID=10000001 AND typeID=34 AND bid=1 AND volRemaining>0")"
-          # Existing player buy order + one managed NPC buy order are both
-          # supposed to survive the seed's migration.
-          [[ "$count" == "2" ]] || { echo "Seeded regional buy orders missing after index migration: $count" >&2; exit 1; }
+          # The seed preserves three matching live buy orders: a player bid,
+          # one managed station NPC bid and one legacy regional-range NPC bid.
+          [[ "$count" == "3" ]] || { echo "Market buy order count changed after index migration: $count" >&2; exit 1; }
+          managed="$(mariadb --host=127.0.0.1 --user=root --database=EvE --batch --skip-column-names -e \
+            "SELECT COUNT(*) FROM mktOrders WHERE regionID=10000001 AND typeID=34 AND bid=1 AND ownerID=4000000 AND orderRange=0")"
+          legacy="$(mariadb --host=127.0.0.1 --user=root --database=EvE --batch --skip-column-names -e \
+            "SELECT COUNT(*) FROM mktOrders WHERE regionID=10000001 AND typeID=34 AND bid=1 AND ownerID=4000000 AND orderRange=32767")"
+          player="$(mariadb --host=127.0.0.1 --user=root --database=EvE --batch --skip-column-names -e \
+            "SELECT COUNT(*) FROM mktOrders WHERE regionID=10000001 AND typeID=34 AND bid=1 AND ownerID=90000000")"
+          [[ "$managed" == "1" && "$legacy" == "1" && "$player" == "1" ]] ||
+            { echo "Market index migration failed to preserve all order owners and scopes" >&2; exit 1; }
           # Exercise the best-ask query's composite index predicates.
           mariadb --host=127.0.0.1 --user=root --database=EvE --batch --skip-column-names -e \
             "EXPLAIN SELECT typeID, MIN(price) FROM mktOrders WHERE regionID=10000001 AND bid=0 GROUP BY typeID" > "$RUNNER_TEMP/market-explain.txt"
