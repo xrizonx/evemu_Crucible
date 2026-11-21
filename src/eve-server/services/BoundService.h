@@ -143,8 +143,17 @@ public:
 
             PyResult result = bound->Dispatch(boundcall.method_name, subArgs);
 
-            // set the tuple data
-            rsp->SetItem(1, result.ssResult);
+            // PyTuple::SetItem takes ownership of the supplied reference.
+            // PyResult still owns ssResult and will DecRef it on scope exit.
+            // Retain a separate reference for the tuple to prevent a
+            // dangling RPC response when the temporary result is destroyed.
+            PyRep* response = result.ssResult;
+            if (response != nullptr) {
+                PyIncRef(response);
+            } else {
+                response = PyStatic.NewNone();
+            }
+            rsp->SetItem(1, response);
             // TODO: merge the dicts to return the full response data?
             // Py types are lacking lots of helper methods that could be useful
         }
