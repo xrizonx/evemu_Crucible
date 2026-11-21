@@ -2610,6 +2610,7 @@ void Client::_SendQueuedUpdates() {
             if (is_log_enabled(CLIENT__QUEUE_DUMP))
                 t->Dump(CLIENT__QUEUE_DUMP, "");
             SendNotification("DoDestinyUpdate", "clientID", &t);
+            PyDecRef(t);
         } else {
             DoDestinyUpdateMain dum;
                 dum.updates = new PyList(*m_destinyUpdateQueue);
@@ -2619,6 +2620,7 @@ void Client::_SendQueuedUpdates() {
             if (is_log_enabled(CLIENT__QUEUE_DUMP))
                 t->Dump(CLIENT__QUEUE_DUMP, "");
             SendNotification("DoDestinyUpdate", "clientID", &t);
+            PyDecRef(t);
         }
     } else if (!m_destinyEventQueue->empty()) {
         Notify_OnMultiEvent nom;
@@ -2627,6 +2629,7 @@ void Client::_SendQueuedUpdates() {
         if (is_log_enabled(CLIENT__QUEUE_DUMP))
             t->Dump(CLIENT__QUEUE_DUMP, "");
         SendNotification("OnMultiEvent", "charid", &t);
+        PyDecRef(t);
     } //else nothing to be sent ...
 
     // clear the queues now, after the packets have been sent
