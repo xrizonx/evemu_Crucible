@@ -152,16 +152,23 @@ PyResult InvBrokerBound::GetInventoryFromId(PyCallArgs &call, PyRep* inventoryID
         }
     }
 
-    sItemFactory.SetUsingClient( call.client );
     InventoryItemRef iRef(nullptr);
+    // Preserve factory context even if loading the new character's
+    // inventory throws during session-change priming.
+    struct ScopedFactoryClient {
+        explicit ScopedFactoryClient(Client* client) { sItemFactory.SetUsingClient(client); }
+        ~ScopedFactoryClient() { sItemFactory.UnsetUsingClient(); }
+    };
     // if item requested is office folder, we have to do shit a lil different, as it sends officeFolderID, instead of itemID
-    if ((m_groupID == EVEDB::invGroups::Station) and (IsOfficeFolder(requestedID))) {
-        uint32 officeID = stDataMgr.GetOfficeIDForCorp(m_locationID, call.client->GetCorporationID());
-        iRef = sItemFactory.GetItemRefFromID( officeID );
-    } else {
-        iRef = sItemFactory.GetItemRefFromID(requestedID);
+    {
+        ScopedFactoryClient factoryClient(call.client);
+        if ((m_groupID == EVEDB::invGroups::Station) and (IsOfficeFolder(requestedID))) {
+            uint32 officeID = stDataMgr.GetOfficeIDForCorp(m_locationID, call.client->GetCorporationID());
+            iRef = sItemFactory.GetItemRefFromID(officeID);
+        } else {
+            iRef = sItemFactory.GetItemRefFromID(requestedID);
+        }
     }
-    sItemFactory.UnsetUsingClient();
     if (iRef.get() == nullptr) {
         _log(INV__ERROR, "GetInventoryFromId() - Unable to get inventoryItem for itemID %u", requestedID);
         throw CustomError("Requested inventory item could not be loaded.");
