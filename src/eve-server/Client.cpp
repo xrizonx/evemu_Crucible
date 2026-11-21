@@ -374,6 +374,17 @@ bool Client::SelectCharacter(int32 charID/*0*/)
         m_loginWarpRandomPoint.MakeRandomPointOnSphere(0.5*ONE_AU_IN_METERS);
 
         MoveToLocation(m_locationID, m_loginWarpRandomPoint);
+        // A failed system/ship initialization must terminate this login
+        // cleanly instead of dereferencing a missing ShipSE/DestinyMgr.
+        if (m_system == nullptr || pShipSE == nullptr || pShipSE->DestinyMgr() == nullptr) {
+            sLog.Error("Client::SelectCharacter",
+                       "Ship entity not initialized after in-space login for character %u in system %u.",
+                       charID, m_systemData.systemID);
+            sItemFactory.UnsetUsingClient();
+            SendErrorMsg("Could not enter the solar system. Check the server system-boot log.");
+            CloseClientConnection();
+            return false;
+        }
 
         // Cloak the player and uncloak them as soon as they start the login
         // warp.
@@ -917,10 +928,22 @@ void Client::SetDestiny(const GPoint& pt, bool update/*false*/) {
     m_bubbleWait = IsGateJump();   // wait for the destination snapshot
     m_setStateSent = false;
 
+    if (m_system == nullptr || m_ship.get() == nullptr) {
+        sLog.Error("Client::SetDestiny", "Missing system/ship during location transition.");
+        return;
+    }
+
     bool updateShip = false;
     if (pShipSE == nullptr) {
         updateShip = true;
         CreateShipSE();
+    }
+    if (pShipSE == nullptr || pShipSE->DestinyMgr() == nullptr
+        || pShipSE->SystemMgr() == nullptr) {
+        sLog.Error("Client::SetDestiny",
+                   "Cannot initialize ShipSE for character %u in system %u.",
+                   GetCharacterID(), m_system->GetID());
+        return;
     }
 
     if (pShipSE->SystemMgr()->GetID() != m_system->GetID())
