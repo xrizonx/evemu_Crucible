@@ -278,4 +278,22 @@ marshal_test = source("src/eve-test/marshal/EVEMarshalTest.cpp")
 assert 'decoded->header()->ColumnCount() != 6' in marshal_test
 assert 'decoded->GetField(5)->AsInt()->value() != 254' in marshal_test
 
+# The Crucible cargo-space localization can expose raw {[numeric]...}
+# tokens instead of resolving volume/available, even when capacity checks
+# correctly reject the move. Keep one-unit and stack rejection messages
+# fully numeric without relaxing the actual cargo-space validation.
+inventory_cpp = source("src/eve-server/inventory/Inventory.cpp")
+validate_add = inventory_cpp.split("bool Inventory::ValidateAddItem(", 1)[1].split(
+    "// multimerge", 1
+)[0]
+assert "float capacity = GetRemainingCapacity(flag);" in validate_add
+assert "float totalVolume = iRef->quantity() * volume;" in validate_add
+assert "if (capacity < volume)" in validate_add
+assert "if (totalVolume > capacity)" in validate_add
+assert validate_add.count('throw CustomError("Not enough cargo space:') == 2
+assert "NotEnoughCargoSpace\")" not in validate_add
+assert "std::map<std::string, PyRep *> args;" not in validate_add
+assert "%.4f m3 required for one unit; %.4f m3 available." in validate_add
+assert "%.4f m3 required for %d unit(s); %.4f m3 available." in validate_add
+
 print("Source-level gameplay safety guards passed")
