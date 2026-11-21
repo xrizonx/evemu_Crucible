@@ -139,6 +139,15 @@ public:
 
             _log(SERVICE__MESSAGE, "%s Service: MachoBindObject also contains call to %s", this->GetName().c_str(), boundcall.method_name.c_str());
 
+            // PyCallArgs adopts and DecRefs its tuple on destruction.
+            // The decoder's boundcall.arguments is still owned by the
+            // decoded bind-call envelope, so give the nested dispatcher its
+            // own reference. Without this, both cleanup paths can release
+            // the same tuple and corrupt the inventory RPC response.
+            if (boundcall.arguments == nullptr) {
+                throw CustomError("MachoBindObject: missing nested call arguments.");
+            }
+            PyIncRef(boundcall.arguments);
             PyCallArgs subArgs(args.client, boundcall.arguments, boundcall.dict_arguments);
 
             PyResult result = bound->Dispatch(boundcall.method_name, subArgs);
