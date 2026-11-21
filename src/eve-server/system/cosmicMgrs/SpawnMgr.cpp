@@ -1248,7 +1248,11 @@ bool SpawnMgr::PrepSpawn(SystemBubble* pBubble, uint8 sClass/*Spawn::Class::None
         factionID = factionOverride;
     } else if (sConfig.npc.RatFaction) {        // is RatFaction set in config?
         factionID = sConfig.npc.RatFaction;
-    } else if (MakeRandomFloat() > 0.05) {      // 5% chance for ANY ordinary spawn to be rogue drone.
+    } else if (pBubble->IsBelt() || MakeRandomFloat() > 0.05) {
+        // Belt rats follow the regional pirate faction; a random rogue
+        // drone override could select incompatible groups and incorrect
+        // hull classes in otherwise ordinary high-/low-sec systems.
+        // Keep non-belt legacy random-faction behavior unchanged.
         factionID = sDataMgr.GetRegionRatFaction(m_system->GetRegionID());
         if (!factionID) {
             _log(SPAWN__WARNING, "No NPC faction configured for region %u; using rogue drones.", m_system->GetRegionID());
