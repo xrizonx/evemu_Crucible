@@ -324,9 +324,7 @@ respawn_function = belt_spawns.split("bool SpawnMgr::ReSpawn(", 1)[1].split(
 assert "spawnEntry.itemID = iRef->itemID();" in respawn_function
 assert "return true;" in respawn_function
 assert "itr->second.stamp = sEntityList.GetStamp() + sConfig.npc.RespawnTimer;" in belt_spawns
-assert "itr->second.enabled = false;" not in belt_spawns.split(
-    "if (m_ratGroupTimer.Enabled())", 1
-)[1].split("if (sConfig.debug.UseProfiling)", 1)[0]
+assert "if (!ReSpawn(spawnBubble, itr->second)) {" in belt_spawns
 assert "MakeRandomFloat() < 0.08" not in belt_spawns
 
 belt_policy = source("src/eve-common/EVE_BeltRatSpawnHelpers.h")
