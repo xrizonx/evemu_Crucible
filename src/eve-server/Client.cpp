@@ -242,11 +242,18 @@ bool Client::ProcessNet()
     if (state != TCPConnection::STATE_CONNECTED)
         return false;
 
-    // Each PopPacket() transfers a new packet to the caller. DispatchPacket()
-    // only borrows it; do not discard the pointer before releasing it. RAII
-    // also covers exceptions from dispatch or error reporting.
-    while (PyPacket* p = PopPacket()) {
-        std::unique_ptr<PyPacket> packet(p);
+    // The main EntityList loop processes client RPCs and system movement on
+    // the same thread. Draining an unlimited input queue here can starve
+    // everyone else's calls and all Destiny movement ticks under load.
+    // Keep unprocessed packets queued for the next server loop iteration.
+    static constexpr size_t kMaxPacketsPerTick = 64;
+    for (size_t handled = 0; handled < kMaxPacketsPerTick; ++handled) {
+        // PopPacket transfers ownership; DispatchPacket only borrows it.
+        std::unique_ptr<PyPacket> packet(PopPacket());
+        if (!packet)
+            break;
+        PyPacket* p = packet.get();
+        const double dispatchStart = GetTimeMSeconds();
         try {
             if (!DispatchPacket(p)) {
                 const char* name = (m_char.get() != nullptr) ? m_char->name() : "(unselected)";
@@ -254,12 +261,19 @@ bool Client::ProcessNet()
                            name, MACHONETMSG_TYPE_NAMES[p->type], (int)p->type);
             }
         }
-        catch(PyException& e) {
+        catch (PyException& e) {
             _SendException(p->dest, p->source.callID, p->type, WRAPPEDEXCEPTION, &e.ssException);
+        }
+        const double elapsedMs = GetTimeMSeconds() - dispatchStart;
+        if (elapsedMs > 1000.0) {
+            sLog.Warning("Client::ProcessNet",
+                         "Slow packet dispatch for %s: %.1fms, message type %i.",
+                         (m_char.get() != nullptr) ? m_char->name() : "(unselected)",
+                         elapsedMs, static_cast<int>(p->type));
         }
     }
 
-    // send queue
+    // Ship movement updates must still be flushed under an RPC backlog.
     _SendQueuedUpdates();
 
     return true;
