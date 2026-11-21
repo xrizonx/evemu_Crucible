@@ -1472,8 +1472,9 @@ bool SpawnMgr::PrepSpawn(SystemBubble* pBubble, uint8 sClass/*Spawn::Class::None
     if (m_toSpawn.size() > 0) {
         if (is_log_enabled(SPAWN__MESSAGE))
             _log(SPAWN__MESSAGE, "SpawnMgr::PrepSpawn() - toSpawn size is %u.", m_toSpawn.size());    //variable
-        MakeSpawn(pBubble, factionID, sClass, level, anomaly);
-        return true;
+        // Do not mark a belt as occupied when all candidate NPCs fail to
+        // load; the normal timer should retry later.
+        return MakeSpawn(pBubble, factionID, sClass, level, anomaly);
     } else {
         _log(SPAWN__ERROR, "SpawnMgr::PrepSpawn() - Nothing to spawn.");
     }
@@ -1499,8 +1500,18 @@ struct SpawnEntry {     // notes for me while creating/writing/testing
     uint16 stamp;       // entry stamp time to respawn (process conditional to allow for common timer and multiple respawn times)
 };
 */
-void SpawnMgr::MakeSpawn(SystemBubble* pBubble, uint32 factionID, uint8 sClass, uint8 level, bool anomaly/*false*/)
+bool SpawnMgr::MakeSpawn(SystemBubble* pBubble, uint32 factionID, uint8 sClass, uint8 level, bool anomaly/*false*/)
 {
+    if (pBubble == nullptr)
+        return false;
+    if (pBubble->IsBelt() && !anomaly
+        && (m_spawns.count(pBubble->GetID()) != 0 || pBubble->CountNPCs() != 0)) {
+        // The periodic bubble scan and overlapping spawn timers must not
+        // create a second patrol on top of one that is still alive.
+        m_toSpawn.clear();
+        return false;
+    }
+    uint32 spawnedCount = 0;
     _log(SPAWN__MESSAGE, "SpawnMgr::MakeSpawn() - Creating spawn class %s for %s in bubbleID %u (anomaly = %s).", \
             GetSpawnClassName(sClass).c_str(), sDataMgr.GetFactionName(factionID).c_str(), pBubble->GetID(), anomaly?"true":"false");
 
@@ -1591,20 +1602,26 @@ void SpawnMgr::MakeSpawn(SystemBubble* pBubble, uint32 factionID, uint8 sClass, 
                 se.stamp = sEntityList.GetStamp(); // set time of this spawn for ??
             }
             m_spawns.emplace(pBubble->GetID(), se);
+            ++spawnedCount;
             _log(SPAWN__TRACE, "MakeSpawn() adding SpawnEntry with ID %u to m_spawns. Class: %s, Group:%s, Level: %u.", \
                         se.spawnID, GetSpawnClassName(se.spawnClass).c_str(), GetSpawnGroupName(se.spawnGroup).c_str(), level);
         }
     }
 
-    ++m_spawnID;
-    m_bubbles.push_back(pBubble);
+    if (spawnedCount != 0) {
+        ++m_spawnID;
+        if (std::find(m_bubbles.begin(), m_bubbles.end(), pBubble) == m_bubbles.end())
+            m_bubbles.push_back(pBubble);
+    }
 
-    //cleanup
+    // cleanup: an unsuccessful spawn must leave the belt available for retry.
     m_toSpawn.clear();
     m_ratSpawns.clear();
 
-    _log(SPAWN__TRACE, "MakeSpawn() completed in %s(%u) with %u bubbles in m_bubbles and %u entities in m_spawns.", \
-                m_system->GetName(), m_system->GetID(), m_bubbles.size(), m_spawns.size());
+    _log(SPAWN__TRACE, "MakeSpawn() completed in %s(%u): %u new NPCs, %u bubbles tracked, %u spawn entries.", \
+                m_system->GetName(), m_system->GetID(), spawnedCount,
+                static_cast<uint32>(m_bubbles.size()), static_cast<uint32>(m_spawns.size()));
+    return spawnedCount != 0;
 }
 
 void SpawnMgr::ReSpawn(SystemBubble* pBubble, SpawnEntry& spawnEntry)
