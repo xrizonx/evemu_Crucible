@@ -24,11 +24,91 @@
 */
 
 #include "eve-test.h"
+#include "python/PyPacket.h"
 
 #include <cstring>
 
+namespace {
+bool CallPacketRoundTrip(bool channel, bool named, bool wrapped, bool malformed)
+{
+    PyCallStream outbound;
+    outbound.method = "GetCharacterSelectionInfo";
+    outbound.arg_tuple = new_tuple(new PyInt(42));
+    if (named) {
+        outbound.arg_dict = new PyDict();
+        outbound.arg_dict->SetItemString("test", new PyInt(7));
+    }
+
+    PyPacket packet;
+    packet.type_string = "macho.CallReq";
+    packet.type = CALL_REQ;
+    packet.source.type = PyAddress::Client;
+    packet.source.callID = 19;
+    packet.dest.type = PyAddress::Node;
+    packet.dest.service = "charUnboundMgr";
+    packet.named_payload = new PyDict();
+    packet.named_payload->SetItemString("trace", new PyInt(23));
+    packet.contextKey = new PyString("test context");
+    PyTuple* envelope = outbound.Encode();
+    if (malformed) {
+        envelope->SetItem(0, new_tuple(PyStatic.NewZero(), new PySubStream(new PyTuple(0))));
+    }
+    if (channel) {
+        packet.payload = envelope;
+    } else {
+        PyRep* call = envelope->GetItem(0);
+        PyIncRef(call);
+        packet.payload = new_tuple(call);
+        PyDecRef(envelope);
+    }
+
+    PyRep* encoded = packet.Encode();
+    // Exercise wrapper ownership directly because some wrappers are decode-only.
+    if (wrapped)
+        encoded = new PyChecksumedStream(new PySubStream(encoded), 0);
+    else {
+        Buffer wire;
+        const bool marshaled = MarshalDeflate(encoded, wire);
+        PyDecRef(encoded);
+        if (!marshaled)
+            return false;
+        encoded = InflateUnmarshal(wire);
+    }
+
+    PyCallStream inbound;
+    {
+        PyPacket decoded;
+        if (!decoded.Decode(&encoded) || encoded != nullptr ||
+            decoded.source.callID != 19 || decoded.dest.service != "charUnboundMgr" ||
+            decoded.named_payload == nullptr || decoded.contextKey == nullptr ||
+            PyRep::IntegerValue(decoded.named_payload->GetItemString("trace")) != 23 ||
+            PyRep::StringContent(decoded.contextKey) != "test context")
+            return false;
+        if (inbound.Decode(decoded.type_string, decoded.payload) == malformed || decoded.payload != nullptr)
+            return false;
+    }
+
+    if (malformed)
+        return inbound.arg_tuple == nullptr && inbound.arg_dict == nullptr;
+    return inbound.method == outbound.method && inbound.arg_tuple != nullptr &&
+           inbound.arg_tuple->size() == 1 &&
+           PyRep::IntegerValue(inbound.arg_tuple->GetItem(0)) == 42 &&
+           (named ? inbound.arg_dict != nullptr &&
+                        PyRep::IntegerValue(inbound.arg_dict->GetItemString("test")) == 7
+                  : inbound.arg_dict == nullptr);
+}
+}
+
 int marshal_EVEMarshalTest( int argc, char* argv[] )
 {
+    if (!CallPacketRoundTrip(false, false, false, false) ||
+        !CallPacketRoundTrip(true, true, false, false) ||
+        !CallPacketRoundTrip(true, true, true, false) ||
+        !CallPacketRoundTrip(false, false, false, true)) {
+        ::puts("Call packet ownership or envelope regression.");
+        return EXIT_FAILURE;
+    }
+
     // The marshal wire stream has fields immediately following byte markers.
     // A 32-bit append therefore often lands at a non-aligned byte address.
     // Check that Buffer preserves the exact native representation without

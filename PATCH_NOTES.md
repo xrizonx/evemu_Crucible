@@ -1,5 +1,9 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 21 November 2026 — Login RPC crash
+
+- Incoming login RPCs retain their payload and arguments until dispatch completes. The decoder accepts both call envelopes and releases malformed packets safely. Outgoing call replies and error packets also keep their contents alive through serialization. The marshaling regression covers both envelope sizes, omitted and present named arguments, wrapped packets and malformed payloads.
+
 ## 21 November 2026 — Name lookup and worker validation follow-up
 
 - Mixed location lookups now return static names, inventory item names and persisted asteroid names together. An empty or unresolved persisted ore name falls back to the ore type name. The Crucible directional scanner still formats its own label, so affected clients need the scanner source fix. [Scanner and market names](docs/CRUCIBLE_SCANNER_AND_MARKET_NAMES.md)

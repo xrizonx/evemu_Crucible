@@ -2949,7 +2949,9 @@ void Client::_SendCallReturn(const PyAddress& source, int64 callID, PyResult &rs
     packet->userid = GetUserID();
 
     packet->payload = new PyTuple(1);
+    PyIncRef(rsp.ssResult);
     packet->payload->SetItem(0, new PySubStream(rsp.ssResult));
+    PySafeIncRef(rsp.ssNamedResult);
     packet->named_payload = rsp.ssNamedResult;
 
     if (is_log_enabled(COLLECT__PACKET_DUMP)) {
@@ -2980,7 +2982,7 @@ void Client::_SendException(const PyAddress& source, int64 callID, MACHONETMSG_T
         e.MsgType = msgType;
         e.ErrorCode = errCode;
         e.payload = *payload;
-    payload = nullptr;
+    *payload = nullptr;
 
     packet->payload = e.Encode();
     QueuePacket(packet);
@@ -3082,6 +3084,7 @@ bool Client::Handle_CallReq(PyPacket* packet, PyCallStream& req)
 {
     // build arguments
     PyCallArgs args(this, req.arg_tuple, req.arg_dict);
+    req.arg_tuple = nullptr;
     args.allowDeferredReply = m_deferredCalls.size() < MaxDeferredCalls;
     PyResult result;
     uint32 nodeID = 0, bindID = 0;

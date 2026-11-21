@@ -25,6 +25,8 @@
 
 #include "eve-common.h"
 
+#include <memory>
+
 #include "marshal/EVEMarshal.h"
 #include "marshal/EVEUnmarshal.h"
 #include "network/EVESession.h"
@@ -67,7 +69,8 @@ void EVEClientSession::QueuePacket(PyPacket* packet) {
     if (packet == nullptr)
         return;
 
-    PyRep* res(packet->Encode());
+    std::unique_ptr<PyPacket> ownedPacket(packet);
+    PyRep* res(ownedPacket->Encode());
 
     if (res == nullptr) {
         sLog.Error("QueuePacket", "%s: Failed to encode a packet.", GetAddress().c_str());

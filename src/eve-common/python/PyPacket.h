@@ -105,7 +105,7 @@ public:
 
     void Dump(LogType type, PyVisitor& dumper);
     bool Decode(PyRep **packet);    //consumes packet
-    PyRep *Encode();
+    PyRep *Encode();                 // returns an independent reference to each packet field
     PyPacket *Clone() const;
 
     //the "type" of object this represents
