@@ -24,6 +24,7 @@
 */
 
 #include "eve-server.h"
+#include <exception>
 
 #include "Client.h"
 #include "EVEServerConfig.h"
@@ -145,25 +146,58 @@ bool SystemManager::BootSystem() {
         return false;
     }
 
+    sLog.Blue("SystemBoot", "System %s(%u): cosmic managers ready; loading system dynamics.",
+              m_data.name.c_str(), m_data.systemID);
     if (!LoadSystemDynamics()) {
         _log(SERVICE__ERROR, "Unable to load System Dynamics during boot of system %u.", m_data.systemID);
         return false;
     }
 
+    sLog.Blue("SystemBoot", "System %s(%u): loading player dynamics.",
+              m_data.name.c_str(), m_data.systemID);
     if (!LoadPlayerDynamics()) {
-        _log(SERVICE__ERROR, "Unable to load System Dynamics during boot of system %u.", m_data.systemID);
+        _log(SERVICE__ERROR, "Unable to load Player Dynamics during boot of system %u.", m_data.systemID);
         return false;
     }
+    sLog.Blue("SystemBoot", "System %s(%u): dynamics ready; initializing structures.",
+              m_data.name.c_str(), m_data.systemID);
 
-    // check for operational static entities which need to be initialized (such as sovereignty structures)
-    for (auto cur: m_opStaticEntities)
-        if (cur.second ->IsOperSE())
-            cur.second->GetPOSSE()->Init();
+    // Saved POS/sovereignty state can contain an invalid pointer or a
+    // missing POS interface. A bad item should be logged and skipped, not
+    // terminate a player's first login while booting the entire system.
+    for (const auto& cur : m_opStaticEntities) {
+        if (cur.second == nullptr) {
+            sLog.Warning("SystemBoot", "System %u: operational entity %u is null.",
+                         m_data.systemID, cur.first);
+            continue;
+        }
+        if (cur.second->IsOperSE()) {
+            auto* pos = cur.second->GetPOSSE();
+            if (pos != nullptr)
+                pos->Init();
+            else
+                sLog.Warning("SystemBoot", "System %u: operational entity %u lacks a POS interface.",
+                             m_data.systemID, cur.first);
+        }
+    }
 
-    // system is loaded.  check for items that need initialization
-    for (auto cur : m_ticEntities)
-        if (cur.second->IsPOSSE())
-            cur.second->GetPOSSE()->Init();
+    for (const auto& cur : m_ticEntities) {
+        if (cur.second == nullptr) {
+            sLog.Warning("SystemBoot", "System %u: ticking entity %u is null.",
+                         m_data.systemID, cur.first);
+            continue;
+        }
+        if (cur.second->IsPOSSE()) {
+            auto* pos = cur.second->GetPOSSE();
+            if (pos != nullptr)
+                pos->Init();
+            else
+                sLog.Warning("SystemBoot", "System %u: ticking POS %u lacks a POS interface.",
+                             m_data.systemID, cur.first);
+        }
+    }
+    sLog.Blue("SystemBoot", "System %s(%u): structure initialization complete.",
+              m_data.name.c_str(), m_data.systemID);
 
     // check planets for colony/customs office
     /* does not work as intended
@@ -176,15 +210,23 @@ bool SystemManager::BootSystem() {
     if (sConfig.server.BountyPayoutDelayed)
         m_bountyTimer.Start(sConfig.server.BountyPayoutTimer * 60 * 1000);
 
-    //create our chat channels
+    // The last reported crash occurred just after the preceding structure
+    // checkpoint. Report the remaining boot steps separately so the next
+    // reference-count failure is attributable to a precise subsystem.
+    sLog.Blue("SystemBoot", "System %s(%u): creating LSC channels.",
+              m_data.name.c_str(), m_data.systemID);
     this->m_lsc->CreateSystemChannel(m_data.regionID);
     this->m_lsc->CreateSystemChannel(m_data.constellationID);
     this->m_lsc->CreateSystemChannel(m_data.systemID);
+    sLog.Blue("SystemBoot", "System %s(%u): LSC channels ready.",
+              m_data.name.c_str(), m_data.systemID);
 
     // inform MarketBot of loaded system and stations in this system.
     //sMktBotMgr.AddSystem();
 
     // set system active for system status page
+    sLog.Blue("SystemBoot", "System %s(%u): updating map activity.",
+              m_data.name.c_str(), m_data.systemID);
     MapDB::SetSystemActive(m_data.systemID, true);
 
     // load dynamic map data
@@ -192,6 +234,8 @@ bool SystemManager::BootSystem() {
 
     //start minute timer
     m_minutetimer.Start(60000);
+    sLog.Blue("SystemBoot", "System %s(%u): startup complete.",
+              m_data.name.c_str(), m_data.systemID);
 
     return (m_loaded = true);
 }
@@ -494,8 +538,23 @@ bool SystemManager::LoadSystemDynamics() {
     }
 
     SystemEntity* pSE(nullptr);
-    for (auto cur : entities) {
-        pSE = DynamicEntityFactory::BuildEntity(*this, cur);
+    for (const auto& cur : entities) {
+        _log(ITEM__TRACE, "System %u: loading dynamic item %u (category %u, group %u, type %u).",
+             m_data.systemID, cur.itemID, cur.categoryID, cur.groupID, cur.typeID);
+        pSE = nullptr;
+        try {
+            pSE = DynamicEntityFactory::BuildEntity(*this, cur);
+        } catch (const std::exception& e) {
+            sLog.Error("SystemBoot",
+                       "System %u: dynamic item %u (type %u, group %u) threw during restoration: %s",
+                       m_data.systemID, cur.itemID, cur.typeID, cur.groupID, e.what());
+            continue;
+        } catch (...) {
+            sLog.Error("SystemBoot",
+                       "System %u: dynamic item %u (type %u, group %u) threw an unknown exception.",
+                       m_data.systemID, cur.itemID, cur.typeID, cur.groupID);
+            continue;
+        }
         if (pSE == nullptr) {
             sLog.Error( "SystemManager::LoadSystemDynamics()", "Failed to create entity for item %u (grp: %u, type %u)",
                                 cur.itemID, cur.groupID, cur.typeID);
@@ -527,8 +586,23 @@ bool SystemManager::LoadPlayerDynamics() {
     }
 
     SystemEntity* pSE(nullptr);
-    for (auto cur : entities) {
-        pSE = DynamicEntityFactory::BuildEntity(*this, cur);
+    for (const auto& cur : entities) {
+        _log(ITEM__TRACE, "System %u: loading player dynamic item %u (category %u, group %u, type %u).",
+             m_data.systemID, cur.itemID, cur.categoryID, cur.groupID, cur.typeID);
+        pSE = nullptr;
+        try {
+            pSE = DynamicEntityFactory::BuildEntity(*this, cur);
+        } catch (const std::exception& e) {
+            sLog.Error("SystemBoot",
+                       "System %u: dynamic item %u (type %u, group %u) threw during restoration: %s",
+                       m_data.systemID, cur.itemID, cur.typeID, cur.groupID, e.what());
+            continue;
+        } catch (...) {
+            sLog.Error("SystemBoot",
+                       "System %u: dynamic item %u (type %u, group %u) threw an unknown exception.",
+                       m_data.systemID, cur.itemID, cur.typeID, cur.groupID);
+            continue;
+        }
         if (pSE == nullptr) {
             sLog.Error( "SystemManager::LoadPlayerDynamics()", "Failed to create entity for item %u (grp: %u, type %u)", cur.itemID, cur.groupID, cur.typeID);
             continue;
@@ -737,8 +811,21 @@ SystemEntity* DynamicEntityFactory::BuildEntity(SystemManager& sysMgr, const DBS
                     if (wreck.get() == nullptr)
                         return nullptr;
                     /** @todo make error msg here */
+                    // Damaged persistent wreck rows may not have a loadable
+                    // inventory. Do not dereference a null inventory during
+                    // first-player login when the system boots.
+                    Inventory* wreckInventory = wreck->GetMyInventory();
+                    if (wreckInventory == nullptr) {
+                        sLog.Error("DynamicEntityFactory::BuildEntity",
+                                   "Skipping wreck %u in system %u: inventory unavailable.",
+                                   entity.itemID, sysMgr.GetID());
+                        return nullptr;
+                    }
                     WreckSE* wSE = new WreckSE(wreck, sysMgr.GetServiceMgr(), &sysMgr, data);
-                    wreck->GetMyInventory()->LoadContents();
+                    if (!wreckInventory->LoadContents()) {
+                        sLog.Warning("DynamicEntityFactory::BuildEntity",
+                                     "Wreck %u inventory contents failed to load.", entity.itemID);
+                    }
                     wreck->SetMySE(wSE);
                     _log(ITEM__TRACE, "DynamicEntityFactory::BuildEntity() making WreckSE for %s (%u)", entity.itemName.c_str(), entity.itemID);
                     return wSE;
@@ -752,8 +839,18 @@ SystemEntity* DynamicEntityFactory::BuildEntity(SystemManager& sysMgr, const DBS
                     if (contRef.get() == nullptr)
                         return nullptr;
                     /** @todo make error msg here */
+                    Inventory* containerInventory = contRef->GetMyInventory();
+                    if (containerInventory == nullptr) {
+                        sLog.Error("DynamicEntityFactory::BuildEntity",
+                                   "Skipping cargo container %u in system %u: inventory unavailable.",
+                                   entity.itemID, sysMgr.GetID());
+                        return nullptr;
+                    }
                     ContainerSE* cSE = new ContainerSE(contRef, sysMgr.GetServiceMgr(), &sysMgr, data);
-                    contRef->GetMyInventory()->LoadContents();
+                    if (!containerInventory->LoadContents()) {
+                        sLog.Warning("DynamicEntityFactory::BuildEntity",
+                                     "Container %u inventory contents failed to load.", entity.itemID);
+                    }
                     contRef->SetMySE(cSE);
                     _log(ITEM__TRACE, "DynamicEntityFactory::BuildEntity() making ContainerSE for %s (%u)", entity.itemName.c_str(), entity.itemID);
                     return cSE;
@@ -836,8 +933,18 @@ SystemEntity* DynamicEntityFactory::BuildEntity(SystemManager& sysMgr, const DBS
                 if (contRef.get() == nullptr)
                     return nullptr;
                 /** @todo make error msg here */
+                Inventory* spawnInventory = contRef->GetMyInventory();
+                if (spawnInventory == nullptr) {
+                    sLog.Error("DynamicEntityFactory::BuildEntity",
+                               "Skipping spawn container %u in system %u: inventory unavailable.",
+                               entity.itemID, sysMgr.GetID());
+                    return nullptr;
+                }
                 ContainerSE* cSE = new ContainerSE(contRef, sysMgr.GetServiceMgr(), &sysMgr, data);
-                contRef->GetMyInventory()->LoadContents();
+                if (!spawnInventory->LoadContents()) {
+                    sLog.Warning("DynamicEntityFactory::BuildEntity",
+                                 "Spawn container %u inventory contents failed to load.", entity.itemID);
+                }
                 contRef->SetMySE(cSE);
                 _log(ITEM__TRACE, "DynamicEntityFactory::BuildEntity() making ContainerSE for %s (%u)", entity.itemName.c_str(), entity.itemID);
                 return cSE;
@@ -890,7 +997,16 @@ SystemEntity* DynamicEntityFactory::BuildEntity(SystemManager& sysMgr, const DBS
                     return nullptr;
                 /** @todo make error msg here */
                 NPC* npcSE = new NPC(npcRef, sysMgr.GetServiceMgr(), &sysMgr, data);
-                npcSE->Load();
+                // Failed NPC initialization is not a valid world entity. The
+                // old factory ignored Load(), so the system loader could
+                // register an uninitialized AI/Destiny object during login.
+                if (npcSE == nullptr || !npcSE->Load()) {
+                    sLog.Error("DynamicEntityFactory::BuildEntity",
+                               "Skipping NPC item %u (type %u, group %u) in system %u: NPC::Load failed.",
+                               entity.itemID, entity.typeID, entity.groupID, sysMgr.GetID());
+                    SafeDelete(npcSE);
+                    return nullptr;
+                }
                 sEntityList.AddNPC();
                 _log(ITEM__TRACE, "DynamicEntityFactory::BuildEntity() making NPCSE for %s (%u)", entity.itemName.c_str(), entity.itemID);
                 return npcSE;

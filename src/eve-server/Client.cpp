@@ -321,6 +321,8 @@ bool Client::SelectCharacter(int32 charID/*0*/)
     sItemFactory.SetUsingClient(this);
 
     m_system = sEntityList.FindOrBootSystem(m_systemData.systemID);
+    sLog.Blue("LoginStage", "Character %u: FindOrBootSystem(%u) finished: %s.",
+              charID, m_systemData.systemID, m_system == nullptr ? "failed" : "ready");
     if (m_system == nullptr) {
         sLog.Error("Client::SelectCharacter()", "Failed to boot system %u for char %u.", m_systemData.systemID, charID);
         SendErrorMsg("SolarSystem %s(%u) - Boot Failure.", m_systemData.name.c_str(), m_systemData.systemID);
@@ -328,7 +330,10 @@ bool Client::SelectCharacter(int32 charID/*0*/)
         return false;
     }
 
+    sLog.Blue("LoginStage", "Character %u: loading character inventory and attributes.", charID);
     m_char = sItemFactory.GetCharacterRef(charID);
+    sLog.Blue("LoginStage", "Character %u: character inventory load %s.",
+              charID, m_char.get() == nullptr ? "failed" : "ready");
     if (m_char.get() == nullptr) {
         sLog.Error("Client::SelectCharacter()", "GetChar for %u = nullptr", charID);
         SendErrorMsg("Unable to locate Character.  Selection Failed.");
@@ -340,7 +345,9 @@ bool Client::SelectCharacter(int32 charID/*0*/)
     m_char->VerifySP();
     m_char->SetLoginTime();
     m_char->SetClient(this);
+    sLog.Blue("LoginStage", "Character %u: processing skill queue.", charID);
     m_char->SkillQueueLoop(false);
+    sLog.Blue("LoginStage", "Character %u: skill queue ready.", charID);
 
     // register with our system manager AFTER character is constructed and initialized
     m_system->AddClient(this, true);
@@ -348,7 +355,17 @@ bool Client::SelectCharacter(int32 charID/*0*/)
     // this will eventually check for d/c timer and rejoin existing fleet if applicable
     //  fleet data is zeroed when char item is created
 
+    sLog.Blue("LoginStage", "Character %u: ensuring capsule and active ship.", charID);
     SetPodItem();
+    if (m_pod.get() == nullptr) {
+        sLog.Error("Client::SelectCharacter",
+                   "Character %u has no loadable capsule and a replacement could not be created.",
+                   charID);
+        sItemFactory.UnsetUsingClient();
+        SendErrorMsg("Your character's capsule could not be initialized. Contact the server administrator.");
+        CloseClientConnection();
+        return false;
+    }
 
     m_ship = sItemFactory.GetShipRef(m_shipId);
     if (m_ship.get() == nullptr) {
@@ -373,13 +390,28 @@ bool Client::SelectCharacter(int32 charID/*0*/)
         m_loginWarpRandomPoint = m_ship->position();
         m_loginWarpRandomPoint.MakeRandomPointOnSphere(0.5*ONE_AU_IN_METERS);
 
+        sLog.Blue("LoginStage", "Character %u: entering space in system %u.", charID, m_locationID);
         MoveToLocation(m_locationID, m_loginWarpRandomPoint);
+        sLog.Blue("LoginStage", "Character %u: in-space position transition returned.", charID);
+        // A failed system/ship initialization must terminate this login
+        // cleanly instead of dereferencing a missing ShipSE/DestinyMgr.
+        if (m_system == nullptr || pShipSE == nullptr || pShipSE->DestinyMgr() == nullptr) {
+            sLog.Error("Client::SelectCharacter",
+                       "Ship entity not initialized after in-space login for character %u in system %u.",
+                       charID, m_systemData.systemID);
+            sItemFactory.UnsetUsingClient();
+            SendErrorMsg("Could not enter the solar system. Check the server system-boot log.");
+            CloseClientConnection();
+            return false;
+        }
 
         // Cloak the player and uncloak them as soon as they start the login
         // warp.
         pShipSE->DestinyMgr()->Cloak();
     } else {
+        sLog.Blue("LoginStage", "Character %u: entering station %u.", charID, m_locationID);
         MoveToLocation(m_locationID, pos);
+        sLog.Blue("LoginStage", "Character %u: station transition returned.", charID);
         if (m_ship->typeID() == itemTypeCapsule) {
             if (sConfig.server.NoobShipCheck) {
                 StationItemRef sRef = m_system->GetStationFromInventory(m_locationID);
@@ -395,30 +427,45 @@ bool Client::SelectCharacter(int32 charID/*0*/)
     }
 
     //create corp and ally chat channels (if not already created)
+    sLog.Blue("LoginStage", "Character %u: initializing corporation and alliance channels.", charID);
     this->m_lsc->CharacterLogin(this);
+    sLog.Blue("LoginStage", "Character %u: corporation and alliance channels ready.", charID);
 
     // load char LPs
     //m_lpMap
 
-    // update account online status, increase login count, set last login timestamp
+    // Distinguish post-channel login failure stages without changing the
+    // character/session wire contract.
+    sLog.Blue("LoginStage", "Character %u: recording account and character online status.", charID);
     ServiceDB::IncrementLoginCount(GetUserID());
     ServiceDB::SetAccountOnlineStatus(GetUserID(), true);
-
-    //johnsus - characterOnline mod
     CharacterDB::SetCharacterOnlineStatus(charID, true);
+    sLog.Blue("LoginStage", "Character %u: account and character status ready.", charID);
+
     sItemFactory.UnsetUsingClient();
 
-    // if applicable, the login warp gets triggered here
+    sLog.Blue("LoginStage", "Character %u: activating login timers.", charID);
     SetStateTimer(Player::State::Login, Player::Timer::Login);
     SetInvulTimer(Player::Timer::WarpInInvul);
-    //SetCloakTimer(Player::Timer::LoginCloak);
 
-    // set ship cap and shields to full
-    m_ship->SetShipShield(1.0);
-    m_ship->SetShipCapacitorLevel(1.0);
+    // Docking is not a repair event. The historical unconditional mutation
+    // of shield/capacitor attributes here re-enters inventory and attribute
+    // update paths while the station session is still being assembled.
+    // Avoid that unnecessary lifetime-sensitive work on station login.
+    if (sDataMgr.IsSolarSystem(m_locationID)) {
+        if (m_ship.get() == nullptr) {
+            sLog.Error("Client::SelectCharacter", "Character %u: missing ship after entering space.", charID);
+            CloseClientConnection();
+            return false;
+        }
+        sLog.Blue("LoginStage", "Character %u: restoring in-space ship charges.", charID);
+        m_ship->SetShipShield(1.0);
+        m_ship->SetShipCapacitorLevel(1.0);
+    }
 
-    // send MOTD and server data to 'local' chat channel
+    sLog.Blue("LoginStage", "Character %u: sending local channel MOTD.", charID);
     this->m_lsc->SendServerMOTD(this);
+    sLog.Blue("LoginStage", "Character %u: MOTD delivered; login complete.", charID);
 
     return (m_loaded = true);
 }
@@ -917,10 +964,22 @@ void Client::SetDestiny(const GPoint& pt, bool update/*false*/) {
     m_bubbleWait = IsGateJump();   // wait for the destination snapshot
     m_setStateSent = false;
 
+    if (m_system == nullptr || m_ship.get() == nullptr) {
+        sLog.Error("Client::SetDestiny", "Missing system/ship during location transition.");
+        return;
+    }
+
     bool updateShip = false;
     if (pShipSE == nullptr) {
         updateShip = true;
         CreateShipSE();
+    }
+    if (pShipSE == nullptr || pShipSE->DestinyMgr() == nullptr
+        || pShipSE->SystemMgr() == nullptr) {
+        sLog.Error("Client::SetDestiny",
+                   "Cannot initialize ShipSE for character %u in system %u.",
+                   GetCharacterID(), m_system->GetID());
+        return;
     }
 
     if (pShipSE->SystemMgr()->GetID() != m_system->GetID())
@@ -2939,8 +2998,14 @@ void Client::_SendCallReturn(const PyAddress& source, int64 callID, PyResult &rs
     packet->userid = GetUserID();
 
     packet->payload = new PyTuple(1);
-    PyIncRef(rsp.ssResult);
-    packet->payload->SetItem(0, new PySubStream(rsp.ssResult));
+    // PySubStream takes ownership of its PyRep. The result retains its own
+    // reference until the caller's PyResult is destroyed.
+    PyRep* reply = rsp.ssResult;
+    if (reply != nullptr)
+        PyIncRef(reply);
+    else
+        reply = PyStatic.NewNone();
+    packet->payload->SetItem(0, new PySubStream(reply));
     PySafeIncRef(rsp.ssNamedResult);
     packet->named_payload = rsp.ssNamedResult;
 
@@ -3133,7 +3198,13 @@ bool Client::Handle_CallReq(PyPacket* packet, PyCallStream& req)
         return true;
     }
 
+    // In particular, this bracket distinguishes a completed SelectCharacter
+    // from a failure in session-change encoding or the outgoing RPC reply.
+    sLog.Blue("LoginRPC", "RPC %s::%s: dispatch complete; encoding session changes.",
+              packet->dest.service.c_str(), req.method.c_str());
     SendSessionChange();  //send out the session change before the return.
+    sLog.Blue("LoginRPC", "RPC %s::%s: session changes queued.",
+              packet->dest.service.c_str(), req.method.c_str());
     if (is_log_enabled(CLIENT__OUT_ALL)) {
         if (result.ssResult != nullptr)
             result.ssResult->Dump(CLIENT__OUT_ALL, "    ");
@@ -3142,6 +3213,8 @@ bool Client::Handle_CallReq(PyPacket* packet, PyCallStream& req)
     }
 
     _SendCallReturn(packet->dest, packet->source.callID, result);
+    sLog.Blue("LoginRPC", "RPC %s::%s: response queued.",
+              packet->dest.service.c_str(), req.method.c_str());
 
     return true;
 }

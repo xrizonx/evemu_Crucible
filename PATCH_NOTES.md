@@ -1,5 +1,34 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 21 November 2026 — Login completion followed by silent process exit
+
+- New Windows log for character 90000000 establishes `MOTD delivered; login complete` before the process exits; the earlier `DecRef()` fatal diagnostic is absent from this sample. Thus station initialization and `SelectCharacter()` completion are confirmed, but the termination cause is not established by these lines.
+- `CharUnboundMgrService::SelectCharacterID` now checks the return value of `SelectCharacter()` and logs successful versus failed RPC selection. Failure no longer silently falls through as a successful operation.
+- `_SendCallReturn` now safely constructs a `None` payload when a service returns a null result, rather than unconditionally invoking `PyIncRef(nullptr)` and constructing a substream from null. Normal nonnull results preserve their reference ownership.
+- `Client::Handle_CallReq` logs checkpoints around session changes and outgoing RPC response queuing. The additions do not change EVE wire-format semantics.
+- No CI, in-game test, or confirmation of the cause of the silent process exit was possible for this patch. This is a defensive source correction, not an asserted resolution.
+
+
+## 21 November 2026 — Repeated post-channel login DecRef failure (best-effort)
+
+- Windows trace now reports multiple `DecRef() on deleted object` failures immediately after `corporation and alliance channels ready` for character 90000000 in Inari station 60007450. The large counts are not trustworthy because these are already-destroyed objects. The unsymbolized trace does not identify the instruction or object types.
+- Restrict automatic shield/capacitor restoration in `Client::SelectCharacter` to in-space login only. Docked characters must not have ship attributes mutated simply by entering a station; this also avoids unnecessary inventory/attribute work in the suspected post-channel lifetime window.
+- Add explicit login-stage checkpoints around account status updates, timers, conditional ship charge restoration, and local chat MOTD delivery. These distinguish an RPC teardown crash from ship-attribute and login completion faults.
+- Existing `RefPtr`, `PyResult`, and `MachoBindObject` ownership corrections remain preserved. No SQL migration or ship inventory deletion. Changes were source-reviewed only; compilation, CI, and runtime crash resolution are **not verified**.
+
+## 21 November 2026 — Inventory MachoBindObject RPC lifetime hotfix
+
+- Fixed `BindableService::MachoBindObject` response tuple ownership in `src/eve-server/services/BoundService.h`: the transient `PyResult` retains its own reference, while `PyTuple::SetItem` receives a separately retained reference. Previously the `PyResult` destructor could release the object while the response tuple still referenced it, creating a use-after-free risk during `invbroker` binding.
+- Kept the existing `RefPtr` and `PyResult` lifetime changes on PR #52. No database schema, character data, or protocol wire layout changes.
+- This is a best-effort source correction derived from the reported Windows post-channel-login termination and Linux `IncRef() on deleted object` failure; no live execution or build verification was performed for this follow-up.
+
+## 21 November 2026 — Live login reference-count crash follow-up
+
+- Reproduced the defect mechanism in source: `RefPtr` copy/casting assignment released an object's last reference **before** retaining the replacement, so self-assignment could call `IncRef()` on a deleted object. All Windows, Linux and Docker builds share the corrected reference-count ownership implementation. A new `RefPtrLifetimeTest` exercises self/cross-type assignment, aliased copies, moves and destruction in CTest (including sanitizer builds).
+- `PyResult` copy assignment had the same release-before-retain ordering and was made self-assignment-safe. The reference-count error logger now correctly distinguishes `IncRef` from `DecRef` and does not call RTTI on an already-deleted virtual object.
+- Production Inari log confirms cosmic-manager, system/player dynamic and POS boot stages complete. Added explicit LSC/map/character/skill/ship checkpoints to identify any remaining login path fault. **CI and live player login for this patch must be verified separately**; do not consider a successful compile proof of a repaired live crash.
+- Hotfix work: [PR #52](https://github.com/xrizonx/evemu_Crucible/pull/52). No base database rewrite or deletion of player items is needed.
+
 ## 21 November 2026 — Login RPC crash
 
 - Incoming login RPCs retain their payload and arguments until dispatch completes. The decoder accepts both call envelopes and releases malformed packets safely. The outgoing login state, session changes, RPC replies and errors retain their contents independently through serialization. Movement and character-event notifications transfer their encoded tuples exactly once. The marshaling regression covers both envelope sizes, omitted and present named arguments, wrapped packets and malformed payloads.
