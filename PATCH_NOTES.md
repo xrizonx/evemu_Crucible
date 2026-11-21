@@ -1,5 +1,14 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 21 November 2026 — Login completion followed by silent process exit
+
+- New Windows log for character 90000000 establishes `MOTD delivered; login complete` before the process exits; the earlier `DecRef()` fatal diagnostic is absent from this sample. Thus station initialization and `SelectCharacter()` completion are confirmed, but the termination cause is not established by these lines.
+- `CharUnboundMgrService::SelectCharacterID` now checks the return value of `SelectCharacter()` and logs successful versus failed RPC selection. Failure no longer silently falls through as a successful operation.
+- `_SendCallReturn` now safely constructs a `None` payload when a service returns a null result, rather than unconditionally invoking `PyIncRef(nullptr)` and constructing a substream from null. Normal nonnull results preserve their reference ownership.
+- `Client::Handle_CallReq` logs checkpoints around session changes and outgoing RPC response queuing. The additions do not change EVE wire-format semantics.
+- No CI, in-game test, or confirmation of the cause of the silent process exit was possible for this patch. This is a defensive source correction, not an asserted resolution.
+
+
 ## 21 November 2026 — Repeated post-channel login DecRef failure (best-effort)
 
 - Windows trace now reports multiple `DecRef() on deleted object` failures immediately after `corporation and alliance channels ready` for character 90000000 in Inari station 60007450. The large counts are not trustworthy because these are already-destroyed objects. The unsymbolized trace does not identify the instruction or object types.
