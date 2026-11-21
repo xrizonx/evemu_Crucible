@@ -210,15 +210,23 @@ bool SystemManager::BootSystem() {
     if (sConfig.server.BountyPayoutDelayed)
         m_bountyTimer.Start(sConfig.server.BountyPayoutTimer * 60 * 1000);
 
-    //create our chat channels
+    // The last reported crash occurred just after the preceding structure
+    // checkpoint. Report the remaining boot steps separately so the next
+    // reference-count failure is attributable to a precise subsystem.
+    sLog.Blue("SystemBoot", "System %s(%u): creating LSC channels.",
+              m_data.name.c_str(), m_data.systemID);
     this->m_lsc->CreateSystemChannel(m_data.regionID);
     this->m_lsc->CreateSystemChannel(m_data.constellationID);
     this->m_lsc->CreateSystemChannel(m_data.systemID);
+    sLog.Blue("SystemBoot", "System %s(%u): LSC channels ready.",
+              m_data.name.c_str(), m_data.systemID);
 
     // inform MarketBot of loaded system and stations in this system.
     //sMktBotMgr.AddSystem();
 
     // set system active for system status page
+    sLog.Blue("SystemBoot", "System %s(%u): updating map activity.",
+              m_data.name.c_str(), m_data.systemID);
     MapDB::SetSystemActive(m_data.systemID, true);
 
     // load dynamic map data
@@ -226,6 +234,8 @@ bool SystemManager::BootSystem() {
 
     //start minute timer
     m_minutetimer.Start(60000);
+    sLog.Blue("SystemBoot", "System %s(%u): startup complete.",
+              m_data.name.c_str(), m_data.systemID);
 
     return (m_loaded = true);
 }
