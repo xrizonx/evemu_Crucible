@@ -192,47 +192,46 @@ public:
     }
 
     /**
-     * @brief Move operator.
-     *
-     * @param[in] oth Object to move.
+     * @brief Move assignment transfers the existing reference without
+     *        incrementing and decrementing it.
+     */
+    RefPtr& operator=(RefPtr&& oth) noexcept
+    {
+        if (this == &oth)
+            return *this;
+        X* previous = mPtr;
+        mPtr = oth.mPtr;
+        oth.mPtr = nullptr;
+        if (previous != nullptr)
+            previous->DecRef();
+        return *this;
+    }
+
+    /**
+     * @brief Compatibility for const rvalues (which cannot be moved).
      */
     RefPtr& operator=(const RefPtr&& oth)
     {
-        if (*this)
-            (*this)->DecRef();
-        mPtr = std::move(oth.get());
-        if (*this)
-            (*this)->IncRef();
-        return *this;
+        return AssignRef(oth.get());
     }
+
     /**
-     * @brief Copy operator.
-     *
-     * @param[in] oth Object to copy the reference from.
+     * @brief Copy assignment must take ownership BEFORE releasing the old
+     *        reference. The old code deleted the sole object during
+     *        self-assignment, then called IncRef() on freed memory.
      */
     RefPtr& operator=(const RefPtr& oth)
     {
-        if (*this)
-            (*this)->DecRef();
-        mPtr = oth.get();
-        if (*this)
-            (*this)->IncRef();
-        return *this;
+        return AssignRef(oth.get());
     }
+
     /**
-     * @brief Casting copy operator.
-     *
-     * @param[in] oth Object to copy the reference from.
+     * @brief Casting copy assignment follows identical lifetime rules.
      */
     template<typename Y>
     RefPtr& operator=(const RefPtr<Y>& oth)
     {
-        if (*this)
-            (*this)->DecRef();
-        mPtr = oth.get();
-        if (*this)
-            (*this)->IncRef();
-        return *this;
+        return AssignRef(oth.get());
     }
 
     /**
@@ -275,6 +274,19 @@ public:
     }
 
 protected:
+    RefPtr& AssignRef(X* next)
+    {
+        if (next == mPtr)
+            return *this;
+        if (next != nullptr)
+            next->IncRef();
+        X* previous = mPtr;
+        mPtr = next;
+        if (previous != nullptr)
+            previous->DecRef();
+        return *this;
+    }
+
     /// The pointer to the reference-counted object.
     X* mPtr;
 };
