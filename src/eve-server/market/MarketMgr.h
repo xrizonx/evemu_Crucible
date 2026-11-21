@@ -59,6 +59,10 @@ public:
     {
         // Missing market-group data is a recoverable DB initialization error;
         // never dereference null and crash a market-opening RPC.
+        // If the initial DB load failed, try again on the next request
+        // instead of keeping the market group cache empty for this uptime.
+        if (m_marketGroups == nullptr)
+            m_marketGroups = MarketDB::GetMarketGroups();
         if (m_marketGroups == nullptr)
             return PyStatic.NewNone();
         PyIncRef(m_marketGroups);
