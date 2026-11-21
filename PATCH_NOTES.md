@@ -1,5 +1,13 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 21 November 2026 — New-character inventory moniker binding compatibility
+
+- During new-character login the Crucible client reports a session change through godma.Prime, invcache.GetInventoryFromId and invbroker moniker binding, ending in TypeError: 'NoneType' object is not iterable. This is a client exception, not proof the server C++ process crashed at the same location.
+- GetInventoryFromId previously required both inventory ID and passive mode as PyInt pointers. It now accepts a mandatory integer ID and an optional boolean/integer passive mode, defaulting to false.
+- Invalid inventory IDs, unloaded items, and items without inventories now produce an explicit error instead of returning None. ItemFactory's active client marker is cleared even when loading raises an exception.
+- Source-only best-effort fix: no build or runtime confirmation. No database migration or inventory deletion. Corrupted character inventory data would require separate investigation.
+
+
 ## 21 November 2026 — Login completion followed by silent process exit
 
 - New Windows log for character 90000000 establishes `MOTD delivered; login complete` before the process exits; the earlier `DecRef()` fatal diagnostic is absent from this sample. Thus station initialization and `SelectCharacter()` completion are confirmed, but the termination cause is not established by these lines.
