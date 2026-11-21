@@ -108,6 +108,16 @@ void DBcore::Connect(uint* errnum, char* errbuf)
 } else
     sLog.Error(" DataBase Manager", "Connection Timeout Option Failed");
 */
+    // Market/UI RPCs execute on the server loop. A stalled database socket
+    // must not leave every client's RPCs and movement ticks frozen indefinitely.
+    // These bound socket waits, not the total SQL execution time; slow-query
+    // logging below helps locate queries which still need optimization.
+    unsigned int connectTimeoutSeconds = 10;
+    unsigned int ioTimeoutSeconds = 30;
+    mysql_options(mysql, MYSQL_OPT_CONNECT_TIMEOUT, &connectTimeoutSeconds);
+    mysql_options(mysql, MYSQL_OPT_READ_TIMEOUT, &ioTimeoutSeconds);
+    mysql_options(mysql, MYSQL_OPT_WRITE_TIMEOUT, &ioTimeoutSeconds);
+
     if (pReconnect) {
         bool reconnect = true;
         if (mysql_options(mysql, MYSQL_OPT_RECONNECT, &reconnect) == 0) // this will enable auto-reconnect...and render my Reconnect() worthless
@@ -225,25 +235,52 @@ void DBcore::ping()
 bool DBcore::RunQuery(DBQueryResult &into, const char *query_fmt, ...) {
     MutexLock lock(MDatabase);
 
-    char query[4096];
+    // vsnprintf returns the required length even if the destination buffer
+    // was truncated. Passing that length to mysql_real_query used to read past
+    // the 4096-byte stack allocation on long queries.
     va_list vlist;
     va_start(vlist, query_fmt);
-    int querylen = std::vsnprintf(query, 4096, query_fmt, vlist);
+    char* query = nullptr;
+    const int querylen = vasprintf(&query, query_fmt, vlist);
     va_end(vlist);
-
-    if (!DoQuery_locked(into.error, query, querylen))
-        return false;
-
-    uint col_count = mysql_field_count(mysql);
-    if (col_count == 0) {
-        into.error.SetError(0xFFFF, "DBcore::RunQuery: No Result");
-        codelog(DATABASE__ERROR, "DBCore::RunQuery: %s failed because it did not return a result", query);
-        EvE::traceStack();
+    if (querylen < 0 || query == nullptr) {
+        into.error.SetError(0xFFFF, "Unable to format SQL query");
+        free(query);
         return false;
     }
 
-    into.SetResult(mysql_store_result(mysql), col_count);
+    const double queryStart = GetTimeMSeconds();
+    const bool ok = DoQuery_locked(into.error, query, querylen);
+    if (!ok) {
+        free(query);
+        return false;
+    }
 
+    const uint col_count = mysql_field_count(mysql);
+    if (col_count == 0) {
+        into.error.SetError(0xFFFF, "DBcore::RunQuery: No Result");
+        codelog(DATABASE__ERROR, "DBCore::RunQuery: query returned no columns");
+        free(query);
+        return false;
+    }
+
+    MYSQL_RES* rows = mysql_store_result(mysql);
+    const double elapsedMs = GetTimeMSeconds() - queryStart;
+    if (elapsedMs > 1000.0) {
+        // Log just a short SQL prefix to avoid exposing parameter values.
+        sLog.Warning("DBcore", "Slow result query: %.0fms, %.56s",
+                     elapsedMs, query);
+    }
+    if (rows == nullptr) {
+        into.error.SetError(mysql_errno(mysql), mysql_error(mysql));
+        sLog.Error("DBcore", "Failed to retrieve query results: %s",
+                   into.error.c_str());
+        free(query);
+        return false;
+    }
+
+    free(query);
+    into.SetResult(rows, col_count);
     return true;
 }
 
@@ -330,22 +367,23 @@ bool DBcore::DoQuery_locked(DBerror &err, const char *query, int querylen, bool 
         _log(DATABASE__QUERIES, "DBcore Query - %s", query);
 
     if (mysql_real_query(mysql, query, querylen)) {
-        uint num = mysql_errno(mysql);
-        if (num > 0)
-            pStatus = Error;
+        const uint num = mysql_errno(mysql);
+        const std::string errorText(mysql_error(mysql));
 
-        // there are many correctable errors to check for
-        if ((num == CR_SERVER_LOST) or (num == CR_SERVER_GONE_ERROR)) {
-            _log(DATABASE__ERROR, "DBCore error - server lost or gone.");
-            if (!Reconnect())
-                return false;
+        // A syntax error or missing table is NOT a broken connection.
+        // Reconnecting for every invalid query can stall unrelated requests.
+        // Retry once only for a lost connection; the old recursive retry
+        // reused retry=true and could loop forever after recovery.
+        const bool connectionLost = (num == CR_SERVER_LOST || num == CR_SERVER_GONE_ERROR);
+        if (connectionLost) {
+            pStatus = Error;
+            if (retry && Reconnect())
+                return DoQuery_locked(err, query, querylen, false);
         }
 
-        if ((pStatus == Connected) and retry)
-            return DoQuery_locked(err, query, querylen, retry);
-
-        err.SetError(num, mysql_error(mysql));
-        codelog(DATABASE__ERROR, "DBCore Query - #%u in '%s': %s", err.GetErrNo(), query, err.c_str());
+        err.SetError(num, errorText.c_str());
+        codelog(DATABASE__ERROR, "DBCore query failed (#%u): %s",
+                err.GetErrNo(), err.c_str());
         return false;
     }
 
