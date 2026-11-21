@@ -434,25 +434,38 @@ bool Client::SelectCharacter(int32 charID/*0*/)
     // load char LPs
     //m_lpMap
 
-    // update account online status, increase login count, set last login timestamp
+    // Distinguish post-channel login failure stages without changing the
+    // character/session wire contract.
+    sLog.Blue("LoginStage", "Character %u: recording account and character online status.", charID);
     ServiceDB::IncrementLoginCount(GetUserID());
     ServiceDB::SetAccountOnlineStatus(GetUserID(), true);
-
-    //johnsus - characterOnline mod
     CharacterDB::SetCharacterOnlineStatus(charID, true);
+    sLog.Blue("LoginStage", "Character %u: account and character status ready.", charID);
+
     sItemFactory.UnsetUsingClient();
 
-    // if applicable, the login warp gets triggered here
+    sLog.Blue("LoginStage", "Character %u: activating login timers.", charID);
     SetStateTimer(Player::State::Login, Player::Timer::Login);
     SetInvulTimer(Player::Timer::WarpInInvul);
-    //SetCloakTimer(Player::Timer::LoginCloak);
 
-    // set ship cap and shields to full
-    m_ship->SetShipShield(1.0);
-    m_ship->SetShipCapacitorLevel(1.0);
+    // Docking is not a repair event. The historical unconditional mutation
+    // of shield/capacitor attributes here re-enters inventory and attribute
+    // update paths while the station session is still being assembled.
+    // Avoid that unnecessary lifetime-sensitive work on station login.
+    if (sDataMgr.IsSolarSystem(m_locationID)) {
+        if (m_ship.get() == nullptr) {
+            sLog.Error("Client::SelectCharacter", "Character %u: missing ship after entering space.", charID);
+            CloseClientConnection();
+            return false;
+        }
+        sLog.Blue("LoginStage", "Character %u: restoring in-space ship charges.", charID);
+        m_ship->SetShipShield(1.0);
+        m_ship->SetShipCapacitorLevel(1.0);
+    }
 
-    // send MOTD and server data to 'local' chat channel
+    sLog.Blue("LoginStage", "Character %u: sending local channel MOTD.", charID);
     this->m_lsc->SendServerMOTD(this);
+    sLog.Blue("LoginStage", "Character %u: MOTD delivered; login complete.", charID);
 
     return (m_loaded = true);
 }
