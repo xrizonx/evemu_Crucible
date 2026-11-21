@@ -321,6 +321,8 @@ bool Client::SelectCharacter(int32 charID/*0*/)
     sItemFactory.SetUsingClient(this);
 
     m_system = sEntityList.FindOrBootSystem(m_systemData.systemID);
+    sLog.Blue("LoginStage", "Character %u: FindOrBootSystem(%u) finished: %s.",
+              charID, m_systemData.systemID, m_system == nullptr ? "failed" : "ready");
     if (m_system == nullptr) {
         sLog.Error("Client::SelectCharacter()", "Failed to boot system %u for char %u.", m_systemData.systemID, charID);
         SendErrorMsg("SolarSystem %s(%u) - Boot Failure.", m_systemData.name.c_str(), m_systemData.systemID);
@@ -328,7 +330,10 @@ bool Client::SelectCharacter(int32 charID/*0*/)
         return false;
     }
 
+    sLog.Blue("LoginStage", "Character %u: loading character inventory and attributes.", charID);
     m_char = sItemFactory.GetCharacterRef(charID);
+    sLog.Blue("LoginStage", "Character %u: character inventory load %s.",
+              charID, m_char.get() == nullptr ? "failed" : "ready");
     if (m_char.get() == nullptr) {
         sLog.Error("Client::SelectCharacter()", "GetChar for %u = nullptr", charID);
         SendErrorMsg("Unable to locate Character.  Selection Failed.");
@@ -340,7 +345,9 @@ bool Client::SelectCharacter(int32 charID/*0*/)
     m_char->VerifySP();
     m_char->SetLoginTime();
     m_char->SetClient(this);
+    sLog.Blue("LoginStage", "Character %u: processing skill queue.", charID);
     m_char->SkillQueueLoop(false);
+    sLog.Blue("LoginStage", "Character %u: skill queue ready.", charID);
 
     // register with our system manager AFTER character is constructed and initialized
     m_system->AddClient(this, true);
@@ -348,6 +355,7 @@ bool Client::SelectCharacter(int32 charID/*0*/)
     // this will eventually check for d/c timer and rejoin existing fleet if applicable
     //  fleet data is zeroed when char item is created
 
+    sLog.Blue("LoginStage", "Character %u: ensuring capsule and active ship.", charID);
     SetPodItem();
     if (m_pod.get() == nullptr) {
         sLog.Error("Client::SelectCharacter",
@@ -382,7 +390,9 @@ bool Client::SelectCharacter(int32 charID/*0*/)
         m_loginWarpRandomPoint = m_ship->position();
         m_loginWarpRandomPoint.MakeRandomPointOnSphere(0.5*ONE_AU_IN_METERS);
 
+        sLog.Blue("LoginStage", "Character %u: entering space in system %u.", charID, m_locationID);
         MoveToLocation(m_locationID, m_loginWarpRandomPoint);
+        sLog.Blue("LoginStage", "Character %u: in-space position transition returned.", charID);
         // A failed system/ship initialization must terminate this login
         // cleanly instead of dereferencing a missing ShipSE/DestinyMgr.
         if (m_system == nullptr || pShipSE == nullptr || pShipSE->DestinyMgr() == nullptr) {
@@ -399,7 +409,9 @@ bool Client::SelectCharacter(int32 charID/*0*/)
         // warp.
         pShipSE->DestinyMgr()->Cloak();
     } else {
+        sLog.Blue("LoginStage", "Character %u: entering station %u.", charID, m_locationID);
         MoveToLocation(m_locationID, pos);
+        sLog.Blue("LoginStage", "Character %u: station transition returned.", charID);
         if (m_ship->typeID() == itemTypeCapsule) {
             if (sConfig.server.NoobShipCheck) {
                 StationItemRef sRef = m_system->GetStationFromInventory(m_locationID);
@@ -415,7 +427,9 @@ bool Client::SelectCharacter(int32 charID/*0*/)
     }
 
     //create corp and ally chat channels (if not already created)
+    sLog.Blue("LoginStage", "Character %u: initializing corporation and alliance channels.", charID);
     this->m_lsc->CharacterLogin(this);
+    sLog.Blue("LoginStage", "Character %u: corporation and alliance channels ready.", charID);
 
     // load char LPs
     //m_lpMap
