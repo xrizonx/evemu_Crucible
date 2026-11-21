@@ -1,3 +1,34 @@
+# Live Patch Notes — xrizonx/evemu_Crucible
+
+## 21 November 2026 — Name lookup and worker validation follow-up
+
+- Mixed location lookups now return static names, inventory item names and persisted asteroid names together. An empty or unresolved persisted ore name falls back to the ore type name. The Crucible directional scanner still formats its own label, so affected clients need the scanner source fix. [Scanner and market names](docs/CRUCIBLE_SCANNER_AND_MARKET_NAMES.md)
+- The market reader now has a CTest regression that exercises the production queue with fixture connections. It checks concurrent reads, duplicate coalescing, region isolation, full-width type IDs, invalidation and a bounded backlog. Windows, Linux and sanitizer CI run the test through CTest, and the Docker CI builder runs it before packaging. Wallet, inventory and order writes stay on the game thread. History, region best asks and other market endpoints still use their existing synchronous paths.
+
+## 21 November 2026 — Trader Joe and directional scanner display
+
+- The wallet owner service resolves seeded NPC buyer ID 4000000 as **Trader Joe**, including old wallet entries. Batched owner replies use the same five-column schema for virtual and database-backed owners. The separate client patch supplies the ore name as the scanner label's named localization argument. Live scanner verification still depends on a matching client source build. [Display-name fixes](docs/CRUCIBLE_SCANNER_AND_MARKET_NAMES.md) · [Server build](https://github.com/xrizonx/evemu_Crucible/actions/runs/44925336797)
+
+## 21 November 2026 — Market workers, SQL maintenance and deployment
+
+- Uncached regional item order books fetch both sides in one query. The worker pool coalesces duplicate reads by region and full-width type ID, rejects stale snapshots after order changes, and uses separate database connections. Client packets and cache updates stay on the game thread. Worker count is configurable, with an automatic cap of 16 and an explicit limit of 128.
+- Added owner-order and regional price-history indexes. The orphan cleanup migration archives verified player-item attribute orphans, protects valid items and reused IDs, and supports rollback. MariaDB integration exercised the migrations on isolated data. Production data cleanup and live market throughput remain separate checks.
+- Corrected the idle tick sleep, moved termination handling out of the signal handler and improved Docker readiness and shutdown. The runtime image uses a smaller dependency set, Linux CI installs the Boost component it needs, and Windows/Linux artifact upload avoids recompressing packages.
+- Merged the audit branch into `master` with history preserved. [PR #51](https://github.com/xrizonx/evemu_Crucible/pull/51) · [Market and deployment notes](docs/MARKET_WORKERS_AND_DATABASE_MAINTENANCE.md) · [Post-merge CI](https://github.com/xrizonx/evemu_Crucible/actions/runs/44924086827)
+
+## 21 November 2026 — Corporation, movement, cargo and belt audit
+
+- Corporation application reads and notifications agree on their field layout. Withdrawal and review select the newest active record, recruitment permissions are checked, and clone-station list rows own separate data. Joining still spans multiple database writes.
+- Movement dispatch has a per-client packet budget. Queue snapshots keep their payloads alive through flush, warp-start references are released, and an aborted login return warp clears its movement lock. The intermittent missing tunnel remains under investigation. Cargo capacity errors show numeric available space.
+- Belt patrols use the system's security tier and regional pirate faction. Hull restrictions, fleet caps, rare-spawn eligibility and respawn timing have regression coverage. Roaming avoids missing or full belts, and a failed respawn retains its retry slot and discards the failed item. Live belt counts remain unverified. [Belt audit](docs/BELT_NPC_SECURITY_SPAWN_BALANCE_2026-11-21.md) · [Movement investigation](https://github.com/xrizonx/evemu_Crucible/issues/45)
+- Market outage handling retries failed order, history and group loads without poisoning the cache. Database reconnects are bounded, result queries avoid oversized buffer reads, and the order lookup uses region, station and system indexes. [Market RPC incident notes](docs/market-rpc-movement-incident-2026-11-21.md)
+
+## 20 November 2026 — Startup cleanup, packet safety and sanitizer coverage
+
+- Startup attribute cleanup targets transient in-space entities and preserves hangar inventory. Wormhole cleanup handles null signature references. The read-only NPC buy audit flags invalid mineral and ore price or escrow rows. [Audit PR](https://github.com/xrizonx/evemu_Crucible/pull/51)
+- Fixed an infinite spawn-bubble enumeration, stale marker references and leaks during system unload or partial login. Inbound packets use RAII, with empty active-grid reclamation deferred to safe teardown. [Memory and CPU audit](docs/memory-cpu-audit-2026-11-20.md)
+- Rebuilt packed-row descriptors without an invalid downcast, made scalar and string packet access alignment-safe, corrected Python container and descriptor ownership, and added an XML parser base destructor. Linux ASan/UBSan became a release prerequisite alongside Windows, Linux, Docker and MariaDB. Native MariaDB discovery avoids unnecessary dependency downloads.
+
 ## 19 November 2026 — Warp, stargate jumps and docking verified in game
 
 - **Complete.** The operator confirmed in the Crucible client that warp animations play, stargate jumps complete and display correctly, and docking works with the updated build. [PR #43](https://github.com/xrizonx/evemu_Crucible/pull/43)
@@ -252,8 +283,6 @@ Source audit and defensive fixes on PR #25:
 - Replaced that forced placeholder with a **local-file-first** lookup: `image_cache/Character/<agentID>_50.jpg` then optional `image_cache/Character/agent_fallback_50.jpg`. No external redirects or 512px substitution for NPC agent 50px requests. Valid player portraits and other image categories continue to work as before.
 - Kept the explicit HTTP Content-Length fix; added the Windows JPEG generation utility `tools/prepare-crucible-agent-portrait.ps1` and [file-backed station-agent A/B test](docs/CRUCIBLE_LOCAL_AGENT_PORTRAIT_TEST_2026-11-16.md).
 - This latest item **supersedes the previous embedded-322-byte test description below**. There is still no client exception dump or evidence of a successful in-game station load.
-
-# Live Patch Notes — xrizonx/evemu_Crucible
 
 ## 2026-11-16 — Exact 50x50 baseline agent HTTP image and crash-safety audit
 

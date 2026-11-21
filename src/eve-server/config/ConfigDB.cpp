@@ -223,75 +223,48 @@ PyRep *ConfigDB::GetMultiAllianceShortNamesEx(const std::vector<int32> &entityID
     return DBResultToTupleSet(res);
 }
 
-PyRep *ConfigDB::GetMultiLocationsEx(const std::vector<int32> &entityIDs) {
-    // this is locations only....region, const, system, station, ship
-    // wtf are asteroids seen in this call???
+PyRep *ConfigDB::GetMultiLocationsEx(const std::vector<int32>& entityIDs)
+{
     std::vector<int32> staticItems, dynamicItems, asteroidItems;
-    staticItems.clear();
-    dynamicItems.clear();
-    asteroidItems.clear();
-
-    for (auto cur : entityIDs) {
-        if (IsStaticItem(cur)) {
-            staticItems.push_back(cur);
-        } else if (IsAsteroidID(cur)) {
-            asteroidItems.push_back(cur);
-        } else {
-            dynamicItems.push_back(cur);
-        }
+    for (int32 id : entityIDs) {
+        if (IsStaticItem(id))
+            staticItems.push_back(id);
+        else if (IsAsteroidID(id))
+            asteroidItems.push_back(id);
+        else
+            dynamicItems.push_back(id);
     }
+
+    std::string query;
+    auto append = [&query](const std::vector<int32>& items, const char* select) {
+        if (items.empty())
+            return;
+        std::string ids;
+        ListToINString(items, ids);
+        if (!query.empty())
+            query += " UNION ALL ";
+        query += select;
+        query += " IN (" + ids + ")";
+    };
+
+    // The client primes a single cache from mixed batches, so all name
+    // sources must contribute to the same six-column result.
+    append(staticItems,
+        "SELECT itemID AS locationID, itemName AS locationName,"
+        " x, y, z, itemNameID AS locationNameID FROM mapDenormalize WHERE itemID");
+    append(dynamicItems,
+        "SELECT itemID AS locationID, itemName AS locationName,"
+        " x, y, z, NULL AS locationNameID FROM entity WHERE itemID");
+    append(asteroidItems,
+        "SELECT a.itemID AS locationID,"
+        " CASE WHEN a.itemName IS NULL OR a.itemName = '' OR LOCATE('{asteroidType}', a.itemName) > 0"
+        " THEN COALESCE(NULLIF(t.typeName, ''), 'Asteroid') ELSE a.itemName END AS locationName,"
+        " a.x, a.y, a.z, NULL AS locationNameID FROM sysAsteroids AS a"
+        " LEFT JOIN invTypes AS t ON t.typeID = a.typeID WHERE a.itemID");
 
     DBQueryResult res;
-    std::string ids = "";
-
-    if (staticItems.size()) {
-        ListToINString(staticItems, ids);
-        if (!sDatabase.RunQuery(res,
-            "SELECT "
-            " itemID AS locationID,"
-            " itemName AS locationName,"
-            " x, y, z,"
-            " itemNameID AS locationNameID"   //locationName = localization.GetByMessageID(self.locationNameID)
-            " FROM mapDenormalize"
-            " WHERE itemID in (%s)", ids.c_str()))
-        {
-            codelog(DATABASE__ERROR, "Error in GetMultiLocationsEx query: %s", res.error.c_str());
-        }
-        ids = "";
-    }
-
-    if (dynamicItems.size()) {
-        ListToINString(dynamicItems, ids);
-        if (!sDatabase.RunQuery(res,
-            "SELECT "
-            " itemID AS locationID,"
-            " itemName AS locationName,"
-            " x, y, z,"
-            " NULL AS locationNameID"
-            " FROM entity"
-            " WHERE itemID in (%s)", ids.c_str()))
-        {
-            codelog(DATABASE__ERROR, "Error in GetMultiLocationsEx query: %s", res.error.c_str());
-        }
-        ids = "";
-    }
-
-    if (asteroidItems.size()) {
-        ListToINString(asteroidItems, ids);
-        sLog.Warning("GetMultiLocationsEx", "Asteroid Items (%s) requested.", ids.c_str());
-        if (!sDatabase.RunQuery(res,
-            "SELECT "
-            " itemID AS locationID,"
-            " itemName AS locationName,"
-            " x, y, z,"
-            " NULL AS locationNameID"
-            " FROM sysAsteroids"
-            " WHERE itemID in (%s)", ids.c_str()))
-        {
-            codelog(DATABASE__ERROR, "Error in GetMultiLocationsEx query: %s", res.error.c_str());
-        }
-    }
-
+    if (!query.empty() && !sDatabase.RunQuery(res, "%s", query.c_str()))
+        codelog(DATABASE__ERROR, "Error in GetMultiLocationsEx query: %s", res.error.c_str());
     return DBResultToTupleSet(res);
 }
 

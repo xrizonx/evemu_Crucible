@@ -367,4 +367,14 @@ assert 'cols->SetItemString(4, "ownerNameID");' in owner_lookup
 assert "res.ColumnName(" not in owner_lookup
 assert owner_lookup.count("NULL AS ownerNameID") == 5
 
+location_lookup = source("src/eve-server/config/ConfigDB.cpp").split(
+    "PyRep *ConfigDB::GetMultiLocationsEx", 1
+)[1].split("PyRep* ConfigDB::GetMultiStationEx", 1)[0]
+assert " UNION ALL " in location_lookup
+assert "append(staticItems," in location_lookup
+assert "append(dynamicItems," in location_lookup
+assert "append(asteroidItems," in location_lookup
+assert "LOCATE('{asteroidType}', a.itemName)" in location_lookup
+assert "LEFT JOIN invTypes AS t ON t.typeID = a.typeID" in location_lookup
+
 print("Source-level gameplay safety guards passed")

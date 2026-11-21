@@ -11,11 +11,6 @@
   *
   */
 
-#include <condition_variable>
-#include <deque>
-#include <future>
-#include <thread>
-
 #include "Client.h"
 #include "EVEServerConfig.h"
 #include "StaticDataMgr.h"
@@ -24,6 +19,7 @@
 #include "cache/ObjCacheService.h"
 #include "inventory/InventoryItem.h"
 #include "market/MarketMgr.h"
+#include "market/MarketOrderReader.h"
 #include "station/StationDataMgr.h"
 
 /*
@@ -37,132 +33,41 @@
  */
 
 namespace {
-using OrderKey = std::pair<uint32, uint32>;
-using OrderClock = std::chrono::steady_clock;
-
 std::string OrderCacheName(const OrderKey& key)
 {
     return "GetOrders_" + std::to_string(key.first) + "_" + std::to_string(key.second);
 }
 }
 
-class MarketOrderReader
+class MarketOrderConnection
 {
 public:
-    struct Read {
-        const OrderClock::time_point expires = OrderClock::now() + std::chrono::seconds(15);
-        std::promise<std::unique_ptr<DBQueryResult>> result;
-        std::future<std::unique_ptr<DBQueryResult>> rows = result.get_future();
-        bool invalidated = false; // accessed only by the game thread
-    };
+    using Rows = DBQueryResult;
+    using Settings = decltype(sConfig.database);
 
-    explicit MarketOrderReader(unsigned count) : m_database(sConfig.database)
+    explicit MarketOrderConnection(const Settings& settings) : m_settings(settings) {}
+    ~MarketOrderConnection() { m_database.Close(); }
+
+    std::unique_ptr<Rows> Fetch(const OrderKey& key)
     {
-        try {
-            for (unsigned i = 0; i < count; ++i)
-                m_workers.emplace_back(&MarketOrderReader::Run, this);
-        } catch (...) {
-            Stop();
-            throw;
+        if (!m_initialized) {
+            m_database.Initialize(m_settings.host, m_settings.username, m_settings.password,
+                m_settings.db, m_settings.compress, m_settings.ssl, m_settings.port,
+                m_settings.useSocket, false, false);
+            m_initialized = true;
         }
-    }
-
-    ~MarketOrderReader() { Stop(); }
-
-    std::shared_ptr<Read> Submit(const OrderKey& key)
-    {
-        // Only the game thread accesses m_reads. Keep it bounded when clients
-        // disconnect or rapidly browse through different items.
-        for (auto it = m_reads.begin(); it != m_reads.end();) {
-            if (it->second.expired())
-                it = m_reads.erase(it);
-            else
-                ++it;
+        auto rows = std::make_unique<Rows>();
+        if (!MarketDB::ReadOrders(m_database, key.first, key.second, *rows)) {
+            _log(MARKET__DB_ERROR, "Async market order query failed: %s", rows->error.c_str());
+            return nullptr;
         }
-        if (auto pos = m_reads.find(key); pos != m_reads.end()) {
-            auto pending = pos->second.lock();
-            if (pending && OrderClock::now() < pending->expires)
-                return pending;
-        }
-
-        std::lock_guard<std::mutex> lock(m_mutex);
-        if (m_jobs.size() >= 128)
-            return {};
-        auto read = std::make_shared<Read>();
-        m_reads[key] = read;
-        m_jobs.emplace_back(key, read);
-        m_ready.notify_one();
-        return read;
-    }
-
-    void Invalidate(const OrderKey& key)
-    {
-        auto pos = m_reads.find(key);
-        if (pos == m_reads.end())
-            return;
-        if (auto read = pos->second.lock())
-            read->invalidated = true;
-        m_reads.erase(pos);
+        return rows;
     }
 
 private:
-    void Stop()
-    {
-        {
-            std::lock_guard<std::mutex> lock(m_mutex);
-            m_stopping = true;
-            m_jobs.clear();
-        }
-        m_ready.notify_all();
-        for (auto& worker : m_workers)
-            worker.join();
-    }
-
-    void Run()
-    {
-        DBcore connection;
-        bool initialized = false;
-        while (true) {
-            std::pair<OrderKey, std::shared_ptr<Read>> job;
-            {
-                std::unique_lock<std::mutex> lock(m_mutex);
-                m_ready.wait(lock, [this] { return m_stopping || !m_jobs.empty(); });
-                if (m_stopping)
-                    break;
-                job = std::move(m_jobs.front());
-                m_jobs.pop_front();
-            }
-
-            std::unique_ptr<DBQueryResult> rows;
-            if (job.second.use_count() > 1 && OrderClock::now() < job.second->expires) {
-                if (!initialized) {
-                    connection.Initialize(m_database.host, m_database.username, m_database.password,
-                        m_database.db, m_database.compress, m_database.ssl, m_database.port,
-                        m_database.useSocket, false, false);
-                    initialized = true;
-                }
-
-                rows = std::make_unique<DBQueryResult>();
-                if (!MarketDB::ReadOrders(connection, job.first.first, job.first.second, *rows)) {
-                    _log(MARKET__DB_ERROR, "Async market order query failed: %s", rows->error.c_str());
-                    rows.reset();
-                }
-            }
-
-            // mysql_store_result already buffered the complete result. The
-            // client, object cache, and PyRep construction stay on the game thread.
-            job.second->result.set_value(std::move(rows));
-        }
-        connection.Close();
-    }
-
-    const decltype(sConfig.database) m_database;
-    std::map<OrderKey, std::weak_ptr<Read>> m_reads;
-    std::mutex m_mutex;
-    std::condition_variable m_ready;
-    std::deque<std::pair<OrderKey, std::shared_ptr<Read>>> m_jobs;
-    std::vector<std::thread> m_workers;
-    bool m_stopping = false;
+    const Settings& m_settings;
+    DBcore m_database;
+    bool m_initialized = false;
 };
 
 MarketMgr::MarketMgr()
@@ -198,7 +103,7 @@ int MarketMgr::Initialize(EVEServiceManager& svc)
         : static_cast<unsigned>(std::min(requested, 128));
     if (workers > 0) {
         try {
-            m_orderReader = std::make_unique<MarketOrderReader>(workers);
+            m_orderReader = std::make_unique<MarketOrderReader<MarketOrderConnection>>(workers, sConfig.database);
             sLog.Blue("MarketMgr", "Market order workers: %u", workers);
         } catch (const std::system_error& error) {
             sLog.Error("MarketMgr", "Could not start market order workers: %s", error.what());

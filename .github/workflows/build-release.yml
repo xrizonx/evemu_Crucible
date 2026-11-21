@@ -617,6 +617,7 @@ jobs:
           push: false
           load: true
           tags: evemu-crucible:ci
+          build-args: EVEMU_BUILD_TESTS=ON
           cache-from: type=gha,scope=evemu-docker
           cache-to: type=gha,mode=max,scope=evemu-docker
       - name: Check runtime dependencies and startup script syntax

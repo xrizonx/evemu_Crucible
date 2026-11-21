@@ -44,7 +44,8 @@ SET( utils_SOURCE
      "utils/StationOfficeIntegrityTest.cpp"
      "utils/ImageCompatibilityTest.cpp"
      "utils/AsteroidSpawnTest.cpp"
-     "utils/BeltRatSpawnTest.cpp" )
+     "utils/BeltRatSpawnTest.cpp"
+     "utils/MarketOrderReaderTest.cpp" )
 SET( test_SUPPORT_SOURCE
      "ProfilerTestStub.cpp" )
 
@@ -75,7 +76,7 @@ TARGET_INCLUDE_DIRECTORIES( "${TARGET_NAME}"
                             "${TARGET_INCLUDE_DIR}"
                             "${PROJECT_SOURCE_DIR}/src/eve-server" )
 TARGET_LINK_LIBRARIES( "${TARGET_NAME}"
-                       "eve-common" )
+                       "eve-common" Threads::Threads )
 
 #########
 # Tests #
@@ -122,3 +123,6 @@ ADD_TEST( NAME "AsteroidSpawnTest"
           COMMAND "${TARGET_NAME}" "utils/AsteroidSpawnTest" )
 ADD_TEST( NAME "BeltRatSpawnTest"
           COMMAND "${TARGET_NAME}" "utils/BeltRatSpawnTest" )
+
+ADD_TEST( NAME "MarketOrderReaderTest"
+          COMMAND "${TARGET_NAME}" "utils/MarketOrderReaderTest" )

@@ -14,9 +14,11 @@ COPY src/ src/
 COPY utils/ utils/
 
 ARG BUILD_JOBS=2
-RUN cmake -S . -B build -G Ninja -DEVEMU_BUILD_TESTS=OFF \
+ARG EVEMU_BUILD_TESTS=OFF
+RUN cmake -S . -B build -G Ninja -DEVEMU_BUILD_TESTS="$EVEMU_BUILD_TESTS" \
     -DCMAKE_INSTALL_PREFIX=/app -DCMAKE_BUILD_TYPE=Release \
     && cmake --build build --parallel "${BUILD_JOBS}" \
+    && if [ "$EVEMU_BUILD_TESTS" = "ON" ]; then ctest --test-dir build -R "^MarketOrderReaderTest$" --no-tests=error --output-on-failure; fi \
     && cmake --install build
 
 FROM --platform=$BUILDPLATFORM golang:1.23-bookworm AS evedbtool-build

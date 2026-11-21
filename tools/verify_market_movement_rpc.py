@@ -76,11 +76,13 @@ assert "return PyStatic.NewNone();" in orders
 assert "sMktMgr.GetOrders(call, typeID->value())" in orders
 
 market_mgr = read("src/eve-server/market/MarketMgr.cpp")
-worker = market_mgr.split("    void Run()", 1)[1].split("MarketMgr::MarketMgr()", 1)[0]
-assert "DBcore connection;" in worker
-assert "MarketDB::ReadOrders(connection," in worker
-assert "MarketDB::EncodeOrders(" not in worker and "m_cache" not in worker
-assert "m_jobs.size() >= 128" in market_mgr
+reader = read("src/eve-server/market/MarketOrderReader.h")
+worker = reader.split("    void Run()", 1)[1]
+connection = market_mgr.split("class MarketOrderConnection", 1)[1].split("MarketMgr::MarketMgr()", 1)[0]
+assert "Connection connection(m_settings);" in worker
+assert "MarketDB::ReadOrders(m_database," in connection
+assert "MarketDB::EncodeOrders(" not in worker + connection and "m_cache" not in worker + connection
+assert "m_jobs.size() >= 128" in reader
 assert "m_deferredCalls.size() < MaxDeferredCalls" in client
 assert "ProcessDeferredCalls();" in network
 assert "call->deadline" in network

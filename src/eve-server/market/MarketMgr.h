@@ -22,7 +22,8 @@
 #include "cache/ObjCacheService.h"
 
 class Client;
-class MarketOrderReader;
+class MarketOrderConnection;
+template <typename Connection> class MarketOrderReader;
 
 class MarketMgr
 : public Singleton< MarketMgr >
@@ -88,7 +89,7 @@ protected:
     void Populate();
 
 private:
-    std::unique_ptr<MarketOrderReader> m_orderReader;
+    std::unique_ptr<MarketOrderReader<MarketOrderConnection>> m_orderReader;
     MarketDB m_db;
     ObjCacheService* m_cache;
 
