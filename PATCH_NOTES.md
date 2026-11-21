@@ -1,5 +1,12 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 21 November 2026 — Repeated post-channel login DecRef failure (best-effort)
+
+- Windows trace now reports multiple `DecRef() on deleted object` failures immediately after `corporation and alliance channels ready` for character 90000000 in Inari station 60007450. The large counts are not trustworthy because these are already-destroyed objects. The unsymbolized trace does not identify the instruction or object types.
+- Restrict automatic shield/capacitor restoration in `Client::SelectCharacter` to in-space login only. Docked characters must not have ship attributes mutated simply by entering a station; this also avoids unnecessary inventory/attribute work in the suspected post-channel lifetime window.
+- Add explicit login-stage checkpoints around account status updates, timers, conditional ship charge restoration, and local chat MOTD delivery. These distinguish an RPC teardown crash from ship-attribute and login completion faults.
+- Existing `RefPtr`, `PyResult`, and `MachoBindObject` ownership corrections remain preserved. No SQL migration or ship inventory deletion. Changes were source-reviewed only; compilation, CI, and runtime crash resolution are **not verified**.
+
 ## 21 November 2026 — Inventory MachoBindObject RPC lifetime hotfix
 
 - Fixed `BindableService::MachoBindObject` response tuple ownership in `src/eve-server/services/BoundService.h`: the transient `PyResult` retains its own reference, while `PyTuple::SetItem` receives a separately retained reference. Previously the `PyResult` destructor could release the object while the response tuple still referenced it, creating a use-after-free risk during `invbroker` binding.
