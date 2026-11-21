@@ -1373,107 +1373,97 @@ bool SpawnMgr::PrepSpawn(SystemBubble* pBubble, uint8 sClass/*Spawn::Class::None
     uint8 cbs = spawnEntry.at(level).cbs;
     spawnEntry.clear();
 
-    // get typeIDs to spawn based on info in m_factionGroups and ship designators and put into Spawn Vector
-    // figure out how to distuinguish between roid, anomaly, incursion and mission defs for this....
-    uint8 shipClass = 0;
-    if (sClass > Spawn::Class::BeltSpawn)
-        shipClass = 14;
-    SpawnGroup toSpawn = SpawnGroup();
-    // these types are for ALL spawn types.
-    if (f > 0) {
-        toSpawn.typeID = GetRandTypeID(1 + shipClass);
-        toSpawn.quantity = f;
-        m_toSpawn.push_back(toSpawn);
-    }
-    if (af > 0) {
-        toSpawn.typeID = GetRandTypeID(2 + shipClass);
-        toSpawn.quantity = af;
-        m_toSpawn.push_back(toSpawn);
-    }
-    if (d > 0) {
-        toSpawn.typeID = GetRandTypeID(3 + shipClass);
-        toSpawn.quantity = d;
-        m_toSpawn.push_back(toSpawn);
-    }
-    if (c > 0) {
-        toSpawn.typeID = GetRandTypeID(4 + shipClass);
-        toSpawn.quantity = c;
-        m_toSpawn.push_back(toSpawn);
-    }
-    if (ac > 0) {
-        toSpawn.typeID = GetRandTypeID(5 + shipClass);
-        toSpawn.quantity = ac;
-        m_toSpawn.push_back(toSpawn);
-    }
-    if (bc > 0) {
-        toSpawn.typeID = GetRandTypeID(6 + shipClass);
-        toSpawn.quantity = bc;
-        m_toSpawn.push_back(toSpawn);
-    }
-    if (bs > 0) {
-        toSpawn.typeID = GetRandTypeID(7 + shipClass);
-        toSpawn.quantity = bs;
-        m_toSpawn.push_back(toSpawn);
-    }
-    // end of possible non-roid rat types.  following are for belt/gate only
+    // Build NPC groups from the template, but apply actual hull limits
+    // to *every* type. Selecting an Easy/Fair spawn template alone cannot
+    // guarantee the SQL row contains only frigates/cruisers.
+    const bool beltSpawn = pBubble->IsBelt() && !anomaly;
+    const uint8 classOffset = sClass > Spawn::Class::BeltSpawn ? 14 : 0;
+    auto addGroup = [&](uint8 shipClass, uint8 count) {
+        if (count == 0)
+            return;
+        const uint8 groupClass = shipClass + classOffset;
+        if (beltSpawn) {
+            if (!EvEBeltRats::AllowsShipClass(secRating, shipClass, sClass))
+                return;
+            const auto mapping = m_factionGroups.find(groupClass);
+            if (mapping == m_factionGroups.end())
+                return;
+            // An incorrect npcClassGroup row must not turn an allowed
+            // frigate slot into a battleship just because of its typeID.
+            Inv::GrpData group = {};
+            sDataMgr.GetGroup(mapping->second, group);
+            if (group.id == 0 || !EvEBeltRats::MatchesGroupHull(shipClass, group.name)) {
+                _log(SPAWN__WARNING,
+                     "Belt spawn: faction %u shipClass %u has mismatched group %u (%s).",
+                     factionID, shipClass, mapping->second, group.name.c_str());
+                return;
+            }
+        }
+        const uint16 type = GetRandTypeID(groupClass);
+        if (type == 0) {
+            _log(SPAWN__WARNING,
+                 "Skipping missing NPC type: faction %u shipClass %u (spawn class %u).",
+                 factionID, groupClass, sClass);
+            return;
+        }
+        SpawnGroup group = SpawnGroup();
+        group.typeID = type;
+        group.quantity = count;
+        m_toSpawn.push_back(group);
+    };
+
+    addGroup(1, f);
+    addGroup(2, af);
+    addGroup(3, d);
+    addGroup(4, c);
+    addGroup(5, ac);
+    addGroup(6, bc);
+    addGroup(7, bs);
+
+    // Belt hauler/officer/commander groups are only eligible for their
+    // rare encounter class. Anomaly and mission templates are unaffected.
     if (sClass < Spawn::Class::BeltSpawn) {
-        if (h > 0) {
-            toSpawn.typeID = GetRandTypeID(8);
-            toSpawn.quantity = h;
-            m_toSpawn.push_back(toSpawn);
+        if (factionID != factionRogueDrones) {
+            addGroup(8, h);
+            addGroup(9, o);
         }
-        if ((o > 0) and (factionID != factionRogueDrones)) {    //drones do NOT have officers (internal type 9).
-            toSpawn.typeID = GetRandTypeID(9);
-            toSpawn.quantity = o;
-            m_toSpawn.push_back(toSpawn);
-        }
-        if (cf > 0) {
-            toSpawn.typeID = GetRandTypeID(10);
-            toSpawn.quantity = cf;
-            m_toSpawn.push_back(toSpawn);
-        }
-        if (cd > 0) {
-            toSpawn.typeID = GetRandTypeID(11);
-            toSpawn.quantity = cd;
-            m_toSpawn.push_back(toSpawn);
-        }
-        if (cc > 0) {
-            toSpawn.typeID = GetRandTypeID(12);
-            toSpawn.quantity = cc;
-            m_toSpawn.push_back(toSpawn);
-        }
-        if (cbc > 0) {
-            toSpawn.typeID = GetRandTypeID(13);
-            toSpawn.quantity = cbc;
-            m_toSpawn.push_back(toSpawn);
-        }
-        if (cbs > 0) {
-            toSpawn.typeID = GetRandTypeID(14);
-            toSpawn.quantity = cbs;
-            m_toSpawn.push_back(toSpawn);
-        }
+        addGroup(10, cf);
+        addGroup(11, cd);
+        addGroup(12, cc);
+        addGroup(13, cbc);
+        addGroup(14, cbs);
     }
 
-    if (factionID == factionRogueDrones) {
-        if ((bc > 0) or (bs > 0)) {
-            if (sClass < Spawn::Class::BeltSpawn) {
-                toSpawn.typeID = GetRandTypeID(9);
-            } else if (sClass > Spawn::Class::BeltSpawn) {
-                toSpawn.typeID = GetRandTypeID(22);
+    if (beltSpawn) {
+        // The legacy code multiplied drone spawns by 4-10 and accepted
+        // unlimited SQL group counts. Keep a small, security-sized single
+        // belt wave. Prefer stronger eligible ships, then add support hulls.
+        std::reverse(m_toSpawn.begin(), m_toSpawn.end());
+        uint32 remaining = EvEBeltRats::ForSecurity(secRating).maxShips;
+        for (auto& group : m_toSpawn) {
+            if (remaining == 0) {
+                group.quantity = 0;
+                continue;
             }
-            // spawn 4 swarm ships for each bc/bs
-            toSpawn.quantity = ((bs > 0 ? bs : bc) *4);
-            m_toSpawn.push_back(toSpawn);
-        } else if (o > 0) {
-            // drones dont have officers.  spawn swarm x10
-            if (sClass < Spawn::Class::BeltSpawn) {
-                toSpawn.typeID = GetRandTypeID(9);
-            } else if (sClass > Spawn::Class::BeltSpawn) {
-                toSpawn.typeID = GetRandTypeID(22);
-            }
-            toSpawn.quantity = o *10;
-            m_toSpawn.push_back(toSpawn);
+            group.quantity = static_cast<uint8>(std::min<uint32>(group.quantity, remaining));
+            remaining -= group.quantity;
         }
+        m_toSpawn.erase(std::remove_if(m_toSpawn.begin(), m_toSpawn.end(),
+            [](const SpawnGroup& group) {
+                return group.typeID == 0 || group.quantity == 0;
+            }), m_toSpawn.end());
+
+        if (m_toSpawn.empty()) {
+            // A poorly populated SQL template must not fall back to
+            // an illegal large hull. At most use a verified frigate type.
+            addGroup(1, 1);
+        }
+        _log(SPAWN__MESSAGE,
+             "Belt %u in system %u (trueSec %.3f): max hull %u, cap %u NPCs, selected %u groups.",
+             pBubble->GetID(), m_system->GetID(), secRating,
+             EvEBeltRats::ForSecurity(secRating).maxHull,
+             EvEBeltRats::ForSecurity(secRating).maxShips,
+             static_cast<uint32>(m_toSpawn.size()));
     }
 
     //cleanup
