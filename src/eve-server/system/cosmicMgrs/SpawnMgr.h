@@ -67,7 +67,7 @@ protected:
     bool FindSpawnForBubble(uint16 bubbleID);
     bool PrepSpawn(SystemBubble* pBubble, uint8 sClass = Spawn::Class::None, uint8 level = 0, uint32 factionOverride = 0);
     bool MakeSpawn(SystemBubble* pBubble, uint32 factionID, uint8 sClass, uint8 level, bool anomaly=false);
-    void ReSpawn(SystemBubble* pBubble, SpawnEntry& spawnEntry);
+    bool ReSpawn(SystemBubble* pBubble, SpawnEntry& spawnEntry);
     void RemoveSpawn(uint16 bubbleID, uint32 itemID);
 
     uint8 GetSpawnGroup(uint8 sClass);
