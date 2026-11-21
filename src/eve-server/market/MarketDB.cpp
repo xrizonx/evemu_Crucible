@@ -482,10 +482,13 @@ PyRep *MarketDB::GetMarketGroups() {
         }
 
         PyPackedRow* pyrow = rowset->NewRow();
-        pyrow->SetField((uint32)0, pid); //parentGroupID
+        // pid is also owned by the filter-rowset dictionary as its key.
+        // Give the packed row a distinct value, not the same owned pointer:
+        // clearing both containers otherwise double-releases it.
+        pyrow->SetField((uint32)0, pid->Clone()); // parentGroupID
         pyrow->SetField(1, new PyInt(row.GetUInt(1))); //marketGroupID
-        pyrow->SetField(2, new PyString(row.GetText(2))); //marketGroupName
-        pyrow->SetField(3, new PyString(row.GetText(3))); //description
+        pyrow->SetField(2, new PyString(row.IsNull(2) ? "" : row.GetText(2))); // marketGroupName
+        pyrow->SetField(3, new PyString(row.IsNull(3) ? "" : row.GetText(3))); // description
         pyrow->SetField(4, row.IsNull(4) ? PyStatic.NewNone() : new PyInt(row.GetUInt(4))); //graphicID
         pyrow->SetField(5, new PyBool(row.GetBool(5))); //hasTypes
         pyrow->SetField(6, row.IsNull(6) ? PyStatic.NewNone() : new PyInt(row.GetUInt(6))); // iconID
