@@ -315,6 +315,18 @@ assert "m_spawns.count(pBubble->GetID()) != 0 || pBubble->CountNPCs() != 0" in b
 assert "return MakeSpawn(pBubble, factionID, sClass, level, anomaly);" in belt_spawns
 assert "return spawnedCount != 0;" in belt_spawns
 assert "rareRoll < 0.0005" in belt_spawns
+assert "pBubble->IsBelt() || MakeRandomFloat() > 0.05" in belt_spawns
+assert "uint32 time = sConfig.npc.RoamingTimer * 1000" in belt_spawns
+assert "itr = m_spawns.erase(itr);" in belt_spawns
+respawn_function = belt_spawns.split("bool SpawnMgr::ReSpawn(", 1)[1].split(
+    "bool SpawnMgr::FindSpawnForBubble(", 1
+)[0]
+assert "spawnEntry.itemID = iRef->itemID();" in respawn_function
+assert "return true;" in respawn_function
+assert "itr->second.stamp = sEntityList.GetStamp() + sConfig.npc.RespawnTimer;" in belt_spawns
+assert "itr->second.enabled = false;" not in belt_spawns.split(
+    "if (m_ratGroupTimer.Enabled())", 1
+)[1].split("if (sConfig.debug.UseProfiling)", 1)[0]
 assert "MakeRandomFloat() < 0.08" not in belt_spawns
 
 belt_policy = source("src/eve-common/EVE_BeltRatSpawnHelpers.h")
