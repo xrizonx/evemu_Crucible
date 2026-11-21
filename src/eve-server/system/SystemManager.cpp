@@ -24,6 +24,7 @@
 */
 
 #include "eve-server.h"
+#include <exception>
 
 #include "Client.h"
 #include "EVEServerConfig.h"
@@ -530,7 +531,20 @@ bool SystemManager::LoadSystemDynamics() {
     for (const auto& cur : entities) {
         _log(ITEM__TRACE, "System %u: loading dynamic item %u (category %u, group %u, type %u).",
              m_data.systemID, cur.itemID, cur.categoryID, cur.groupID, cur.typeID);
-        pSE = DynamicEntityFactory::BuildEntity(*this, cur);
+        pSE = nullptr;
+        try {
+            pSE = DynamicEntityFactory::BuildEntity(*this, cur);
+        } catch (const std::exception& e) {
+            sLog.Error("SystemBoot",
+                       "System %u: dynamic item %u (type %u, group %u) threw during restoration: %s",
+                       m_data.systemID, cur.itemID, cur.typeID, cur.groupID, e.what());
+            continue;
+        } catch (...) {
+            sLog.Error("SystemBoot",
+                       "System %u: dynamic item %u (type %u, group %u) threw an unknown exception.",
+                       m_data.systemID, cur.itemID, cur.typeID, cur.groupID);
+            continue;
+        }
         if (pSE == nullptr) {
             sLog.Error( "SystemManager::LoadSystemDynamics()", "Failed to create entity for item %u (grp: %u, type %u)",
                                 cur.itemID, cur.groupID, cur.typeID);
@@ -565,7 +579,20 @@ bool SystemManager::LoadPlayerDynamics() {
     for (const auto& cur : entities) {
         _log(ITEM__TRACE, "System %u: loading player dynamic item %u (category %u, group %u, type %u).",
              m_data.systemID, cur.itemID, cur.categoryID, cur.groupID, cur.typeID);
-        pSE = DynamicEntityFactory::BuildEntity(*this, cur);
+        pSE = nullptr;
+        try {
+            pSE = DynamicEntityFactory::BuildEntity(*this, cur);
+        } catch (const std::exception& e) {
+            sLog.Error("SystemBoot",
+                       "System %u: dynamic item %u (type %u, group %u) threw during restoration: %s",
+                       m_data.systemID, cur.itemID, cur.typeID, cur.groupID, e.what());
+            continue;
+        } catch (...) {
+            sLog.Error("SystemBoot",
+                       "System %u: dynamic item %u (type %u, group %u) threw an unknown exception.",
+                       m_data.systemID, cur.itemID, cur.typeID, cur.groupID);
+            continue;
+        }
         if (pSE == nullptr) {
             sLog.Error( "SystemManager::LoadPlayerDynamics()", "Failed to create entity for item %u (grp: %u, type %u)", cur.itemID, cur.groupID, cur.typeID);
             continue;
