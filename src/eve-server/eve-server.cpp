@@ -30,6 +30,8 @@
 
 #include <atomic>
 
+#include "memory/RefPtr.h"
+
 #include "EVEServerConfig.h"
 #include "NetService.h"
 // data managers
