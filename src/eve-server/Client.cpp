@@ -154,6 +154,22 @@ Client::~Client() {
         for (auto cur = m_bindSet.rbegin(); cur != m_bindSet.rend(); ++cur)
             m_services.ClearBoundObject(*cur, this);
 
+        // SelectCharacter registers the client before it can fail. In that
+        // case m_loaded is still false, so the old early return left dangling
+        // Client* pointers in EntityList and SystemManager.
+        if (m_system != nullptr) {
+            if (pShipSE != nullptr)
+                m_system->RemoveEntity(pShipSE);
+            m_system->RemoveClient(this, true);
+        }
+        sEntityList.RemovePlayer(this);
+        if (m_char.get() != nullptr)
+            m_char->SetClient(nullptr);
+        if (m_ship.get() != nullptr)
+            m_ship->SetPlayer(nullptr);
+        if (sItemFactory.GetUsingClient() == this)
+            sItemFactory.UnsetUsingClient();
+
         SafeDelete(m_TS);
         SafeDelete(m_scan);
         SafeDelete(pShipSE);
@@ -211,10 +227,13 @@ Client::~Client() {
         m_char->LogOut();
     }
 
-    // save shipstate and remove from ItemFactory
-    m_ship->LogOut();
+    // A login/transition can have initialized the character without
+    // producing a loadable ship or a valid system manager.
+    if (m_ship.get() != nullptr)
+        m_ship->LogOut();
 
-    m_system->RemoveClient(this, true);
+    if (m_system != nullptr)
+        m_system->RemoveClient(this, true);
     // remove char from entitylist
     sEntityList.RemovePlayer(this);
 
@@ -228,6 +247,8 @@ Client::~Client() {
 
     m_system = nullptr; // DO NOT delete m_system here
 
+    if (sItemFactory.GetUsingClient() == this)
+        sItemFactory.UnsetUsingClient();
     SafeDelete(m_TS);
     SafeDelete(m_scan);
     SafeDelete(pShipSE);
