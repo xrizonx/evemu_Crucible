@@ -521,15 +521,27 @@ bool CorporationDB::AddCorporation(Call_AddCorporation & corpInfo, Client* pClie
     sDatabase.DoEscapeString(cTick, corpInfo.corpTicker);
     sDatabase.DoEscapeString(cURL, corpInfo.url);
 
-    Character* pChar = pClient->GetChar().get();
+    // GetChar() returns a reference-counted handle. Never take a raw pointer
+    // from a temporary RefPtr; keep its reference alive for the full database
+    // operation while accessing skills, race, and character data.
+    if (pClient == nullptr)
+        return false;
+    CharacterRef creator = pClient->GetChar();
+    if (creator.get() == nullptr) {
+        codelog(CORP__DB_ERROR, "AddCorporation: missing creator character.");
+        return false;
+    }
+    Character* pChar = creator.get();
     uint32 charID = pClient->GetCharacterID();
-    uint8 raceID = (uint8)pChar->race();
+    uint8 raceID = static_cast<uint8>(pChar->race());
 
+    sLog.Blue("CorpCreate", "Character %u: computing corporation member limit from skills.", charID);
     // set member limit based on creator's skills
     uint16 mLimit = (pChar->GetSkillLevel(EvESkill::CorporationManagement) * 20);//101
     mLimit += (pChar->GetSkillLevel(EvESkill::MegacorpManagement) * 100);        //601
     mLimit += (pChar->GetSkillLevel(EvESkill::EmpireControl) * 400);             //2601
     mLimit += (pChar->GetSkillLevel(EvESkill::Sovereignty) * 2000);              //12601
+    sLog.Blue("CorpCreate", "Character %u: member limit %u ready; preparing SQL insert.", charID, mLimit);
 
     /** @todo  allowedMemberRaceIDs will need to be bitwise...it is a flag.
      * also called 'raceMask' and isnt implemented yet.
