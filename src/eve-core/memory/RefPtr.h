@@ -32,6 +32,8 @@
 #include <cassert>
 #include <cstdio>
 #include <iostream>
+#include <mutex>
+#include <unordered_set>
 
 #include "utils/misc.h"
 
@@ -61,6 +63,12 @@ public:
     : mRefCount(initRefCount),
     mDeleted(false)
     {
+        // Track object identity independently of the object's allocation.
+        // Shutdown references can already be dangling before IncRef/DecRef
+        // enter, so reading mDeleted first is undefined behavior.
+        auto& refs = Registry();
+        std::lock_guard<std::mutex> lock(refs.mutex);
+        refs.live.insert(this);
     }
 
     /**
@@ -76,7 +84,22 @@ public:
             EvE::traceStack();
         }
 
-        mDeleted = true;
+        mDeleted.store(true, std::memory_order_release);
+        auto& refs = Registry();
+        std::lock_guard<std::mutex> lock(refs.mutex);
+        refs.live.erase(this);
+    }
+
+    // The main thread enables this only AFTER leaving the game loop.
+    // Existing normal-gameplay IncRef/DecRef behavior stays unchanged.
+    static void BeginShutdownRefGuard()
+    {
+        Registry().shuttingDown.store(true, std::memory_order_release);
+    }
+
+    static uint64_t GetSuppressedShutdownRefOps()
+    {
+        return Registry().suppressed.load(std::memory_order_relaxed);
     }
 
     uint32 GetCount() const     { return mRefCount.load(std::memory_order_acquire); }
@@ -88,6 +111,21 @@ protected:
      */
     void IncRef() const
     {
+        // During shutdown, validate the address against a separately owned
+        // live-object registry BEFORE reading any field of *this. An invalid
+        // pointer can have arbitrary values in freed allocator memory.
+        if (Registry().shuttingDown.load(std::memory_order_acquire)) {
+            auto& refs = Registry();
+            std::lock_guard<std::mutex> lock(refs.mutex);
+            if (refs.live.find(this) == refs.live.end() ||
+                mDeleted.load(std::memory_order_relaxed)) {
+                refs.suppressed.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+            mRefCount.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+
         // ---modulefix; issue with installing and uninstalling modules caused a soft freeze and unable to make changes to modules in fit screen.
         if (mDeleted) {
             _log(REFPTR__ERROR, "IncRef() on deleted object %p (refcount %u)", static_cast<const void*>(this), mRefCount.load(std::memory_order_relaxed));
@@ -112,6 +150,37 @@ protected:
      */
     void DecRef() const
     {
+        // Only the shutdown path pays for synchronized liveness checking.
+        // Remove the entry BEFORE the final delete so reentrant destructors
+        // cannot re-release a pointer while its object is being destroyed.
+        if (Registry().shuttingDown.load(std::memory_order_acquire)) {
+            auto& refs = Registry();
+            bool destroy = false;
+            {
+                std::lock_guard<std::mutex> lock(refs.mutex);
+                if (refs.live.find(this) == refs.live.end() ||
+                    mDeleted.load(std::memory_order_relaxed)) {
+                    refs.suppressed.fetch_add(1, std::memory_order_relaxed);
+                    return;
+                }
+                const uint32_t count = mRefCount.load(std::memory_order_relaxed);
+                if (count == 0) {
+                    refs.suppressed.fetch_add(1, std::memory_order_relaxed);
+                    return;
+                }
+                if (count == 1) {
+                    mRefCount.store(0, std::memory_order_release);
+                    refs.live.erase(this);
+                    destroy = true;
+                } else {
+                    mRefCount.fetch_sub(1, std::memory_order_acq_rel);
+                }
+            }
+            if (destroy)
+                delete this;
+            return;
+        }
+
         if (mDeleted) {
             // ---modulefix; issue with installing and uninstalling modules caused a soft freeze and unable to make changes to modules in fit screen.
             _log(REFPTR__ERROR, "DecRef() on deleted object %p (refcount %u)", static_cast<const void*>(this), mRefCount.load(std::memory_order_relaxed));
@@ -134,6 +203,22 @@ protected:
     }
 
 private:
+    struct LifetimeRegistry {
+        std::mutex mutex;
+        std::unordered_set<const RefObject*> live;
+        std::atomic<bool> shuttingDown{false};
+        std::atomic<uint64_t> suppressed{0};
+    };
+
+    static LifetimeRegistry& Registry()
+    {
+        // Intentionally process-lifetime: RefPtrs may be released by global
+        // singleton destructors after main has finished. Avoid the static
+        // destruction-order problem by never destroying this small registry.
+        static auto* registry = new LifetimeRegistry();
+        return *registry;
+    }
+
     /// Reference count of instance.
     mutable std::atomic<uint32> mRefCount;
     mutable std::atomic<bool> mDeleted;
