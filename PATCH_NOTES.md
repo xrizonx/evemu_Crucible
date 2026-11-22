@@ -1,5 +1,17 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 22 November 2026 — Source stability audit and crash hardening
+
+- Reviewed high-risk C++ source pathways in RPC dispatch and bound services, Python wire serialization, packet decoding, intrusive reference ownership, station/corporation login, entity registration/cleanup, inventory/ship modules, network packet framing and fleet queries. The build manifests contain about 327 C++ source entries across server/core/common; this was a **targeted audit**, not a complete review of every C++, header, generated packet, build script and SQL file.
+- Fixed a high-severity use-after-free in `PyObject::Clone`: the old copy constructor shallow-copied both owned PyRep pointers and both objects would free them. Added deep clone semantics and self-assignment guards for mutable Python wire containers.
+- Replaced `EVENotificationStream::Decode`'s double-release of borrowed nested tuples/substreams with single-owner packet cleanup and an explicit retained reference to returned arguments. Hardened notification cloning and packet null handling.
+- Eliminated undefined member-function pointer signature casts in C++ RPC handlers. Release handler instances and bound OIDs during service destruction.
+- Removed unregistered/deleted entities from the master system entity map; guarded system player counters against duplicate adds and unsigned underflow. Fixed stale corp-member pointers, duplicate player unregister, partial client-login teardown, and station guest-list null handling.
+- Corrected sparse office headers/cache lifecycle, unaligned frame-length decoding and incomplete packet cleanup, missing in-space ship/destiny guards in module activation and fleet queries, truncated 16-bit fleet system IDs, and leaked client exception-handling state after dispatch failure.
+- Added regression cases for wire object copy lifetime, packet/notification decode ownership, malformed packets, null payloads, frame alignment and socket buffer reset to the existing `EVEMarshalTest` source. **Tests have not run, no CI/build has been verified, and no live crash is claimed resolved.**
+- Review details and outstanding risks: [docs/SOURCE_STABILITY_AUDIT_2026-11-22.md](docs/SOURCE_STABILITY_AUDIT_2026-11-22.md). All corrections remain on `fix/login-system-boot-crash-2026-11-21` (PR #52); no SQL schema/data migration or deletion was performed.
+
+
 ## 22 November 2026 — Post-login corporation RPC DecRef crash (concurrency mitigation)
 
 - Windows server confirms `SelectCharacterID` RPC completed and queued a response, followed by corpRegistry/corpStationMgr resolve calls and petitioner unread-message response. A `DecRef()` on an already destroyed object is reported before subsequent corporation binds and inventory resolution. The symbol-less stack does not establish which object was destroyed. The 1529.6 ms warning only shows slow login dispatch.
