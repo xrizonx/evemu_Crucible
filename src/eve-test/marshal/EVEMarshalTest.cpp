@@ -25,10 +25,190 @@
 
 #include "eve-test.h"
 #include "python/PyPacket.h"
+#include "packets/General.h"
+#include "network/StreamPacketizer.h"
 
 #include <cstring>
 
 namespace {
+// Exercised by the existing EVEMarshalTest across GCC, MinGW and sanitizers.
+// The original PyObject copy constructor shallow-copied both owned pointers,
+// causing the clone to delete live source objects during packet encoding.
+bool WireObjectOwnershipRegression()
+{
+    PyObject* source = new PyObject("util.KeyVal", new_tuple(new PyInt(71)));
+    PyObject* clone = source->Clone()->AsObject();
+    PyDecRef(source);
+    const bool cloneSurvives = clone->type() != nullptr &&
+        clone->type()->content() == "util.KeyVal" &&
+        clone->arguments() != nullptr &&
+        clone->arguments()->AsTuple()->size() == 1 &&
+        clone->arguments()->AsTuple()->GetItem(0)->AsInt()->value() == 71;
+    PyDecRef(clone);
+    if (!cloneSurvives)
+        return false;
+
+    PyTuple* tuple = new PyTuple(1);
+    tuple->SetItem(0, new PyInt(5));
+    *tuple = *tuple;
+    const bool tupleStable = tuple->size() == 1 &&
+        tuple->GetItem(0)->AsInt()->value() == 5;
+    PyDecRef(tuple);
+
+    PyList* list = new PyList();
+    list->AddItemInt(6);
+    *list = *list;
+    const bool listStable = list->size() == 1 &&
+        list->GetItem(0)->AsInt()->value() == 6;
+    PyDecRef(list);
+
+    PyDict* dict = new PyDict();
+    dict->SetItemString("value", new PyInt(7));
+    *dict = *dict;
+    PyRep* value = dict->GetItemString("value");
+    const bool dictStable = value != nullptr && value->IsInt() &&
+        value->AsInt()->value() == 7;
+    PyDecRef(dict);
+
+    PyObjectEx* extended = new PyObjectEx(true, new PyTuple(0));
+    extended->list().AddItemInt(8);
+    *extended = *extended;
+    const bool extendedStable = extended->list().size() == 1 &&
+        extended->list().GetItem(0)->AsInt()->value() == 8;
+    PyDecRef(extended);
+    return tupleStable && listStable && dictStable && extendedStable;
+}
+
+bool NotificationDecodeLifetimeRegression()
+{
+    // This malformed envelope used to release both the owning outer tuple
+    // and its borrowed inner tuple, causing a double-free.
+    PyTuple* invalid = new_tuple(new_tuple(new PyInt(0)), PyStatic.NewNone());
+    EVENotificationStream broken;
+    if (broken.Decode("macho.Notification", "OnInvalid", invalid) || invalid != nullptr)
+        return false;
+
+    PyTuple* inbound = new_tuple(
+        new_tuple(
+            new PyInt(0),
+            new PySubStream(new_tuple(
+                new PyInt(1), new_tuple(new PyInt(0), new_tuple(new PyInt(77)))
+            ))
+        ),
+        PyStatic.NewNone()
+    );
+    EVENotificationStream notify;
+    if (!notify.Decode("macho.Notification", "OnTest", inbound) || inbound != nullptr)
+        return false;
+
+    const bool decoded = notify.notifyType == "OnTest" &&
+        notify.remoteObject == 1 && notify.args != nullptr &&
+        notify.args->size() == 1 &&
+        notify.args->GetItem(0)->AsInt()->value() == 77;
+    EVENotificationStream* copy = notify.Clone();
+    const bool cloned = copy != nullptr && copy->notifyType == "OnTest" &&
+        copy->remoteObject == 1 && copy->args != notify.args &&
+        copy->args->GetItem(0)->AsInt()->value() == 77;
+    delete copy;
+    return decoded && cloned;
+}
+
+bool PacketizerFrameAlignmentRegression()
+{
+    Buffer wire;
+    const uint32 firstLength = 3;
+    const uint32 secondLength = 1;
+    wire.Append<uint32>(firstLength);
+    wire.Append<uint8>(0x11);
+    wire.Append<uint8>(0x22);
+    wire.Append<uint8>(0x33);
+    // The second length starts at offset 7 (unaligned uint32).
+    wire.Append<uint32>(secondLength);
+    wire.Append<uint8>(0x44);
+
+    StreamPacketizer framed;
+    framed.InputData(wire);
+    framed.Process();
+    Buffer* first = framed.PopPacket();
+    Buffer* second = framed.PopPacket();
+    const bool decoded = first != nullptr && second != nullptr &&
+        first->size() == 3 && (*first)[0] == 0x11 && (*first)[2] == 0x33 &&
+        second->size() == 1 && (*second)[0] == 0x44;
+    delete first;
+    delete second;
+    if (!decoded)
+        return false;
+
+    Buffer partial;
+    partial.Append<uint8>(0xff);
+    framed.InputData(partial);
+    framed.ClearBuffers(); // must discard incomplete frames too
+    framed.InputData(wire);
+    framed.Process();
+    first = framed.PopPacket();
+    second = framed.PopPacket();
+    const bool cleared = first != nullptr && second != nullptr &&
+        first->size() == 3 && second->size() == 1;
+    delete first;
+    delete second;
+    return cleared;
+}
+
+bool NullPacketFieldRegression()
+{
+    PyCallStream emptyCall;
+    PyCallStream* copy = emptyCall.Clone();
+    const bool safeClone = copy != nullptr && copy->arg_tuple == nullptr &&
+        copy->arg_dict == nullptr;
+    delete copy;
+    if (!safeClone)
+        return false;
+
+    // An outbound packet with no payload must encode explicit wire None,
+    // never put a null pointer in the PyTuple before marshaling.
+    PyPacket packet;
+    packet.type_string = "macho.CallRsp";
+    packet.type = CALL_RSP;
+    PyRep* encoded = packet.Encode();
+    bool valid = encoded != nullptr && encoded->IsObject();
+    if (valid) {
+        PyRep* arguments = encoded->AsObject()->arguments();
+        valid = arguments != nullptr && arguments->IsTuple() &&
+            arguments->AsTuple()->size() == 7 &&
+            arguments->AsTuple()->GetItem(4) != nullptr &&
+            arguments->AsTuple()->GetItem(4)->IsNone();
+    }
+    PySafeDecRef(encoded);
+    return valid;
+}
+
+bool BorrowedMachoBindDecodeLifetimeRegression()
+{
+    // The nested call is still owned by the outer RPC argument tuple.
+    // Generated Decode(PyRep**) consumes its input, so its caller MUST
+    // acquire a temporary reference before invoking the overload.
+    PyTuple* parent = new PyTuple(1);
+    PyTuple* nested = new PyTuple(3);
+    nested->SetItem(0, new PyString("GetCorporation"));
+    nested->SetItem(1, new PyTuple(0));
+    nested->SetItem(2, new PyDict());
+    parent->SetItem(0, nested);
+
+    CallMachoBindObject_call decoded;
+    PyTuple* decoderInput = parent->GetItem(0)->AsTuple();
+    PyIncRef(decoderInput);
+    const bool success = decoded.Decode(&decoderInput);
+    const bool parentIntact = decoderInput == nullptr &&
+        nested->GetCount() == 1 &&
+        parent->GetItem(0) == nested &&
+        decoded.method_name == "GetCorporation" &&
+        decoded.arguments != nullptr &&
+        decoded.arguments->IsTuple() &&
+        decoded.arguments->size() == 0;
+    PyDecRef(parent);
+    return success && parentIntact;
+}
+
 bool CallPacketRoundTrip(bool channel, bool named, bool wrapped, bool malformed)
 {
     PyCallStream outbound;
@@ -101,6 +281,26 @@ bool CallPacketRoundTrip(bool channel, bool named, bool wrapped, bool malformed)
 
 int marshal_EVEMarshalTest( int argc, char* argv[] )
 {
+    if (!WireObjectOwnershipRegression()) {
+        ::puts("Python wire object clone/self-assignment lifetime regression.");
+        return EXIT_FAILURE;
+    }
+    if (!NotificationDecodeLifetimeRegression()) {
+        ::puts("Notification packet decode lifetime regression.");
+        return EXIT_FAILURE;
+    }
+    if (!PacketizerFrameAlignmentRegression()) {
+        ::puts("Network packet framing alignment/cleanup regression.");
+        return EXIT_FAILURE;
+    }
+    if (!NullPacketFieldRegression()) {
+        ::puts("Packet null payload/call cloning regression.");
+        return EXIT_FAILURE;
+    }
+    if (!BorrowedMachoBindDecodeLifetimeRegression()) {
+        ::puts("Nested MachoBind decoder ownership regression.");
+        return EXIT_FAILURE;
+    }
     if (!CallPacketRoundTrip(false, false, false, false) ||
         !CallPacketRoundTrip(true, true, false, false) ||
         !CallPacketRoundTrip(true, true, true, false) ||

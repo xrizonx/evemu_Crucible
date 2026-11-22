@@ -28,6 +28,7 @@
 #define __UTILS__REF_PTR_H__INCL__
 
 
+#include <atomic>
 #include <cassert>
 #include <cstdio>
 #include <iostream>
@@ -78,8 +79,8 @@ public:
         mDeleted = true;
     }
 
-    uint16 GetCount()           { return mRefCount; }
-    bool IsDeleted()            { return mDeleted; }
+    uint32 GetCount() const     { return mRefCount.load(std::memory_order_acquire); }
+    bool IsDeleted() const      { return mDeleted.load(std::memory_order_acquire); }
 
 protected:
     /**
@@ -89,8 +90,12 @@ protected:
     {
         // ---modulefix; issue with installing and uninstalling modules caused a soft freeze and unable to make changes to modules in fit screen.
         if (mDeleted) {
-            _log(REFPTR__ERROR, "IncRef() - Attempted to increase ref count on deleted object! Current Count: %u", mRefCount);
-            std::cerr << "FATAL: IncRef() called on deleted object! Type: " << typeid(*this).name() << std::endl;
+            _log(REFPTR__ERROR, "IncRef() on deleted object %p (refcount %u)", static_cast<const void*>(this), mRefCount.load(std::memory_order_relaxed));
+            // The dynamic type is no longer valid after destruction. Calling
+            // typeid(*this) dereferences a destroyed vtable and can crash
+            // before the useful stack trace is printed.
+            std::fprintf(stderr, "FATAL: IncRef() on deleted object %p (count %u)\n",
+                         static_cast<const void*>(this), mRefCount.load(std::memory_order_relaxed));
             EvE::traceStack();
 
             // Optional: Either abort to catch error early, or return to avoid crashing.
@@ -98,7 +103,7 @@ protected:
             return; // Production builds, silently fail
         }
         //Removed assert(mDeleted == false); --causing constant server hang, when installing and removed modules from ships.
-        ++mRefCount;
+        mRefCount.fetch_add(1, std::memory_order_relaxed);
     }
     /**
      * @brief Decrements reference count of object by one.
@@ -109,24 +114,29 @@ protected:
     {
         if (mDeleted) {
             // ---modulefix; issue with installing and uninstalling modules caused a soft freeze and unable to make changes to modules in fit screen.
-            _log(REFPTR__ERROR, "IncRef() - Attempted to increase ref count on deleted object! Current Count: %u", mRefCount);
-            std::cerr << "FATAL: IncRef() called on deleted object! Type: " << typeid(*this).name() << std::endl;
+            _log(REFPTR__ERROR, "DecRef() on deleted object %p (refcount %u)", static_cast<const void*>(this), mRefCount.load(std::memory_order_relaxed));
+            std::fprintf(stderr, "FATAL: DecRef() on deleted object %p (count %u)\n",
+                         static_cast<const void*>(this), mRefCount.load(std::memory_order_relaxed));
             EvE::traceStack();
             return;
         }
 
         // Removed assert(mDeleted == false);
-        assert(mRefCount > 0);
-        --mRefCount;
-
-        if (mRefCount < 1)
+        const uint32 previous = mRefCount.fetch_sub(1, std::memory_order_acq_rel);
+        if (previous == 0) {
+            mRefCount.fetch_add(1, std::memory_order_relaxed);
+            _log(REFPTR__ERROR, "DecRef() underflow for object %p", static_cast<const void*>(this));
+            EvE::traceStack();
+            return;
+        }
+        if (previous == 1)
             delete this;
     }
 
 private:
     /// Reference count of instance.
-    mutable uint16 mRefCount;
-    mutable bool mDeleted;
+    mutable std::atomic<uint32> mRefCount;
+    mutable std::atomic<bool> mDeleted;
 };
 
 /**
@@ -187,47 +197,46 @@ public:
     }
 
     /**
-     * @brief Move operator.
-     *
-     * @param[in] oth Object to move.
+     * @brief Move assignment transfers the existing reference without
+     *        incrementing and decrementing it.
+     */
+    RefPtr& operator=(RefPtr&& oth) noexcept
+    {
+        if (this == &oth)
+            return *this;
+        X* previous = mPtr;
+        mPtr = oth.mPtr;
+        oth.mPtr = nullptr;
+        if (previous != nullptr)
+            previous->DecRef();
+        return *this;
+    }
+
+    /**
+     * @brief Compatibility for const rvalues (which cannot be moved).
      */
     RefPtr& operator=(const RefPtr&& oth)
     {
-        if (*this)
-            (*this)->DecRef();
-        mPtr = std::move(oth.get());
-        if (*this)
-            (*this)->IncRef();
-        return *this;
+        return AssignRef(oth.get());
     }
+
     /**
-     * @brief Copy operator.
-     *
-     * @param[in] oth Object to copy the reference from.
+     * @brief Copy assignment must take ownership BEFORE releasing the old
+     *        reference. The old code deleted the sole object during
+     *        self-assignment, then called IncRef() on freed memory.
      */
     RefPtr& operator=(const RefPtr& oth)
     {
-        if (*this)
-            (*this)->DecRef();
-        mPtr = oth.get();
-        if (*this)
-            (*this)->IncRef();
-        return *this;
+        return AssignRef(oth.get());
     }
+
     /**
-     * @brief Casting copy operator.
-     *
-     * @param[in] oth Object to copy the reference from.
+     * @brief Casting copy assignment follows identical lifetime rules.
      */
     template<typename Y>
     RefPtr& operator=(const RefPtr<Y>& oth)
     {
-        if (*this)
-            (*this)->DecRef();
-        mPtr = oth.get();
-        if (*this)
-            (*this)->IncRef();
-        return *this;
+        return AssignRef(oth.get());
     }
 
     /**
@@ -270,6 +279,19 @@ public:
     }
 
 protected:
+    RefPtr& AssignRef(X* next)
+    {
+        if (next == mPtr)
+            return *this;
+        if (next != nullptr)
+            next->IncRef();
+        X* previous = mPtr;
+        mPtr = next;
+        if (previous != nullptr)
+            previous->DecRef();
+        return *this;
+    }
+
     /// The pointer to the reference-counted object.
     X* mPtr;
 };

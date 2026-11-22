@@ -377,4 +377,77 @@ assert "append(asteroidItems," in location_lookup
 assert "LOCATE('{asteroidType}', a.itemName)" in location_lookup
 assert "LEFT JOIN invTypes AS t ON t.typeID = a.typeID" in location_lookup
 
+# A newly selected character boots its solar system immediately after the
+# AnomalyMgr initialization log. Invalid persisted NPC/wreck/containter state
+# must never be registered as a valid entity or crash the entire server.
+system_impl = source("src/eve-server/system/SystemManager.cpp")
+boot_system = system_impl.split("bool SystemManager::BootSystem()", 1)[1].split(
+    "bool SystemManager::LoadCosmicMgrs()", 1
+)[0]
+assert '"SystemBoot", "System %s(%u): cosmic managers ready; loading system dynamics."' in boot_system
+assert '"SystemBoot", "System %s(%u): loading player dynamics."' in boot_system
+assert '"SystemBoot", "System %s(%u): dynamics ready; initializing structures."' in boot_system
+assert "if (cur.second == nullptr)" in boot_system
+assert "if (pos != nullptr)" in boot_system
+assert system_impl.count("pSE = DynamicEntityFactory::BuildEntity(*this, cur);") == 2
+assert system_impl.count("dynamic item %u (type %u, group %u) threw during restoration") == 2
+assert system_impl.count("catch (const std::exception& e)") >= 2
+
+npc_factory = system_impl.split("SystemEntity* DynamicEntityFactory::BuildEntity(", 1)[1].split(
+    "void SystemManager::AddClient(", 1
+)[0]
+assert "if (npcSE == nullptr || !npcSE->Load())" in npc_factory
+assert "SafeDelete(npcSE);" in npc_factory
+assert "inventory unavailable." in npc_factory
+assert "if (wreckInventory == nullptr)" in npc_factory
+assert "if (containerInventory == nullptr)" in npc_factory
+assert "if (spawnInventory == nullptr)" in npc_factory
+
+client_boot = source("src/eve-server/Client.cpp")
+character_selection = client_boot.split("bool Client::SelectCharacter(", 1)[1].split(
+    "void Client::ProcessClient()", 1
+)[0]
+assert "if (m_system == nullptr || pShipSE == nullptr || pShipSE->DestinyMgr() == nullptr)" in character_selection
+assert 'CloseClientConnection();' in character_selection
+destiny_setup = client_boot.split("void Client::SetDestiny(", 1)[1].split(
+    "void Client::SetBallPark()", 1
+)[0]
+assert "if (m_system == nullptr || m_ship.get() == nullptr)" in destiny_setup
+assert "if (pShipSE == nullptr || pShipSE->DestinyMgr() == nullptr" in destiny_setup
+entity_boot = source("src/eve-server/EntityList.cpp").split(
+    "SystemManager* EntityList::FindOrBootSystem(", 1
+)[1].split("void EntityList::AddStation(", 1)[0]
+assert "catch (const std::exception& e)" in entity_boot
+assert "catch (...)" in entity_boot
+assert "if (!booted)" in entity_boot
+assert "SafeDelete(pSM);" in entity_boot
+
+# Actual login reference crash: assignment must retain its next reference
+# before releasing the previous one, including self and cross-type aliases.
+refptr = source("src/eve-core/memory/RefPtr.h")
+copy_assign = refptr.split("RefPtr& AssignRef(X* next)", 1)[1].split(
+    "/// The pointer to the reference-counted object.", 1
+)[0]
+assert "if (next == mPtr)" in copy_assign
+assert copy_assign.index("next->IncRef();") < copy_assign.index("previous->DecRef();")
+assert "RefPtr& operator=(RefPtr&& oth) noexcept" in refptr
+assert "oth.mPtr = nullptr;" in refptr
+assert 'FATAL: DecRef() on deleted object' in refptr
+assert 'FATAL: IncRef() on deleted object' in refptr
+assert 'std::cerr << "FATAL: IncRef() called on deleted object!' not in refptr
+
+callable = source("src/eve-server/services/Callable.cpp")
+result_copy = callable.split("PyResult& PyResult::operator=(const PyResult& oth)", 1)[1]
+assert "if (this == &oth)" in result_copy
+assert result_copy.index("PyIncRef(nextResult);") < result_copy.index("PySafeDecRef(ssResult);")
+assert result_copy.index("PySafeIncRef(nextNamed);") < result_copy.index("PySafeDecRef(ssNamedResult);")
+assert "RefPtrLifetimeTest.cpp" in source("src/eve-test/CMakeLists.txt")
+assert 'ADD_TEST( NAME "RefPtrLifetimeTest"' in source("src/eve-test/CMakeLists.txt")
+
+system_boot = source("src/eve-server/system/SystemManager.cpp")
+assert "LSC channels ready." in system_boot
+assert "startup complete." in system_boot
+login = source("src/eve-server/Client.cpp")
+assert login.count('"LoginStage"') >= 7
+
 print("Source-level gameplay safety guards passed")

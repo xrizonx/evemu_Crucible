@@ -40,6 +40,7 @@ class Client;
 
 class BoundDispatcher {
 public:
+    virtual ~BoundDispatcher() = default;
     /** @returns BoundID The id of the bound service */
     virtual BoundID GetBoundID() const = 0;
     /** @returns PyTuple* The OID of the bound object */
@@ -122,9 +123,20 @@ public:
         PyTuple* rsp = new PyTuple(2);
         PyDict* byName = new PyDict();
 
-        byName->SetItem("OID+", bound->GetOID());
-
-        rsp->SetItem(0, new PySubStruct(new PySubStream(bound->GetOID())));
+        // GetOID() already returns a newly owned clone. Both the dictionary
+        // and substream take ownership of their separate returned references.
+        // Do NOT clone the returned value again: that leaks the initial clone.
+        PyTuple* namedOid = bound->GetOID();
+        PyTuple* streamOid = bound->GetOID();
+        if (namedOid == nullptr || streamOid == nullptr) {
+            PySafeDecRef(namedOid);
+            PySafeDecRef(streamOid);
+            PyDecRef(rsp);
+            PyDecRef(byName);
+            throw CustomError("MachoBindObject: bound object has no OID.");
+        }
+        byName->SetItem("OID+", namedOid);
+        rsp->SetItem(0, new PySubStruct(new PySubStream(streamOid)));
 
         if (call.has_value() == false) {
             rsp->SetItem(1, PyStatic.NewNone());
@@ -132,19 +144,46 @@ public:
             // dispatch call
             CallMachoBindObject_call boundcall;
 
-            if (boundcall.Decode(&call.value()) == false) {
+            // The generated Decode(PyRep**) overload consumes and DecRefs
+            // its input. call.value() is a BORROWED pointer into args.tuple;
+            // passing its address allowed Decode() to free the owner's
+            // nested tuple, leaving a stale pointer in the outer request.
+            // Retain a separate reference for the consuming decoder.
+            PyTuple* decodeInput = call.value();
+            if (decodeInput == nullptr)
+                throw CustomError("MachoBindObject: missing nested bind-call tuple.");
+            PyIncRef(decodeInput);
+            if (boundcall.Decode(&decodeInput) == false) {
                 codelog(SERVICE__ERROR, "%s Service: Failed to decode boundcall arguments", this->GetName().c_str());
-                return nullptr;
+                throw CustomError("MachoBindObject: unable to decode nested call.");
             }
 
             _log(SERVICE__MESSAGE, "%s Service: MachoBindObject also contains call to %s", this->GetName().c_str(), boundcall.method_name.c_str());
 
+            // PyCallArgs adopts and DecRefs its tuple on destruction.
+            // The decoder's boundcall.arguments is still owned by the
+            // decoded bind-call envelope, so give the nested dispatcher its
+            // own reference. Without this, both cleanup paths can release
+            // the same tuple and corrupt the inventory RPC response.
+            if (boundcall.arguments == nullptr) {
+                throw CustomError("MachoBindObject: missing nested call arguments.");
+            }
+            PyIncRef(boundcall.arguments);
             PyCallArgs subArgs(args.client, boundcall.arguments, boundcall.dict_arguments);
 
             PyResult result = bound->Dispatch(boundcall.method_name, subArgs);
 
-            // set the tuple data
-            rsp->SetItem(1, result.ssResult);
+            // PyTuple::SetItem takes ownership of the supplied reference.
+            // PyResult still owns ssResult and will DecRef it on scope exit.
+            // Retain a separate reference for the tuple to prevent a
+            // dangling RPC response when the temporary result is destroyed.
+            PyRep* response = result.ssResult;
+            if (response != nullptr) {
+                PyIncRef(response);
+            } else {
+                response = PyStatic.NewNone();
+            }
+            rsp->SetItem(1, response);
             // TODO: merge the dicts to return the full response data?
             // Py types are lacking lots of helper methods that could be useful
         }
@@ -195,6 +234,9 @@ protected:
      * Default destructor, override to free resources if needed
      */
     virtual ~EVEBoundObject () {
+        PySafeDecRef(mOID);
+        for (auto& handler : mHandlers)
+            delete handler.second;
     }
 
     /**
@@ -202,7 +244,7 @@ protected:
      */
     template <class H, class... Args>
     void Add(const std::string& name, PyResult(H::*callHandler)(PyCallArgs&, Args...)) {
-        this->mHandlers.push_back(std::make_pair(std::string(name), new CallHandler <H> (callHandler)));
+        this->mHandlers.push_back(std::make_pair(std::string(name), new CallHandler<H>(static_cast<H*>(this), callHandler)));
     }
 
 public:
@@ -219,7 +261,7 @@ public:
 
             try
             {
-                return (*handler.second)(reinterpret_cast <void*> (this), args);
+                return (*handler.second)(args);
             }
             catch (std::invalid_argument)
             {
@@ -278,7 +320,7 @@ public:
         this->mClients.erase (it);
 
         if (this->mClients.size () == 0) {
-            this->GetParent ().BoundReleased (reinterpret_cast <Bound*> (this));
+            this->GetParent ().BoundReleased (static_cast<Bound*>(this));
             delete this; // we hate this
             return true;
         }

@@ -91,8 +91,8 @@ BoundDispatcher* CorpRegistryService::BindObject(Client* client, PyRep* bindPara
 void CorpRegistryService::BoundReleased (CorpRegistryBound* bound) {
     auto it = this->m_instances.find (bound->GetCorporationID());
 
-    if (it == this->m_instances.end ())
-        return;
+    if (it == this->m_instances.end () || it->second != bound)
+        return; // a delayed release cannot evict a replacement for this corp
 
     this->m_instances.erase (it);
 }

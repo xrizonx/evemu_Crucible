@@ -135,7 +135,15 @@ PyResult CharUnboundMgrService::SelectCharacterID(PyCallArgs &call, PyInt* chara
         return nullptr;
     }
 
-    call.client->SelectCharacter(characterID->value());
+    // Selection can fail after partial station/system initialization. Do not
+    // silently report the RPC as successful when the client is closing.
+    const uint32 selectedID = characterID->value();
+    sLog.Blue("LoginRPC", "Character %u: invoking SelectCharacter.", selectedID);
+    if (!call.client->SelectCharacter(selectedID)) {
+        sLog.Error("LoginRPC", "Character %u: SelectCharacter failed; no success reply.", selectedID);
+        throw CustomError("Unable to complete character selection.");
+    }
+    sLog.Blue("LoginRPC", "Character %u: SelectCharacter returned successfully.", selectedID);
     return nullptr;
 }
 

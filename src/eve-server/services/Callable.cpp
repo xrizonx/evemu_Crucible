@@ -56,18 +56,25 @@ PyResult::~PyResult() { PySafeDecRef(ssResult); PySafeDecRef(ssNamedResult); }
 
 PyResult& PyResult::operator=(const PyResult& oth)
 {
+    if (this == &oth)
+        return *this;
+
+    // Retain the incoming references *before* releasing the old result.
+    // Copies can alias the same PyRep (notably cached login RPC results).
+    // Releasing first could destroy that object and then IncRef the freed
+    // pointer, producing the fatal reference-count violation.
+    PyRep* nextResult = oth.ssResult;
+    if (nextResult == nullptr)
+        nextResult = PyStatic.NewNone(); // already has its own reference
+    else
+        PyIncRef(nextResult);
+
+    PyDict* nextNamed = oth.ssNamedResult;
+    PySafeIncRef(nextNamed);
+
     PySafeDecRef(ssResult);
-    if (oth.ssResult != nullptr) {
-        ssResult = oth.ssResult;
-    }
-    else {
-        ssResult = PyStatic.NewNone();
-    }
-    PySafeIncRef(ssResult);
-
     PySafeDecRef(ssNamedResult);
-    ssNamedResult = oth.ssNamedResult;
-    PySafeIncRef(ssNamedResult);
-
+    ssResult = nextResult;
+    ssNamedResult = nextNamed;
     return *this;
 }

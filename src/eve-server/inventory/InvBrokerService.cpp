@@ -126,7 +126,7 @@ PyResult InvBrokerBound::GetContainerContents(PyCallArgs &call, PyInt* container
 }
 
 //this is a view into the entire inventory item.  this CAN throw.  find and implement client error msgs here for corp usage
-PyResult InvBrokerBound::GetInventoryFromId(PyCallArgs &call, PyInt* inventoryID, PyInt* passive) {
+PyResult InvBrokerBound::GetInventoryFromId(PyCallArgs &call, PyRep* inventoryID, std::optional<PyRep*> passive) {
     /** @note this means "Get the Inventory of this itemID */
     /*
             if e.args[0] == 'CrpAccessDenied':
@@ -135,20 +135,43 @@ PyResult InvBrokerBound::GetInventoryFromId(PyCallArgs &call, PyInt* inventoryID
     _log(INV__DUMP, "InvBrokerBound::Handle_GetInventoryFromId() size=%lli", call.tuple->size());
     call.Dump(INV__DUMP);
 
-    sItemFactory.SetUsingClient( call.client );
-    InventoryItemRef iRef(nullptr);
-    // if item requested is office folder, we have to do shit a lil different, as it sends officeFolderID, instead of itemID
-    if ((m_groupID == EVEDB::invGroups::Station) and (IsOfficeFolder(inventoryID->value()))) {
-        uint32 officeID = stDataMgr.GetOfficeIDForCorp(m_locationID, call.client->GetCorporationID());
-        iRef = sItemFactory.GetItemRefFromID( officeID );
-    } else {
-        iRef = sItemFactory.GetItemRefFromID(inventoryID->value());
+    // The Crucible client may omit passive or encode it as a bool rather
+    // than an int. The old fixed PyInt signature rejected that RPC and
+    // caused Moniker.Bind to receive None instead of an inventory binding.
+    if (inventoryID == nullptr || (!inventoryID->IsInt() && !inventoryID->IsLong())) {
+        throw CustomError("GetInventoryFromId requires an integer inventory ID.");
     }
-    sItemFactory.UnsetUsingClient();
+    const uint32 requestedID = PyRep::IntegerValueU32(inventoryID);
+    bool passiveMode = false;
+    if (passive.has_value() && passive.value() != nullptr) {
+        PyRep* mode = passive.value();
+        if (!mode->IsNone()) {
+            if (!mode->IsBool() && !mode->IsInt() && !mode->IsLong())
+                throw CustomError("GetInventoryFromId passive mode must be boolean or integer.");
+            passiveMode = mode->IsBool() ? mode->AsBool()->value() : (PyRep::IntegerValue(mode) != 0);
+        }
+    }
+
+    InventoryItemRef iRef(nullptr);
+    // Preserve factory context even if loading the new character's
+    // inventory throws during session-change priming.
+    struct ScopedFactoryClient {
+        explicit ScopedFactoryClient(Client* client) { sItemFactory.SetUsingClient(client); }
+        ~ScopedFactoryClient() { sItemFactory.UnsetUsingClient(); }
+    };
+    // if item requested is office folder, we have to do shit a lil different, as it sends officeFolderID, instead of itemID
+    {
+        ScopedFactoryClient factoryClient(call.client);
+        if ((m_groupID == EVEDB::invGroups::Station) and (IsOfficeFolder(requestedID))) {
+            uint32 officeID = stDataMgr.GetOfficeIDForCorp(m_locationID, call.client->GetCorporationID());
+            iRef = sItemFactory.GetItemRefFromID(officeID);
+        } else {
+            iRef = sItemFactory.GetItemRefFromID(requestedID);
+        }
+    }
     if (iRef.get() == nullptr) {
-        _log(INV__ERROR, "GetInventoryFromId() - Unable to get inventoryItem for itemID %u", inventoryID->value());
-        // send error to player?
-        return nullptr;
+        _log(INV__ERROR, "GetInventoryFromId() - Unable to get inventoryItem for itemID %u", requestedID);
+        throw CustomError("Requested inventory item could not be loaded.");
     }
 
     // this can send locationID as named arg.  not sure if we need it, possible test cases (usually stationID)
@@ -226,7 +249,7 @@ PyResult InvBrokerBound::GetInventoryFromId(PyCallArgs &call, PyInt* inventoryID
             flag = flagCargoHold;
         } break;
         case EVEDB::invCategories::Trading: {
-            _log(INV__WARNING, "GetInventoryFromID called for Trading locationID %u using itemID %u", m_locationID, inventoryID->value());
+            _log(INV__WARNING, "GetInventoryFromID called for Trading locationID %u using itemID %u", m_locationID, requestedID);
             flag = flagNone;
         } break;
         case EVEDB::invCategories::Celestial: {
@@ -264,9 +287,9 @@ PyResult InvBrokerBound::GetInventoryFromId(PyCallArgs &call, PyInt* inventoryID
 
     if (iRef->GetMyInventory() == nullptr) {
         _log(INV__ERROR, "GetInventoryFromId: item %u (group %u) cannot hold inventory; refusing binding.", iRef->itemID(), iRef->groupID());
-        return nullptr;
+        throw CustomError("Requested item does not expose inventory.");
     }
-    InventoryBound* ib = new InventoryBound(this->GetServiceManager(), reinterpret_cast <BoundServiceParent<InventoryBound>&> (this->GetParent ()), iRef, flag, ownerID, passive->value());
+    InventoryBound* ib = new InventoryBound(this->GetServiceManager(), reinterpret_cast <BoundServiceParent<InventoryBound>&> (this->GetParent ()), iRef, flag, ownerID, passiveMode);
 
     ib->NewReference(call.client);
 

@@ -70,43 +70,40 @@ template <class T> struct is_optional<std::optional<T>> : std::true_type {};
 
 struct CallHandlerBase {
 public:
-    virtual PyResult operator() (void* service, PyCallArgs& args) const = 0;
-    virtual const std::string& getSignature () = 0;
+    virtual ~CallHandlerBase() = default;
+    virtual PyResult operator()(PyCallArgs& args) const = 0;
+    virtual const std::string& getSignature() = 0;
 };
 
 template <class S>
 struct CallHandler : public CallHandlerBase {
-    template<class... Args> CallHandler(PyResult(S::*callHandler)(PyCallArgs&, Args...)) :
-            erasedHandler(reinterpret_cast <PyResult(S::*)()> (callHandler)),
-            handlerImpl {
-                [this](S* service, PyResult(S::*erasedHandler)(), PyCallArgs& args) -> PyResult {
-                    auto handler = reinterpret_cast <PyResult(S::*)(PyCallArgs&, Args...)> (erasedHandler);
-
-                    if constexpr (sizeof...(Args) == 0) {
-                        // ensure there's no arguments in the data
-                        if (args.tuple->size() != 0)
-                            throw std::invalid_argument("expected 0 arguments");
-
-                        // all the functions must have the PyCallArgs to know important info about the call
-                        // like the client that sent it
-                        return (service->*handler) (args);
-                    } else {
-                        if (this->validateArgs <std::decay_t<Args>...>(args) == false)
-                            throw std::invalid_argument("arguments do not match");
-
-                        return this->apply(service, handler, args);
-                    }
+    // Bind the service instance and its exact member-function signature
+    // at registration time. Erasing a member pointer as a different member
+    // signature is undefined behavior (especially under multiple inheritance).
+    template<class... Args>
+    CallHandler(S* service, PyResult(S::*callHandler)(PyCallArgs&, Args...)) :
+        handlerImpl {
+            [this, service, callHandler](PyCallArgs& args) -> PyResult {
+                if constexpr (sizeof...(Args) == 0) {
+                    if (args.tuple->size() != 0)
+                        throw std::invalid_argument("expected 0 arguments");
+                    return (service->*callHandler)(args);
+                } else {
+                    if (!this->validateArgs<std::decay_t<Args>...>(args))
+                        throw std::invalid_argument("arguments do not match");
+                    return this->apply(service, callHandler, args);
                 }
             }
+        }
     {
-        this->generateSignature <std::decay_t <Args>...> ();
+        this->generateSignature<std::decay_t<Args>...>();
     }
 
-    PyResult operator() (void* service, PyCallArgs& args) const override {
-        return handlerImpl(reinterpret_cast <S*> (service), erasedHandler, args);
+    PyResult operator()(PyCallArgs& args) const override {
+        return handlerImpl(args);
     }
 
-    const std::string& getSignature () {
+    const std::string& getSignature() override {
         return this->signature;
     }
 
@@ -327,8 +324,7 @@ private:
         );
     }
 
-    PyResult(S::*erasedHandler)() = nullptr;
-    std::function <PyResult(S* service, PyResult(S::* erasedHandler)(), PyCallArgs& args)> handlerImpl;
+    std::function<PyResult(PyCallArgs&)> handlerImpl;
     std::string signature;
 };
 

@@ -1502,51 +1502,59 @@ void FleetService::SendFleetUpdate(uint32 fleetID, const char* notifyType, PyTup
     PySafeDecRef(payload);
 }
 
-void FleetService::GetFleetMembersOnGrid(Client* pClient, std::vector< uint32 >& data)
+void FleetService::GetFleetMembersOnGrid(Client* pClient, std::vector<uint32>& data)
 {
-    std::vector<Client*> members;
-    uint16 scopeID = pClient->GetShipSE()->SysBubble()->GetID();
-    auto range = m_fleetMembers.equal_range(pClient->GetFleetID());
-    for (auto fItr = range.first; fItr != range.second; ++fItr)
-        members.push_back(fItr->second);
+    // During station login, fleet members can exist before ShipSE or bubble.
+    if (pClient == nullptr || pClient->GetShipSE() == nullptr ||
+        pClient->GetShipSE()->SysBubble() == nullptr)
+        return;
 
-    for (auto cur : members) {
-        if (cur == nullptr)
+    const uint32 scopeID = pClient->GetShipSE()->SysBubble()->GetID();
+    auto range = m_fleetMembers.equal_range(pClient->GetFleetID());
+    for (auto it = range.first; it != range.second; ++it) {
+        Client* member = it->second;
+        if (member == nullptr || member->GetShipSE() == nullptr ||
+            member->GetShipSE()->SysBubble() == nullptr)
             continue;
-        if (cur->GetShipSE()->SysBubble()->GetID() == scopeID)
-            data.push_back(cur->GetCharacterID());
+        if (member->GetShipSE()->SysBubble()->GetID() == scopeID)
+            data.push_back(member->GetCharacterID());
     }
 }
 
-void FleetService::GetFleetMembersInSystem(Client* pClient, std::vector< uint32 >& data)
+void FleetService::GetFleetMembersInSystem(Client* pClient, std::vector<uint32>& data)
 {
-    std::vector<Client*> members;
-    uint16 scopeID = pClient->GetShipSE()->SystemMgr()->GetID();
-    auto range = m_fleetMembers.equal_range(pClient->GetFleetID());
-    for (auto fItr = range.first; fItr != range.second; ++fItr)
-        members.push_back(fItr->second);
+    if (pClient == nullptr || pClient->GetShipSE() == nullptr ||
+        pClient->GetShipSE()->SystemMgr() == nullptr)
+        return;
 
-    for (auto cur : members) {
-        if (cur == nullptr)
+    // Solar-system IDs are 32-bit; the previous uint16 scope truncated them.
+    const uint32 scopeID = pClient->GetShipSE()->SystemMgr()->GetID();
+    auto range = m_fleetMembers.equal_range(pClient->GetFleetID());
+    for (auto it = range.first; it != range.second; ++it) {
+        Client* member = it->second;
+        if (member == nullptr || member->GetShipSE() == nullptr ||
+            member->GetShipSE()->SystemMgr() == nullptr)
             continue;
-        if (cur->GetShipSE()->SystemMgr()->GetID() == scopeID)
-            data.push_back(cur->GetCharacterID());
+        if (member->GetShipSE()->SystemMgr()->GetID() == scopeID)
+            data.push_back(member->GetCharacterID());
     }
 }
 
-void FleetService::GetFleetClientsInSystem(Client* pClient, std::vector< Client* >& data)
+void FleetService::GetFleetClientsInSystem(Client* pClient, std::vector<Client*>& data)
 {
-    std::vector<Client*> members;
-    uint32 scopeID = pClient->GetShipSE()->SystemMgr()->GetID();
-    auto range = m_fleetMembers.equal_range(pClient->GetFleetID());
-    for (auto fItr = range.first; fItr != range.second; ++fItr)
-        members.push_back(fItr->second);
+    if (pClient == nullptr || pClient->GetShipSE() == nullptr ||
+        pClient->GetShipSE()->SystemMgr() == nullptr)
+        return;
 
-    for (auto cur : members) {
-        if (cur == nullptr)
+    const uint32 scopeID = pClient->GetShipSE()->SystemMgr()->GetID();
+    auto range = m_fleetMembers.equal_range(pClient->GetFleetID());
+    for (auto it = range.first; it != range.second; ++it) {
+        Client* member = it->second;
+        if (member == nullptr || member->GetShipSE() == nullptr ||
+            member->GetShipSE()->SystemMgr() == nullptr)
             continue;
-        if (cur->GetShipSE()->SystemMgr()->GetID() == scopeID)
-            data.push_back(cur);
+        if (member->GetShipSE()->SystemMgr()->GetID() == scopeID)
+            data.push_back(member);
     }
 }
 
