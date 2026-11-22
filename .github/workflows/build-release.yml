@@ -4,12 +4,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+# TEMPORARY BILLING PAUSE (2026-11-22):
+# Disable automatic push, PR and tag builds to conserve free Actions minutes.
+# Run only with an explicit manual workflow_dispatch until CI is re-enabled.
 on:
-  push:
-    branches: [master]
-    tags: ["v*", "stable-rizonx"]
-  pull_request:
-    branches: [master]
   workflow_dispatch:
 
 permissions:
