@@ -950,6 +950,14 @@ int main( int argc, char* argv[] )
     sMktMgr.Close();
     sBulkDB.Close();
 
+    // Let characters and their bound RPCs log out while the services,
+    // station data, ItemFactory and database are still available. The
+    // original sequence saved the global item cache before the final client
+    // logout, which could leave stale character state in the bulk snapshot.
+    sLog.Warning("   ServerShutdown", "Closing connected clients.");
+    sEntityList.Shutdown();
+    sLog.Warning("   ServerShutdown", "Connected clients closed.");
+
     // Persist items while the database, static data and live item cache exist.
     sLog.Warning("   ServerShutdown", "Saving Items." );
     if (!sConsole.IsDbError())
