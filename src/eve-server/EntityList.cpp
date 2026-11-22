@@ -97,39 +97,57 @@ void EntityList::Initialize() {
 }
 
 void EntityList::Shutdown() {
-    /** @todo finish this....
-     * halt server called from admin client. (gm command ingame)
-     * call d'tor on all connected clients
-     * server run loop will exit after control is returned from this function, which will clean up remaining items.
-     */
-    for (auto cur : m_clients)
-        SafeDelete(cur);
-
-    m_clients.clear();
+    // Detach each client from the connection list BEFORE deleting it.
+    // Client::~Client() releases channels, bound objects and system players,
+    // and may indirectly modify other EntityList registries.
+    while (!m_clients.empty()) {
+        Client* client = m_clients.back();
+        m_clients.pop_back();
+        SafeDelete(client);
+    }
+    m_players.clear();
+    m_corpMembers.clear();
 }
 
 void EntityList::Close()
 {
-    if (m_clients.size() > 0) {
+    if (!m_clients.empty()) {
         sLog.Yellow("       EntityList", "Cleaning up %lu clients, %lu systems, %lu agents, and %lu stations", \
                     m_clients.size(), m_systems.size(), m_agents.size(), m_stations.size());
     } else {
         sLog.Green("       EntityList", "Cleaning up %lu clients, %lu systems, %lu agents, and %lu stations", \
-                    m_clients.size(), m_systems.size(), m_agents.size(), m_stations.size());
+                   m_clients.size(), m_systems.size(), m_agents.size(), m_stations.size());
     }
 
-    for (auto cur : m_clients)
-        SafeDelete(cur);
+    Shutdown();
 
-    for (auto cur : m_agents)
-        SafeDelete(cur.second);
-
-    for (auto cur : m_systems) {
-        cur.second->UnloadSystem();
-        SafeDelete(cur.second);
+    // Detach registry entries before callbacks/destructors run. The previous
+    // range-for left registries full of stale pointers throughout teardown,
+    // and a callback erasing an entry could invalidate the active iterator.
+    while (!m_agents.empty()) {
+        auto it = m_agents.begin();
+        auto* agent = it->second;
+        m_agents.erase(it);
+        SafeDelete(agent);
     }
 
-    sLog.Warning("       EntityList", "Entity List has been closed." );
+    while (!m_systems.empty()) {
+        auto it = m_systems.begin();
+        SystemManager* system = it->second;
+        m_systems.erase(it);
+        if (system != nullptr) {
+            system->UnloadSystem();
+            SafeDelete(system);
+        }
+    }
+
+    // These are observer/non-owning registries (station map owns RefPtrs).
+    // Drop their references before ItemFactory closes.
+    m_stations.clear();
+    m_targMgrs.clear();
+    m_probes.clear();
+
+    sLog.Warning("       EntityList", "Entity List has been closed.");
 }
 
 /* m_clients is used to search for online players and numerous other things.
