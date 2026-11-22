@@ -153,6 +153,34 @@ bool PacketizerFrameAlignmentRegression()
     return cleared;
 }
 
+bool NullPacketFieldRegression()
+{
+    PyCallStream emptyCall;
+    PyCallStream* copy = emptyCall.Clone();
+    const bool safeClone = copy != nullptr && copy->arg_tuple == nullptr &&
+        copy->arg_dict == nullptr;
+    delete copy;
+    if (!safeClone)
+        return false;
+
+    // An outbound packet with no payload must encode explicit wire None,
+    // never put a null pointer in the PyTuple before marshaling.
+    PyPacket packet;
+    packet.type_string = "macho.CallRsp";
+    packet.type = CALL_RSP;
+    PyRep* encoded = packet.Encode();
+    bool valid = encoded != nullptr && encoded->IsObject();
+    if (valid) {
+        PyRep* arguments = encoded->AsObject()->arguments();
+        valid = arguments != nullptr && arguments->IsTuple() &&
+            arguments->AsTuple()->size() == 7 &&
+            arguments->AsTuple()->GetItem(4) != nullptr &&
+            arguments->AsTuple()->GetItem(4)->IsNone();
+    }
+    PySafeDecRef(encoded);
+    return valid;
+}
+
 bool CallPacketRoundTrip(bool channel, bool named, bool wrapped, bool malformed)
 {
     PyCallStream outbound;
@@ -235,6 +263,10 @@ int marshal_EVEMarshalTest( int argc, char* argv[] )
     }
     if (!PacketizerFrameAlignmentRegression()) {
         ::puts("Network packet framing alignment/cleanup regression.");
+        return EXIT_FAILURE;
+    }
+    if (!NullPacketFieldRegression()) {
+        ::puts("Packet null payload/call cloning regression.");
         return EXIT_FAILURE;
     }
     if (!CallPacketRoundTrip(false, false, false, false) ||
