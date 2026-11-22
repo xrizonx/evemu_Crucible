@@ -946,30 +946,33 @@ int main( int argc, char* argv[] )
     /* stop Image Server */
     sImageServer.Stop();
     sLog.Warning("   ServerShutdown", "Image Server stopped." );
-    /* Close the MarketMgr */
+    /* Close workers that generate new market/bulk activity. */
     sMktMgr.Close();
-    /* Close the bulk data manager */
     sBulkDB.Close();
-    /* Close the station data manager */
-    stDataMgr.Close();
-    /* Close the map data manager */
-    sMapData.Close();
-    /* Close the static data manager */
-    sDataMgr.Close();
-    /* Close the statistics manager */
-    sStatMgr.Close();
-    /* Close the standings manager */
-    sStandingMgr.Close();
+
+    // Persist items while the database, static data and live item cache exist.
     sLog.Warning("   ServerShutdown", "Saving Items." );
     if (!sConsole.IsDbError())
         sItemFactory.SaveItems();
-    /* Close the entity list */
+
+    // Client logout and system/entity destruction still query map, station,
+    // type and standings managers. Closing those caches FIRST used to leave
+    // shutdown callbacks dereferencing objects that had already been freed.
+    sLog.Warning("   ServerShutdown", "Closing the Entity List.");
     sEntityList.Close();
-    /* Shut down the Item system */
+
+    // Destroy remaining system bubbles before ItemFactory drops cached
+    // InventoryItem references and then their ItemTypes.
+    sBubbleMgr.clear();
     sLog.Warning("   ServerShutdown", "Shutting down Item Factory." );
     sItemFactory.Close();
-    /* Close the bubble manager */
-    sBubbleMgr.clear();
+
+    // These dependencies are only safe to release after the world/items.
+    stDataMgr.Close();
+    sMapData.Close();
+    sDataMgr.Close();
+    sStatMgr.Close();
+    sStandingMgr.Close();
     /* Close the command dispatcher */
     command_dispatcher.Close();
     /* Stop Console Command Interpreter */
