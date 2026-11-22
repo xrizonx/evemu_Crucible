@@ -123,9 +123,17 @@ public:
         PyTuple* rsp = new PyTuple(2);
         PyDict* byName = new PyDict();
 
-        byName->SetItem("OID+", bound->GetOID());
-
-        rsp->SetItem(0, new PySubStruct(new PySubStream(bound->GetOID())));
+        // GetOID() is borrowed: the bound object retains ownership of mOID.
+        // Both PyDict::SetItem and PySubStream adopt their arguments.
+        // Passing mOID to both containers (and releasing it in the bound
+        // destructor) caused multiple owners to DecRef the same reference.
+        // Deep-clone each representation to keep the wire responses independent
+        // of each other and of bound-service lifetime.
+        PyTuple* oid = bound->GetOID();
+        if (oid == nullptr)
+            throw CustomError("MachoBindObject: bound object has no OID.");
+        byName->SetItem("OID+", oid->Clone());
+        rsp->SetItem(0, new PySubStruct(new PySubStream(oid->Clone())));
 
         if (call.has_value() == false) {
             rsp->SetItem(1, PyStatic.NewNone());
