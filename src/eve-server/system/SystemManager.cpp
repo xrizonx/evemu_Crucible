@@ -1069,15 +1069,16 @@ void SystemManager::AddClient(Client* pClient, bool count/*false*/, bool jump/*f
     //called from Client::MoveToLocation() on login and when changing systems
     if (pClient == nullptr)
         return;
-    if (m_clients.find(pClient->GetCharacterID()) == m_clients.end()) {
-        m_clients[pClient->GetCharacterID()] = pClient;
-        _log(PLAYER__TRACE, "%s(%u): Added to system manager for %s(%u) - %u clients now in system. count %s", \
-                    pClient->GetName(), pClient->GetCharacterID(), m_data.name.c_str(), m_data.systemID, m_clients.size(), count?"true":"false");
-    } else {
-        // error for player already in client map
-        _log(PLAYER__ERROR, "%s(%u): Already in player map for %s(%u)", \
-            pClient->GetName(), pClient->GetCharacterID(), m_data.name.c_str(), m_data.systemID);
+    const auto inserted = m_clients.emplace(pClient->GetCharacterID(), pClient).second;
+    if (!inserted) {
+        // A duplicate registration must not increment player counts again.
+        _log(PLAYER__ERROR, "%s(%u): Duplicate registration for %s(%u), ignored.", \
+             pClient->GetName(), pClient->GetCharacterID(), m_data.name.c_str(), m_data.systemID);
+        return;
     }
+    _log(PLAYER__TRACE, "%s(%u): Added to system manager for %s(%u) - %u clients now in system. count %s", \
+         pClient->GetName(), pClient->GetCharacterID(), m_data.name.c_str(), m_data.systemID,
+         m_clients.size(), count ? "true" : "false");
 
     m_activityTime = 0;
 
@@ -1107,16 +1108,24 @@ void SystemManager::RemoveClient(Client* pClient, bool count/*false*/, bool jump
     //called from Client::~Client() and Client::MoveToLocation() when changing systems
     if (pClient == nullptr)
         return;
-    m_clients.erase(pClient->GetCharacterID());
+    const auto registered = m_clients.find(pClient->GetCharacterID());
+    if (registered == m_clients.end() || registered->second != pClient) {
+        _log(PLAYER__WARNING, "%s(%u): Ignoring unmatched system removal in %s(%u).", \
+             pClient->GetName(), pClient->GetCharacterID(), m_data.name.c_str(), m_data.systemID);
+        return;
+    }
+    m_clients.erase(registered);
     _log(PLAYER__TRACE, "%s(%u): Removed from system manager for %s(%u) - %u clients still in system.", \
             pClient->GetName(), pClient->GetCharacterID(), m_data.name.c_str(), m_data.systemID, m_clients.size());
 
     if (count) {
-        --m_players;
-        if (m_players < 0) {
-            m_players = 0;
-            m_clients.clear();  // redundant but safe
-            _log(PLAYER__ERROR, "player count for %s(%u) is < 0", m_data.name.c_str(), m_data.systemID);
+        if (m_players > 0) {
+            --m_players;
+        } else {
+            // m_players is unsigned: the old "< 0" check was ineffective
+            // and decrement wrapped to 65535, corrupting population state.
+            _log(PLAYER__ERROR, "Player count underflow prevented for %s(%u).",
+                 m_data.name.c_str(), m_data.systemID);
         }
 
         _log(PLAYER__INFO, "%s(%u): Removed from player count for %s(%u) - new count: %u", \
