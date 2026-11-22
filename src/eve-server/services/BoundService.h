@@ -40,6 +40,7 @@ class Client;
 
 class BoundDispatcher {
 public:
+    virtual ~BoundDispatcher() = default;
     /** @returns BoundID The id of the bound service */
     virtual BoundID GetBoundID() const = 0;
     /** @returns PyTuple* The OID of the bound object */
@@ -213,6 +214,9 @@ protected:
      * Default destructor, override to free resources if needed
      */
     virtual ~EVEBoundObject () {
+        PySafeDecRef(mOID);
+        for (auto& handler : mHandlers)
+            delete handler.second;
     }
 
     /**
@@ -220,7 +224,7 @@ protected:
      */
     template <class H, class... Args>
     void Add(const std::string& name, PyResult(H::*callHandler)(PyCallArgs&, Args...)) {
-        this->mHandlers.push_back(std::make_pair(std::string(name), new CallHandler <H> (callHandler)));
+        this->mHandlers.push_back(std::make_pair(std::string(name), new CallHandler<H>(static_cast<H*>(this), callHandler)));
     }
 
 public:
@@ -237,7 +241,7 @@ public:
 
             try
             {
-                return (*handler.second)(reinterpret_cast <void*> (this), args);
+                return (*handler.second)(args);
             }
             catch (std::invalid_argument)
             {
@@ -296,7 +300,7 @@ public:
         this->mClients.erase (it);
 
         if (this->mClients.size () == 0) {
-            this->GetParent ().BoundReleased (reinterpret_cast <Bound*> (this));
+            this->GetParent ().BoundReleased (static_cast<Bound*>(this));
             delete this; // we hate this
             return true;
         }
