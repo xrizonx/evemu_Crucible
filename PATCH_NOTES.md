@@ -1,5 +1,16 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 22 November 2026 — GitHub Actions pause and shutdown RefPtr/iterator hardening
+
+- **GitHub Actions automatic builds paused** on `master` and the existing hotfix branch. The retained `.github/workflows/build-release.yml` now has only `workflow_dispatch` (manual launch). Push, PR and tag builds no longer start automatically; no CI build was deliberately invoked for this patch. To resume, restore the original push/PR/tag triggers in the workflow file. Already-running jobs are not stopped by changing triggers.
+- **Reported symptom:** During Linux/Docker server exit, `DecRef() on deleted object` with a nonsensical refcount (`3479205808`); the unsymbolized stack by itself cannot identify the failing C++ caller or object. Reading metadata from a freed allocation is undefined, so this value is not a genuine live reference count.
+- **ItemFactory.cpp:** `ItemFactory::Close()` previously deleted `m_types` before releasing `m_items`, despite `InventoryItem` retaining an `ItemType&`. Now detaches/releases cached items first, using per-item removal so reentrant callbacks do not invalidate the map-clear loop, then frees item-type descriptors.
+- **EntityList.cpp:** `Shutdown()` and `Close()` detach clients from `m_clients` before invoking their destructors and detach agents/systems before each cleanup callback; all non-owning observer registries are cleared before ItemFactory destruction. This avoids iterator invalidation/repeated deletion from callbacks during teardown.
+- **SystemManager.{h,cpp}:** `UnloadSystem()` previously retained an iterator into `m_entities` while invoking callbacks such as `InventoryItem::Delete()`, which can itself remove entries through `SystemManager::RemoveEntity()`. Detach the registry entry first, then invoke unload callbacks. The old `erase(find(...))` on potentially absent static/operational entries was also replaced by keyed erasure. Added explicit `UnloadSystem(true)` for **final shutdown**; normal inactivity unload still respects `SafeToUnload()`.
+- **eve-server.cpp:** disconnect connected clients before the final bulk item snapshot. Keep station/map/static/statistics/standings data managers alive through EntityList, SystemManager, bubble, and ItemFactory cleanup; close these dependent managers only afterward. Added shutdown phase log messages.
+- **Validation:** No CI, native build, sanitizer, or live server exit reproduction was executed, as requested. These are targeted source-level corrections and do not prove that every shutdown reference corruption has been eliminated. The legacy Threading manager still detaches worker threads and its `EndThreads()` does not actually join; investigate if crashes persist when asynchronous work is active. For a local Debian Docker build, run `docker compose build server` from the checkout; this does not spend GitHub Actions minutes.
+
+
 ## 22 November 2026 — Assets window / GetMultiLocationsEx SQL error #1064
 
 - With successful character login and in-game access, asset priming reported MariaDB syntax error **#1064** from `ConfigDB::GetMultiLocationsEx` (original source line 267). The available log did not include the generated SQL; the precise malformed clause is unconfirmed.
