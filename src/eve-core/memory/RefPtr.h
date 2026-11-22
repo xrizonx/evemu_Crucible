@@ -102,6 +102,62 @@ public:
         return Registry().suppressed.load(std::memory_order_relaxed);
     }
 
+    // RefPtr must call this STATIC entrypoint. Invoking a member function
+    // through an already-deleted object pointer is undefined behavior even if
+    // that function's first line consults an external live-object registry.
+    static void RetainRef(RefObject* ptr)
+    {
+        if (ptr == nullptr)
+            return;
+        auto& refs = Registry();
+        if (!refs.shuttingDown.load(std::memory_order_acquire)) {
+            ptr->IncRef();
+            return;
+        }
+        std::lock_guard<std::mutex> lock(refs.mutex);
+        if (refs.live.find(ptr) == refs.live.end() ||
+            ptr->mDeleted.load(std::memory_order_relaxed)) {
+            refs.suppressed.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        ptr->mRefCount.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    static void ReleaseRef(RefObject* ptr)
+    {
+        if (ptr == nullptr)
+            return;
+        auto& refs = Registry();
+        if (!refs.shuttingDown.load(std::memory_order_acquire)) {
+            ptr->DecRef();
+            return;
+        }
+
+        bool destroy = false;
+        {
+            std::lock_guard<std::mutex> lock(refs.mutex);
+            if (refs.live.find(ptr) == refs.live.end() ||
+                ptr->mDeleted.load(std::memory_order_relaxed)) {
+                refs.suppressed.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+            const uint32 count = ptr->mRefCount.load(std::memory_order_relaxed);
+            if (count == 0) {
+                refs.suppressed.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+            if (count == 1) {
+                ptr->mRefCount.store(0, std::memory_order_release);
+                refs.live.erase(ptr);
+                destroy = true;
+            } else {
+                ptr->mRefCount.fetch_sub(1, std::memory_order_acq_rel);
+            }
+        }
+        if (destroy)
+            delete ptr;
+    }
+
     uint32 GetCount() const     { return mRefCount.load(std::memory_order_acquire); }
     bool IsDeleted() const      { return mDeleted.load(std::memory_order_acquire); }
 
@@ -111,21 +167,6 @@ protected:
      */
     void IncRef() const
     {
-        // During shutdown, validate the address against a separately owned
-        // live-object registry BEFORE reading any field of *this. An invalid
-        // pointer can have arbitrary values in freed allocator memory.
-        if (Registry().shuttingDown.load(std::memory_order_acquire)) {
-            auto& refs = Registry();
-            std::lock_guard<std::mutex> lock(refs.mutex);
-            if (refs.live.find(this) == refs.live.end() ||
-                mDeleted.load(std::memory_order_relaxed)) {
-                refs.suppressed.fetch_add(1, std::memory_order_relaxed);
-                return;
-            }
-            mRefCount.fetch_add(1, std::memory_order_relaxed);
-            return;
-        }
-
         // ---modulefix; issue with installing and uninstalling modules caused a soft freeze and unable to make changes to modules in fit screen.
         if (mDeleted) {
             _log(REFPTR__ERROR, "IncRef() on deleted object %p (refcount %u)", static_cast<const void*>(this), mRefCount.load(std::memory_order_relaxed));
@@ -150,37 +191,6 @@ protected:
      */
     void DecRef() const
     {
-        // Only the shutdown path pays for synchronized liveness checking.
-        // Remove the entry BEFORE the final delete so reentrant destructors
-        // cannot re-release a pointer while its object is being destroyed.
-        if (Registry().shuttingDown.load(std::memory_order_acquire)) {
-            auto& refs = Registry();
-            bool destroy = false;
-            {
-                std::lock_guard<std::mutex> lock(refs.mutex);
-                if (refs.live.find(this) == refs.live.end() ||
-                    mDeleted.load(std::memory_order_relaxed)) {
-                    refs.suppressed.fetch_add(1, std::memory_order_relaxed);
-                    return;
-                }
-                const uint32_t count = mRefCount.load(std::memory_order_relaxed);
-                if (count == 0) {
-                    refs.suppressed.fetch_add(1, std::memory_order_relaxed);
-                    return;
-                }
-                if (count == 1) {
-                    mRefCount.store(0, std::memory_order_release);
-                    refs.live.erase(this);
-                    destroy = true;
-                } else {
-                    mRefCount.fetch_sub(1, std::memory_order_acq_rel);
-                }
-            }
-            if (destroy)
-                delete this;
-            return;
-        }
-
         if (mDeleted) {
             // ---modulefix; issue with installing and uninstalling modules caused a soft freeze and unable to make changes to modules in fit screen.
             _log(REFPTR__ERROR, "DecRef() on deleted object %p (refcount %u)", static_cast<const void*>(this), mRefCount.load(std::memory_order_relaxed));
@@ -246,7 +256,7 @@ public:
     : mPtr(p)
     {
         if (*this)
-            (*this)->IncRef();
+            RefObject::RetainRef(mPtr);
     }
     /**
      * @brief Copy constructor.
@@ -257,7 +267,7 @@ public:
     : mPtr(oth.get())
     {
         if (*this)
-            (*this)->IncRef();
+            RefObject::RetainRef(mPtr);
     }
     /**
      * @brief Casting copy constructor.
@@ -269,7 +279,7 @@ public:
     : mPtr(oth.get())
     {
         if (*this)
-            (*this)->IncRef();
+            RefObject::RetainRef(mPtr);
     }
 
     /**
@@ -278,7 +288,7 @@ public:
     virtual ~RefPtr()
     {
         if (*this)
-            (*this)->DecRef();
+            RefObject::ReleaseRef(mPtr);
     }
 
     /**
@@ -293,7 +303,7 @@ public:
         mPtr = oth.mPtr;
         oth.mPtr = nullptr;
         if (previous != nullptr)
-            previous->DecRef();
+            RefObject::ReleaseRef(previous);
         return *this;
     }
 
@@ -369,11 +379,11 @@ protected:
         if (next == mPtr)
             return *this;
         if (next != nullptr)
-            next->IncRef();
+            RefObject::RetainRef(next);
         X* previous = mPtr;
         mPtr = next;
         if (previous != nullptr)
-            previous->DecRef();
+            RefObject::ReleaseRef(previous);
         return *this;
     }
 
