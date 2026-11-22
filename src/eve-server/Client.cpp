@@ -3175,6 +3175,13 @@ void Client::_SendPingResponse(const PyAddress& source, int64 callID)
 /************************************************************************/
 bool Client::Handle_CallReq(PyPacket* packet, PyCallStream& req)
 {
+    // A service exception may unwind before the old explicit resets in the
+    // dispatch branches, leaving m_canThrow enabled for later client events.
+    struct ResetThrowOnExit {
+        bool& active;
+        ~ResetThrowOnExit() { active = false; }
+    } resetThrowOnExit{m_canThrow};
+
     // build arguments
     PyCallArgs args(this, req.arg_tuple, req.arg_dict);
     req.arg_tuple = nullptr;
