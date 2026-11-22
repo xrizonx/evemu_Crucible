@@ -25,6 +25,7 @@
 
 #include "eve-test.h"
 #include "python/PyPacket.h"
+#include "network/StreamPacketizer.h"
 
 #include <cstring>
 
@@ -111,6 +112,47 @@ bool NotificationDecodeLifetimeRegression()
     return decoded && cloned;
 }
 
+bool PacketizerFrameAlignmentRegression()
+{
+    Buffer wire;
+    const uint32 firstLength = 3;
+    const uint32 secondLength = 1;
+    wire.Append<uint32>(firstLength);
+    wire.Append<uint8>(0x11);
+    wire.Append<uint8>(0x22);
+    wire.Append<uint8>(0x33);
+    // The second length starts at offset 7 (unaligned uint32).
+    wire.Append<uint32>(secondLength);
+    wire.Append<uint8>(0x44);
+
+    StreamPacketizer framed;
+    framed.InputData(wire);
+    framed.Process();
+    Buffer* first = framed.PopPacket();
+    Buffer* second = framed.PopPacket();
+    const bool decoded = first != nullptr && second != nullptr &&
+        first->size() == 3 && (*first)[0] == 0x11 && (*first)[2] == 0x33 &&
+        second->size() == 1 && (*second)[0] == 0x44;
+    delete first;
+    delete second;
+    if (!decoded)
+        return false;
+
+    Buffer partial;
+    partial.Append<uint8>(0xff);
+    framed.InputData(partial);
+    framed.ClearBuffers(); // must discard incomplete frames too
+    framed.InputData(wire);
+    framed.Process();
+    first = framed.PopPacket();
+    second = framed.PopPacket();
+    const bool cleared = first != nullptr && second != nullptr &&
+        first->size() == 3 && second->size() == 1;
+    delete first;
+    delete second;
+    return cleared;
+}
+
 bool CallPacketRoundTrip(bool channel, bool named, bool wrapped, bool malformed)
 {
     PyCallStream outbound;
@@ -189,6 +231,10 @@ int marshal_EVEMarshalTest( int argc, char* argv[] )
     }
     if (!NotificationDecodeLifetimeRegression()) {
         ::puts("Notification packet decode lifetime regression.");
+        return EXIT_FAILURE;
+    }
+    if (!PacketizerFrameAlignmentRegression()) {
+        ::puts("Network packet framing alignment/cleanup regression.");
         return EXIT_FAILURE;
     }
     if (!CallPacketRoundTrip(false, false, false, false) ||
