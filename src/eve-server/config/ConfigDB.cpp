@@ -225,8 +225,13 @@ PyRep *ConfigDB::GetMultiAllianceShortNamesEx(const std::vector<int32> &entityID
 
 PyRep *ConfigDB::GetMultiLocationsEx(const std::vector<int32>& entityIDs)
 {
+    // The client can request an empty batch while priming Assets.
+    // Never generate SQL containing an empty IN () clause.
+    if (entityIDs.empty())
+        return new PyList();
+
     std::vector<int32> staticItems, dynamicItems, asteroidItems;
-    for (int32 id : entityIDs) {
+    for (const int32 id : entityIDs) {
         if (IsStaticItem(id))
             staticItems.push_back(id);
         else if (IsAsteroidID(id))
@@ -239,16 +244,30 @@ PyRep *ConfigDB::GetMultiLocationsEx(const std::vector<int32>& entityIDs)
     auto append = [&query](const std::vector<int32>& items, const char* select) {
         if (items.empty())
             return;
+
+        // Build an exact comma-separated list from integral values. The old
+        // shared ListToINString helper's output was not validated before
+        // interpolation, so malformed/empty lists reached MariaDB as SQL.
         std::string ids;
-        ListToINString(items, ids);
+        ids.reserve(items.size() * 12);
+        for (const int32 id : items) {
+            if (!ids.empty())
+                ids.push_back(',');
+            ids += std::to_string(id);
+        }
+        if (ids.empty())
+            return;
+
         if (!query.empty())
             query += " UNION ALL ";
         query += select;
-        query += " IN (" + ids + ")";
+        query += " IN (";
+        query += ids;
+        query += ")";
     };
 
-    // The client primes a single cache from mixed batches, so all name
-    // sources must contribute to the same six-column result.
+    // Return the same six columns from every location source, including a
+    // mixed static, dynamic and asteroid asset-location request.
     append(staticItems,
         "SELECT itemID AS locationID, itemName AS locationName,"
         " x, y, z, itemNameID AS locationNameID FROM mapDenormalize WHERE itemID");
@@ -262,9 +281,19 @@ PyRep *ConfigDB::GetMultiLocationsEx(const std::vector<int32>& entityIDs)
         " a.x, a.y, a.z, NULL AS locationNameID FROM sysAsteroids AS a"
         " LEFT JOIN invTypes AS t ON t.typeID = a.typeID WHERE a.itemID");
 
+    if (query.empty())
+        return new PyList();
+
     DBQueryResult res;
-    if (!query.empty() && !sDatabase.RunQuery(res, "%s", query.c_str()))
-        codelog(DATABASE__ERROR, "Error in GetMultiLocationsEx query: %s", res.error.c_str());
+    if (!sDatabase.RunQuery(res, "%s", query.c_str())) {
+        // Include the actual generated SQL (limited to 2048 chars) so a
+        // remaining schema/syntax mismatch can be diagnosed, instead of
+        // reporting only MariaDB #1064 with no query context.
+        codelog(DATABASE__ERROR,
+            "GetMultiLocationsEx failed for %zu IDs: %s. SQL prefix: %.2048s",
+            entityIDs.size(), res.error.c_str(), query.c_str());
+        return new PyList();
+    }
     return DBResultToTupleSet(res);
 }
 
