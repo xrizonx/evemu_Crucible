@@ -77,6 +77,40 @@ bool WireObjectOwnershipRegression()
     return tupleStable && listStable && dictStable && extendedStable;
 }
 
+bool NotificationDecodeLifetimeRegression()
+{
+    // This malformed envelope used to release both the owning outer tuple
+    // and its borrowed inner tuple, causing a double-free.
+    PyTuple* invalid = new_tuple(new_tuple(new PyInt(0)), PyStatic.NewNone());
+    EVENotificationStream broken;
+    if (broken.Decode("macho.Notification", "OnInvalid", invalid) || invalid != nullptr)
+        return false;
+
+    PyTuple* inbound = new_tuple(
+        new_tuple(
+            new PyInt(0),
+            new PySubStream(new_tuple(
+                new PyInt(1), new_tuple(new PyInt(0), new_tuple(new PyInt(77)))
+            ))
+        ),
+        PyStatic.NewNone()
+    );
+    EVENotificationStream notify;
+    if (!notify.Decode("macho.Notification", "OnTest", inbound) || inbound != nullptr)
+        return false;
+
+    const bool decoded = notify.notifyType == "OnTest" &&
+        notify.remoteObject == 1 && notify.args != nullptr &&
+        notify.args->size() == 1 &&
+        notify.args->GetItem(0)->AsInt()->value() == 77;
+    EVENotificationStream* copy = notify.Clone();
+    const bool cloned = copy != nullptr && copy->notifyType == "OnTest" &&
+        copy->remoteObject == 1 && copy->args != notify.args &&
+        copy->args->GetItem(0)->AsInt()->value() == 77;
+    delete copy;
+    return decoded && cloned;
+}
+
 bool CallPacketRoundTrip(bool channel, bool named, bool wrapped, bool malformed)
 {
     PyCallStream outbound;
@@ -151,6 +185,10 @@ int marshal_EVEMarshalTest( int argc, char* argv[] )
 {
     if (!WireObjectOwnershipRegression()) {
         ::puts("Python wire object clone/self-assignment lifetime regression.");
+        return EXIT_FAILURE;
+    }
+    if (!NotificationDecodeLifetimeRegression()) {
+        ::puts("Notification packet decode lifetime regression.");
         return EXIT_FAILURE;
     }
     if (!CallPacketRoundTrip(false, false, false, false) ||
