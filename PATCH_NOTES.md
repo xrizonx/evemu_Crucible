@@ -1,5 +1,13 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 22 November 2026 — Cross-platform devtools.raw inspection and safe literal editor
+
+- Inspected the binary `utils/config/devtools.raw` (10,117 bytes). It is a Python 2 marshal dictionary containing the compiled `Bootstrap` loader and hex-embedded compiled modules for `insider.py`, `devToolsWindow.py`, and `devToolsConsole.py`. The server's `DevToolsProviderService::GetLoader` sends the file bytes directly to the client.
+- Added `tools/devtools_raw_editor.py` (Python 3 standard library) with `verify`, `list`, `extract`, and `replace` commands. This is a **string-constant editor** with full outer/nested marshal structure checking, bytecode-preservation checks, expected-old-value validation, and optional backup-before-in-place editing, not a general Python 2 function compiler/decompiler.
+- Added six offline synthetic Python 2 marshal regression tests at `tools/tests/test_devtools_raw_editor.py` and a platform-specific guide at `docs/DEVTOOLS_RAW_EDITOR.md`, including Windows PowerShell, Debian/Linux, and the active Docker Compose mount `./config:/app/etc`. Updated the config README.
+- Existing `devtools.raw` binary is **unchanged**. No client scripts were executed, no database changes or CI builds were triggered. The six local synthetic tests passed; live client UI validation and native Windows/Debian deployment remain unverified. The repository binary structure was independently parsed during inspection.
+
+
 ## 22 November 2026 — GitHub Actions pause and shutdown RefPtr/iterator hardening
 
 - **GitHub Actions automatic builds paused** on `master` and the existing hotfix branch. The retained `.github/workflows/build-release.yml` now has only `workflow_dispatch` (manual launch). Push, PR and tag builds no longer start automatically; no CI build was deliberately invoked for this patch. To resume, restore the original push/PR/tag triggers in the workflow file. Already-running jobs are not stopped by changing triggers.
