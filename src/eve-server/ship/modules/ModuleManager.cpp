@@ -672,14 +672,17 @@ void ModuleManager::DeactivateAllModules()
 
 void ModuleManager::Activate(int32 itemID, uint16 effectID, int32 targetID, int32 repeat)
 {
-    if (!pShipItem->HasPilot()) {
+    if (pShipItem == nullptr || !pShipItem->HasPilot()) {
         _log(MODULE__ERROR, "MM::Activate() - Called from a ship with no pilot." );
         return;
     }
 
-    DestinyManager* pDestiny = pShipItem->GetPilot()->GetShipSE()->DestinyMgr();
+    // Docked clients have a pilot but no in-space ship entity. Do not
+    // dereference GetShipSE() until the solar system has created it.
+    ShipSE* shipSE = pShipItem->GetPilot()->GetShipSE();
+    DestinyManager* pDestiny = shipSE == nullptr ? nullptr : shipSE->DestinyMgr();
     if (pDestiny == nullptr) {
-        _log(PLAYER__ERROR, "%s: Ship has no destiny manager!", pShipItem->GetPilot()->GetName());
+        _log(PLAYER__ERROR, "%s: Ship has no in-space destiny manager!", pShipItem->GetPilot()->GetName());
         return;
     }
 
@@ -702,8 +705,9 @@ void ModuleManager::Activate(int32 itemID, uint16 effectID, int32 targetID, int3
      */
 
     if (effectID == 2255) { // tractorBeamCan
-        SystemEntity* pSE = pShipItem->GetPilot()->SystemMgr()->GetSE(targetID);
-        if (pSE == nullptr)
+        SystemManager* system = shipSE->SystemMgr();
+        SystemEntity* pSE = system == nullptr ? nullptr : system->GetSE(targetID);
+        if (pSE == nullptr || pSE->DestinyMgr() == nullptr)
             throw UserError ("DeniedActivateTargetNotPresent");
         if (pSE->DestinyMgr()->IsTractored()) {
             // report player tractoring item?
