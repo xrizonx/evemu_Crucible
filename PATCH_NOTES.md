@@ -1,5 +1,13 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 22 November 2026 — Assets window / GetMultiLocationsEx SQL error #1064
+
+- With successful character login and in-game access, asset priming reported MariaDB syntax error **#1064** from `ConfigDB::GetMultiLocationsEx` (original source line 267). The available log did not include the generated SQL; the precise malformed clause is unconfirmed.
+- Replaced the shared `ListToINString` interpolation for this query with deterministic integer-only comma joining for static, dynamic, and asteroid location ID batches. Empty requests and empty generated query paths produce an empty Python list rather than executing invalid SQL.
+- Retained the common six-column output schema (`locationID`, `locationName`, `x`, `y`, `z`, `locationNameID`) across mixed source tables. On MariaDB errors, log a truncated generated SQL prefix and return an empty list instead of converting an uninitialized DB result.
+- No database schema/data migrations and no login/RPC protocol changes. **CI compilation and live Assets UI verification are pending**; if #1064 persists, the newly logged SQL will reveal the actual faulty fragment.
+
+
 ## 22 November 2026 — Post-login MachoBindObject borrowed packet lifetime
 
 - **Log:** Windows character 90000000 finishes login, station entry, corporation channels, and `SelectCharacterID` response at 07:27:54; an `IncRef() on deleted object (count 0)` follows after `petitioner::GetUnreadMessages` and before the next bound-service call completes. The no-symbol backtrace cannot identify the exact instruction.
