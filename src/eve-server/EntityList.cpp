@@ -136,7 +136,10 @@ void EntityList::Close()
         SystemManager* system = it->second;
         m_systems.erase(it);
         if (system != nullptr) {
-            system->UnloadSystem();
+            // Final shutdown is not a normal inactivity unload: anchoring
+            // structures or active colonies must not keep the world alive
+            // after all clients have been disconnected.
+            system->UnloadSystem(true);
             SafeDelete(system);
         }
     }
