@@ -28,6 +28,7 @@
 #define __UTILS__REF_PTR_H__INCL__
 
 
+#include <atomic>
 #include <cassert>
 #include <cstdio>
 #include <iostream>
@@ -78,8 +79,8 @@ public:
         mDeleted = true;
     }
 
-    uint16 GetCount()           { return mRefCount; }
-    bool IsDeleted()            { return mDeleted; }
+    uint32 GetCount() const     { return mRefCount.load(std::memory_order_acquire); }
+    bool IsDeleted() const      { return mDeleted.load(std::memory_order_acquire); }
 
 protected:
     /**
@@ -102,7 +103,7 @@ protected:
             return; // Production builds, silently fail
         }
         //Removed assert(mDeleted == false); --causing constant server hang, when installing and removed modules from ships.
-        ++mRefCount;
+        mRefCount.fetch_add(1, std::memory_order_relaxed);
     }
     /**
      * @brief Decrements reference count of object by one.
@@ -121,17 +122,21 @@ protected:
         }
 
         // Removed assert(mDeleted == false);
-        assert(mRefCount > 0);
-        --mRefCount;
-
-        if (mRefCount < 1)
+        const uint32 previous = mRefCount.fetch_sub(1, std::memory_order_acq_rel);
+        if (previous == 0) {
+            mRefCount.fetch_add(1, std::memory_order_relaxed);
+            _log(REFPTR__ERROR, "DecRef() underflow for object %p", static_cast<const void*>(this));
+            EvE::traceStack();
+            return;
+        }
+        if (previous == 1)
             delete this;
     }
 
 private:
     /// Reference count of instance.
-    mutable uint16 mRefCount;
-    mutable bool mDeleted;
+    mutable std::atomic<uint32> mRefCount;
+    mutable std::atomic<bool> mDeleted;
 };
 
 /**
