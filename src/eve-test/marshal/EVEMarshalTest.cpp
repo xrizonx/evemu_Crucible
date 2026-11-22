@@ -29,6 +29,54 @@
 #include <cstring>
 
 namespace {
+// Exercised by the existing EVEMarshalTest across GCC, MinGW and sanitizers.
+// The original PyObject copy constructor shallow-copied both owned pointers,
+// causing the clone to delete live source objects during packet encoding.
+bool WireObjectOwnershipRegression()
+{
+    PyObject* source = new PyObject("util.KeyVal", new_tuple(new PyInt(71)));
+    PyObject* clone = source->Clone()->AsObject();
+    PyDecRef(source);
+    const bool cloneSurvives = clone->type() != nullptr &&
+        clone->type()->content() == "util.KeyVal" &&
+        clone->arguments() != nullptr &&
+        clone->arguments()->AsTuple()->size() == 1 &&
+        clone->arguments()->AsTuple()->GetItem(0)->AsInt()->value() == 71;
+    PyDecRef(clone);
+    if (!cloneSurvives)
+        return false;
+
+    PyTuple* tuple = new PyTuple(1);
+    tuple->SetItem(0, new PyInt(5));
+    *tuple = *tuple;
+    const bool tupleStable = tuple->size() == 1 &&
+        tuple->GetItem(0)->AsInt()->value() == 5;
+    PyDecRef(tuple);
+
+    PyList* list = new PyList();
+    list->AddItemInt(6);
+    *list = *list;
+    const bool listStable = list->size() == 1 &&
+        list->GetItem(0)->AsInt()->value() == 6;
+    PyDecRef(list);
+
+    PyDict* dict = new PyDict();
+    dict->SetItemString("value", new PyInt(7));
+    *dict = *dict;
+    PyRep* value = dict->GetItemString("value");
+    const bool dictStable = value != nullptr && value->IsInt() &&
+        value->AsInt()->value() == 7;
+    PyDecRef(dict);
+
+    PyObjectEx* extended = new PyObjectEx(true, new PyTuple(0));
+    extended->list().AddItemInt(8);
+    *extended = *extended;
+    const bool extendedStable = extended->list().size() == 1 &&
+        extended->list().GetItem(0)->AsInt()->value() == 8;
+    PyDecRef(extended);
+    return tupleStable && listStable && dictStable && extendedStable;
+}
+
 bool CallPacketRoundTrip(bool channel, bool named, bool wrapped, bool malformed)
 {
     PyCallStream outbound;
@@ -101,6 +149,10 @@ bool CallPacketRoundTrip(bool channel, bool named, bool wrapped, bool malformed)
 
 int marshal_EVEMarshalTest( int argc, char* argv[] )
 {
+    if (!WireObjectOwnershipRegression()) {
+        ::puts("Python wire object clone/self-assignment lifetime regression.");
+        return EXIT_FAILURE;
+    }
     if (!CallPacketRoundTrip(false, false, false, false) ||
         !CallPacketRoundTrip(true, true, false, false) ||
         !CallPacketRoundTrip(true, true, true, false) ||
