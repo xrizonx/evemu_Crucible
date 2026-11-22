@@ -46,6 +46,7 @@ class Client;
  */
 class Dispatcher {
 public:
+    virtual ~Dispatcher() = default;
     /** Indicates what access level the service has to prevent clients from calling any methods when they shouldn't */
     virtual const AccessLevel GetAccessLevel() const = 0;
     /** Indicates the name of the service */
@@ -79,10 +80,15 @@ protected:
      */
     template <class H, class... Args>
     void Add(const std::string& name, PyResult(H::*callHandler)(PyCallArgs&, Args...)) {
-        this->mHandlers.push_back(std::make_pair(std::string(name), new CallHandler <H> (callHandler)));
+        this->mHandlers.push_back(std::make_pair(std::string(name), new CallHandler<H>(static_cast<H*>(this), callHandler)));
     }
 
 public:
+    ~Service() override {
+        for (auto& handler : mHandlers)
+            delete handler.second;
+    }
+
     /** Indicates what access level the service has to prevent clients from calling any methods when they shouldn't */
     const AccessLevel GetAccessLevel() const override { return this->mAccessLevel; }
     /** Indicates the name of the service */
@@ -98,7 +104,7 @@ public:
 
             try
             {
-                return (*handler.second)(reinterpret_cast <void*> (this), args);
+                return (*handler.second)(args);
             }
             catch (std::invalid_argument)
             {
