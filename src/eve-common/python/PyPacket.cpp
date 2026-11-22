@@ -703,182 +703,71 @@ void EVENotificationStream::Dump(LogType type, PyVisitor& dumper)
 }
 
 bool EVENotificationStream::Decode(const std::string &pkt_type, const std::string &notify_type, PyTuple *&in_payload) {
-    PyTuple *payload = in_payload;      //copy
-    in_payload = nullptr;               //consume
-
+    // The incoming packet owns all nested PyReps. A nested tuple/substream
+    // is borrowed while decoding; never DecRef it separately. Previously
+    // both the success path and many error paths released the same objects
+    // repeatedly, causing fatal IncRef/DecRef use-after-free at login.
+    OwnedPyRep root(std::exchange(in_payload, nullptr));
     PySafeDecRef(args);
     args = nullptr;
 
-    if (payload == nullptr) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - payload is null.");
+    if (root == nullptr || pkt_type != "macho.Notification") {
+        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - invalid packet type or missing payload.");
         return false;
     }
 
-    if (pkt_type != "macho.Notification") {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - notification payload has unknown string type %s", pkt_type.c_str());
-        PyDecRef(payload);
+    const auto& envelope = root->AsTuple()->items;
+    if (envelope.size() != 2 || envelope[0] == nullptr || !envelope[0]->IsTuple()) {
+        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - invalid outer envelope.");
         return false;
     }
 
-    //decode payload tuple
-    if (payload->items.size() != 2) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - invalid tuple length %llu", payload->items.size());
-        PyDecRef(payload);
-        return false;
-    }
-    if (!payload->items[0]->IsTuple()) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - non-tuple payload[0]");
-        PyDecRef(payload);
-        return false;
-    }
-    PyTuple *payload2 = payload->items[0]->AsTuple();
-    if (payload2 == nullptr) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - payload2 is null.");
-        PyDecRef(payload);
+    const auto& envelope2 = envelope[0]->AsTuple()->items;
+    if (envelope2.size() != 2 || envelope2[1] == nullptr || !envelope2[1]->IsSubStream()) {
+        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - missing notification substream.");
         return false;
     }
 
-    if (payload2->items.size() != 2) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - invalid tuple2 length %llu", payload2->items.size());
-        PyDecRef(payload);
-        PyDecRef(payload2);
+    PySubStream* stream = envelope2[1]->AsSubStream();
+    stream->DecodeData();
+    PyRep* decoded = stream->decoded();
+    if (decoded == nullptr || !decoded->IsTuple()) {
+        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - invalid notification body.");
         return false;
     }
 
-    //decode inner payload tuple
-    //ignore tuple 0, it should be an int, dont know what it is
-    if (!payload2->items[1]->IsSubStream()) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - non-substream type");
-        PyDecRef(payload);
-        PyDecRef(payload2);
+    const auto& objectCall = decoded->AsTuple()->items;
+    if (objectCall.size() != 2 || objectCall[0] == nullptr ||
+        objectCall[1] == nullptr || !objectCall[1]->IsTuple()) {
+        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - invalid object call.");
         return false;
     }
 
-    PySubStream *ss(payload2->items[1]->AsSubStream());
-    if (ss == nullptr) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - ss is null.");
-        PyDecRef(payload);
-        PyDecRef(payload2);
-        return false;
-    }
-    ss->DecodeData();
-    if (ss->decoded() == nullptr) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - Unable to decode call stream");
-        PyDecRef(ss);
-        PyDecRef(payload);
-        PyDecRef(payload2);
-        return false;
-    }
-
-    if (!ss->decoded()->IsTuple()) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - packet body does not contain a tuple");
-        PyDecRef(ss);
-        PyDecRef(payload);
-        PyDecRef(payload2);
-        return false;
-    }
-
-    PyTuple *robjt = ss->decoded()->AsTuple();
-    if (robjt == nullptr) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - robjt is null.");
-        PyDecRef(ss);
-        PyDecRef(payload);
-        PyDecRef(payload2);
-        return false;
-    }
-    if (robjt->items.size() != 2) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - packet body has %llu elements, expected %d", robjt->items.size(), 2);
-        PyDecRef(ss);
-        PyDecRef(payload);
-        PyDecRef(payload2);
-        PySafeDecRef(robjt);
-        return false;
-    }
-
-    //parse first tuple element, remote object
-    if (robjt->items[0]->IsInt()) {
-        remoteObject = PyRep::IntegerValue(robjt->items[0]);
-        remoteObjectStr = "";
-    } else if (robjt->items[0]->IsString()) {
-        remoteObject = 0;
-        remoteObjectStr = PyRep::StringContent(robjt->items[0]);
+    uint32 nextRemoteObject = 0;
+    std::string nextRemoteObjectStr;
+    if (objectCall[0]->IsInt()) {
+        nextRemoteObject = PyRep::IntegerValue(objectCall[0]);
+    } else if (objectCall[0]->IsString()) {
+        nextRemoteObjectStr = PyRep::StringContent(objectCall[0]);
     } else {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - main tuple[0] has invalid type %s", robjt->items[0]->TypeString());
-        _log(NET__PACKET_ERROR, " in:");
-        payload->Dump( NET__PACKET_ERROR, "" );
-        PyDecRef(ss);
-        PyDecRef(payload);
-        PyDecRef(payload2);
-        PySafeDecRef(robjt);
+        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - invalid remote object type.");
         return false;
     }
 
-    if (!robjt->items[1]->IsTuple()) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - main tuple[1] has non-tuple type %s", robjt->items[0]->TypeString());
-        _log(NET__PACKET_ERROR, " it is:");
-        payload->Dump( NET__PACKET_ERROR, "" );
-        PyDecRef(ss);
-        PyDecRef(payload);
-        PyDecRef(payload2);
-        PySafeDecRef(robjt);
+    const auto& body = objectCall[1]->AsTuple()->items;
+    if (body.size() != 2 || body[0] == nullptr || !body[0]->IsInt() ||
+        body[1] == nullptr || !body[1]->IsTuple()) {
+        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - invalid notification arguments.");
         return false;
     }
 
-    PyTuple *subt(robjt->items[1]->AsTuple());
-    if (subt == nullptr) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - subt is null.");
-        PyDecRef(ss);
-        PyDecRef(payload);
-        PyDecRef(payload2);
-        PySafeDecRef(robjt);
-        return false;
-    }
-    if (subt->items.size() != 2) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - packet body has %llu elements, expected %d", subt->items.size(), 2);
-        PyDecRef(ss);
-        PyDecRef(payload);
-        PyDecRef(payload2);
-        PySafeDecRef(subt);
-        PySafeDecRef(robjt);
-        return false;
-    }
-
-    //parse first tuple element, remote object
-    if (subt->items[0]->IsInt()) {
-        //PyInt *tuple0 = (PyInt *) maint->items[0];
-        //no idea what this is.
-    } else {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - sub tuple[0] has invalid type %s", subt->items[0]->TypeString());
-        _log(NET__PACKET_ERROR, " in:");
-        payload->Dump( NET__PACKET_ERROR, "" );
-        PyDecRef(ss);
-        PyDecRef(payload);
-        PyDecRef(payload2);
-        PySafeDecRef(subt);
-        PySafeDecRef(robjt);
-        return false;
-    }
-
-    if (!subt->items[1]->IsTuple()) {
-        codelog(NET__PACKET_ERROR, "EVENotificationStream::Decode() - subt tuple[1] has non-tuple type %s", robjt->items[0]->TypeString());
-        _log(NET__PACKET_ERROR, " it is:");
-        payload->Dump( NET__PACKET_ERROR, "" );
-        PyDecRef(ss);
-        PyDecRef(payload);
-        PyDecRef(payload2);
-        PySafeDecRef(subt);
-        PySafeDecRef(robjt);
-        return false;
-    }
-
-    args = subt->items[1]->AsTuple();
+    // Retain the argument tuple before root's destructor releases its owners.
+    PyTuple* nextArgs = body[1]->AsTuple();
+    PyIncRef(nextArgs);
+    args = nextArgs;
+    remoteObject = nextRemoteObject;
+    remoteObjectStr = std::move(nextRemoteObjectStr);
     notifyType = notify_type;
-
-    PyDecRef(ss);
-    PyDecRef(payload);
-    PyDecRef(payload2);
-    PySafeDecRef(subt);
-    PySafeDecRef(robjt);
     return true;
 }
 
