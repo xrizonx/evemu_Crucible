@@ -927,6 +927,12 @@ int main( int argc, char* argv[] )
     if (stopSignal != 0)
         sLog.Warning("Signal System", "Stopping after signal %d", stopSignal);
 
+    // RefPtr-based objects may still be held by shutdown callbacks and
+    // singleton caches. Avoid accessing fields of already-freed objects when
+    // release callbacks accidentally revisit a stale pointer on final exit.
+    // Gameplay remains on the original atomic, low-overhead reference path.
+    RefObject::BeginShutdownRefGuard();
+
     /*
      * end of main loop
      *  at this point, server has been killed, and these are cleanup methods below here
@@ -993,6 +999,14 @@ int main( int argc, char* argv[] )
     sLog.Warning("   ServerShutdown", "Shutting down Thread Manager." );
     /* join open threads */
     sThread.EndThreads();
+    const auto skippedRefOps = RefObject::GetSuppressedShutdownRefOps();
+    if (skippedRefOps > 0) {
+        // Aggregate once instead of printing a FATAL stack for each stale
+        // reference while the process is intentionally shutting down.
+        sLog.Warning("   ServerShutdown",
+                     "Suppressed %llu stale/underflow reference operations during shutdown.",
+                     static_cast<unsigned long long>(skippedRefOps));
+    }
     sLog.Warning("   ServerShutdown", "EVEmu is Offline.");
     /* close logfile */
     log_close_logfile();
