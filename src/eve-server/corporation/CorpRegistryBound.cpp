@@ -1785,22 +1785,25 @@ PyResult CorpRegistryBound::GetStations(PyCallArgs &call)
 }
 
 void CorpRegistryBound::BoundReleased (OfficeSparseBound* bound) {
-    this->m_offices = nullptr;
+    // A delayed release must not clear a newly created replacement binding.
+    if (this->m_offices == bound)
+        this->m_offices = nullptr;
 }
 
 PyResult CorpRegistryBound::GetOffices(PyCallArgs &call) {
     _log(CORP__CALL, "CorpRegistryBound::Handle_GetOffices() size=%lli", call.tuple->size());
     call.Dump(CORP__CALL_DUMP);
 
-    PyList* headers = new PyList;
-
-    headers->AddItemString ("itemID");
-    headers->AddItemString ("stationID");
-    headers->AddItemString ("stationTypeID");
-    headers->AddItemString ("officeFolderID");
-    headers->AddItemString ("typeID");
-
+    // SparseBound::Prime adopts the header list in its PyObject. Do not
+    // allocate a new list on every GetOffices RPC when the sparse bound is
+    // already cached, as those lists would never be released.
     if (this->m_offices == nullptr) {
+        PyList* headers = new PyList;
+        headers->AddItemString ("itemID");
+        headers->AddItemString ("stationID");
+        headers->AddItemString ("stationTypeID");
+        headers->AddItemString ("officeFolderID");
+        headers->AddItemString ("typeID");
         this->m_offices = new OfficeSparseBound (this->GetServiceManager (), *this, m_db, m_corpID, headers);
     }
 
