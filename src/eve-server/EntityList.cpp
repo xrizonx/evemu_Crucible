@@ -158,35 +158,48 @@ void EntityList::Remove(Client* pClient) {
 
 void EntityList::AddPlayer(Client* pClient)
 {
-    if (pClient != nullptr)
-        if (pClient->IsValidSession()) {
-            m_players.emplace(pClient->GetCharacterID(), pClient);
-            if (IsPlayerCorp(pClient->GetCorporationID())) {
-                corpRole role;
-                role.emplace(pClient, pClient->GetCorpRole());
-                m_corpMembers.emplace(pClient->GetCorporationID(), role);
-            }
-        } else {
-            m_players.emplace(pClient->GetCharID(), pClient);
-            // make note about invalid session and failure to add player to corp roles.
-            //   this is nbd if player is in npc corp or in player corp with no roles
-        }
+    if (pClient == nullptr)
+        return;
+
+    const bool valid = pClient->IsValidSession();
+    const uint32 charID = valid ? pClient->GetCharacterID() : pClient->GetCharID();
+    const auto inserted = m_players.emplace(charID, pClient).second;
+    if (!inserted) {
+        // Never overwrite a live character mapping with another client's
+        // pointer or add the rejected connection to the corporation list.
+        _log(PLAYER__WARNING, "AddPlayer: character %u already registered; duplicate ignored.", charID);
+        return;
+    }
+
+    if (valid && IsPlayerCorp(pClient->GetCorporationID())) {
+        // emplace(corpID, roleMap) lost every member after the first.
+        m_corpMembers[pClient->GetCorporationID()][pClient] = pClient->GetCorpRole();
+    }
 }
 
 void EntityList::RemovePlayer(Client* pClient)
 {
-    if (pClient != nullptr)
-        if (pClient->IsValidSession()) {
-            m_players.erase(pClient->GetCharacterID());
-            // remove player from corp map, if applicable
-            std::map<uint32, corpRole>::iterator itr = m_corpMembers.find(pClient->GetCorporationID());
-            if (itr != m_corpMembers.end())
-                itr->second.erase(pClient);
-        } else {
-            m_players.erase(pClient->GetCharID());
-        }
-}
+    if (pClient == nullptr)
+        return;
 
+    const uint32 charID = pClient->IsValidSession()
+        ? pClient->GetCharacterID() : pClient->GetCharID();
+    auto player = m_players.find(charID);
+    if (player == m_players.end() || player->second != pClient)
+        return; // a failed duplicate login must not unregister the real player
+
+    m_players.erase(player);
+
+    // Remove the exact client pointer, including when the player's corporation
+    // changed after login. Leaving it in corp notifications is a use-after-free.
+    for (auto it = m_corpMembers.begin(); it != m_corpMembers.end();) {
+        it->second.erase(pClient);
+        if (it->second.empty())
+            it = m_corpMembers.erase(it);
+        else
+            ++it;
+    }
+}
 
 void EntityList::Process() {
     Client* pClient(nullptr);
