@@ -123,17 +123,20 @@ public:
         PyTuple* rsp = new PyTuple(2);
         PyDict* byName = new PyDict();
 
-        // GetOID() is borrowed: the bound object retains ownership of mOID.
-        // Both PyDict::SetItem and PySubStream adopt their arguments.
-        // Passing mOID to both containers (and releasing it in the bound
-        // destructor) caused multiple owners to DecRef the same reference.
-        // Deep-clone each representation to keep the wire responses independent
-        // of each other and of bound-service lifetime.
-        PyTuple* oid = bound->GetOID();
-        if (oid == nullptr)
+        // GetOID() already returns a newly owned clone. Both the dictionary
+        // and substream take ownership of their separate returned references.
+        // Do NOT clone the returned value again: that leaks the initial clone.
+        PyTuple* namedOid = bound->GetOID();
+        PyTuple* streamOid = bound->GetOID();
+        if (namedOid == nullptr || streamOid == nullptr) {
+            PySafeDecRef(namedOid);
+            PySafeDecRef(streamOid);
+            PyDecRef(rsp);
+            PyDecRef(byName);
             throw CustomError("MachoBindObject: bound object has no OID.");
-        byName->SetItem("OID+", oid->Clone());
-        rsp->SetItem(0, new PySubStruct(new PySubStream(oid->Clone())));
+        }
+        byName->SetItem("OID+", namedOid);
+        rsp->SetItem(0, new PySubStruct(new PySubStream(streamOid)));
 
         if (call.has_value() == false) {
             rsp->SetItem(1, PyStatic.NewNone());
