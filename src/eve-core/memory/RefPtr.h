@@ -29,6 +29,7 @@
 
 
 #include <atomic>
+#include <cstdint>
 #include <cassert>
 #include <cstdio>
 #include <iostream>
@@ -105,7 +106,7 @@ public:
     // RefPtr must call this STATIC entrypoint. Invoking a member function
     // through an already-deleted object pointer is undefined behavior even if
     // that function's first line consults an external live-object registry.
-    static void RetainRef(RefObject* ptr)
+    static void RetainRef(const RefObject* ptr)
     {
         if (ptr == nullptr)
             return;
@@ -123,7 +124,7 @@ public:
         ptr->mRefCount.fetch_add(1, std::memory_order_relaxed);
     }
 
-    static void ReleaseRef(RefObject* ptr)
+    static void ReleaseRef(const RefObject* ptr)
     {
         if (ptr == nullptr)
             return;
