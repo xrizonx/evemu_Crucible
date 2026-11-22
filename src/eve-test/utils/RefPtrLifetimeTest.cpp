@@ -91,6 +91,39 @@ int utils_RefPtrLifetimeTest(int argc, char* argv[])
     if (!Verify(destroyed == 2, "derived final destruction"))
         return EXIT_FAILURE;
 
-    std::printf("RefPtr self/aliased copy, move, cast and final release passed.\n");
+    // Exercise shutdown-only liveness checks after the regular lifetime
+    // tests so they cannot affect the normal-gameplay refcount path.
+    RefObject::BeginShutdownRefGuard();
+    {
+        RefPtr<Tracked> one(new Tracked);
+        RefPtr<Tracked> two(one);
+        if (!Verify(one->GetCount() == 2, "guarded shutdown copy"))
+            return EXIT_FAILURE;
+        two = RefPtr<Tracked>();
+        if (!Verify(one->GetCount() == 1, "guarded shutdown release"))
+            return EXIT_FAILURE;
+    }
+    if (!Verify(destroyed == 3, "guarded shutdown final destruction"))
+        return EXIT_FAILURE;
+
+    // Simulate a legacy owner that directly deletes an intrusive object
+    // while RefPtrs still contain its address. This was the observed
+    // shutdown symptom; the post-delete smart pointers must NOT dereference
+    // the freed object, attempt a virtual method, or print FATAL stacks.
+    const auto suppressedBefore = RefObject::GetSuppressedShutdownRefOps();
+    {
+        Tracked* raw = new Tracked;
+        RefPtr<Tracked> dangling(raw);
+        delete raw; // intentionally invalid legacy ownership path
+        RefPtr<Tracked> copy(dangling); // static retain checks live registry
+        (void)copy;
+    }
+    if (!Verify(destroyed == 4, "direct-delete regression setup"))
+        return EXIT_FAILURE;
+    if (!Verify(RefObject::GetSuppressedShutdownRefOps() >= suppressedBefore + 3,
+                "shutdown tombstone protection for retain and releases"))
+        return EXIT_FAILURE;
+
+    std::printf("RefPtr self/aliased copy, move, cast, shutdown liveness and final release passed.\n");
     return EXIT_SUCCESS;
 }
