@@ -163,6 +163,10 @@ bool PyPacket::Decode(PyRep **in_packet)
         return false;
     }
 
+    if (packet->AsObject()->type() == nullptr) {
+        codelog(NET__PACKET_ERROR, "PyPacket::Decode() - packet body has no type string.");
+        return false;
+    }
     type_string = packet->AsObject()->type()->content();
     if (packet->AsObject()->arguments() == nullptr || !packet->AsObject()->arguments()->IsTuple()) {
         codelog(NET__PACKET_ERROR, "PyPacket::Decode() - packet body does not contain a tuple");
@@ -259,9 +263,14 @@ PyRep *PyPacket::Encode() {
     else
         arg_tuple->items[3] = new PyInt(userid);
 
-    //payload
-    PySafeIncRef(payload);
-    arg_tuple->items[4] = payload;
+    // The encoder must not write a null PyRep into a marshaled tuple.
+    // Retain a separate reference when the packet owns a real payload.
+    if (payload == nullptr) {
+        arg_tuple->items[4] = PyStatic.NewNone();
+    } else {
+        PyIncRef(payload);
+        arg_tuple->items[4] = payload;
+    }
 
     //named arguments (OID+ or sn)
     if (named_payload == nullptr) {
@@ -550,7 +559,7 @@ PyCallStream *PyCallStream::Clone() const {
     res->remoteObject = remoteObject;
     res->remoteObjectStr = remoteObjectStr;
     res->method = method;
-    res->arg_tuple = arg_tuple->Clone()->AsTuple();
+    res->arg_tuple = (arg_tuple == nullptr) ? nullptr : arg_tuple->Clone()->AsTuple();
     if (arg_dict == nullptr)
         res->arg_dict = nullptr;
     else
@@ -568,7 +577,8 @@ void PyCallStream::Dump(LogType type, PyVisitor& dumper)
         _log(type, "  Remote Object: %u", remoteObject);
     _log(type, "  Method: %s", method.c_str());
     _log(type, "  Arguments:");
-    arg_tuple->visit( dumper );
+    if (arg_tuple != nullptr)
+        arg_tuple->visit( dumper );
     if (arg_dict == nullptr) {
         _log(type, "  Named Arguments: None");
     } else {
