@@ -168,6 +168,12 @@ protected:
      */
     void IncRef() const
     {
+        // Compatibility for direct legacy IncRef() callers. RefPtr itself
+        // uses the static entrypoint to avoid member calls on freed pointers.
+        if (Registry().shuttingDown.load(std::memory_order_acquire)) {
+            RetainRef(this);
+            return;
+        }
         // ---modulefix; issue with installing and uninstalling modules caused a soft freeze and unable to make changes to modules in fit screen.
         if (mDeleted) {
             _log(REFPTR__ERROR, "IncRef() on deleted object %p (refcount %u)", static_cast<const void*>(this), mRefCount.load(std::memory_order_relaxed));
@@ -192,6 +198,13 @@ protected:
      */
     void DecRef() const
     {
+        // Compatibility for direct legacy DecRef() callers; their external
+        // ownership bugs must still be fixed, but do not inspect freed fields
+        // during orderly final shutdown.
+        if (Registry().shuttingDown.load(std::memory_order_acquire)) {
+            ReleaseRef(this);
+            return;
+        }
         if (mDeleted) {
             // ---modulefix; issue with installing and uninstalling modules caused a soft freeze and unable to make changes to modules in fit screen.
             _log(REFPTR__ERROR, "DecRef() on deleted object %p (refcount %u)", static_cast<const void*>(this), mRefCount.load(std::memory_order_relaxed));
