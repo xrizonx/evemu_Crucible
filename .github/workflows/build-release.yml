@@ -4,12 +4,19 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
-# TEMPORARY BILLING PAUSE (2026-11-22):
-# Automatic CI is disabled to avoid exhausting free GitHub Actions minutes.
-# Preserve the original build jobs so they can be re-enabled later.
-# A build runs ONLY if someone explicitly selects "Run workflow".
+# SELF-HOSTED WINDOWS (2026-11-22):
+# Manual-only dispatch is preserved. By default ONLY the Windows job runs,
+# targeting a registered self-hosted Windows x64 runner. No hosted minutes
+# are requested by the default run. Linux-specific jobs remain available
+# only by explicitly opting in to GitHub-hosted Ubuntu runners.
 on:
   workflow_dispatch:
+    inputs:
+      include_hosted_linux:
+        description: 'Also run Linux, sanitizer, MariaDB and Docker jobs on GitHub-hosted Ubuntu'
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -21,6 +28,7 @@ env:
 jobs:
   sanitizers:
     name: Linux ASan/UBSan memory and UB smoke
+    if: ${{ inputs.include_hosted_linux == true }}
     runs-on: ubuntu-22.04
     timeout-minutes: 55
     env:
@@ -87,6 +95,7 @@ jobs:
 
   linux:
     name: Linux GCC build
+    if: ${{ inputs.include_hosted_linux == true }}
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -195,7 +204,8 @@ jobs:
 
   windows:
     name: Windows 64-bit UCRT64 GCC build
-    runs-on: windows-2022
+    # These three standard labels are assigned by GitHub at registration.
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
@@ -217,6 +227,12 @@ jobs:
             mingw-w64-ucrt-x86_64-tinyxml
             mingw-w64-ucrt-x86_64-utf8cpp
             mingw-w64-ucrt-x86_64-zlib
+      # GitHub-hosted Windows has Python preinstalled; self-hosted Windows
+      # does not necessarily have it available to the PowerShell shell.
+      - name: Set up Python for source regression verification
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
       - name: Cache compiler outputs
         uses: actions/cache@v5
         with:
@@ -237,57 +253,57 @@ jobs:
           cmake --build build --parallel 2
           ccache --show-stats
       - name: Verify experimental agent portraits are fully removed
-        shell: pwsh
+        shell: powershell
         run: |
           python tools/verify_agent_portraits_removed.py
           if ($LASTEXITCODE -ne 0) { throw "Experimental agent portrait rollback regression" }
       - name: Verify agent journal and inventory safety invariants
-        shell: pwsh
+        shell: powershell
         run: |
           python tools/verify_station_crash_safety.py
           if ($LASTEXITCODE -ne 0) { throw "Station agent/inventory safety guard regression" }
       - name: Verify NPC market prices are exactly 100 percent of base value
-        shell: pwsh
+        shell: powershell
         run: |
           python tools/verify_npc_market_baseprice.py
           if ($LASTEXITCODE -ne 0) { throw "NPC market base price regression" }
       - name: Verify standard NPC buy orders at 100 percent
-        shell: pwsh
+        shell: powershell
         run: |
           python tools/verify_npc_buy_seed.py
           if ($LASTEXITCODE -ne 0) { throw "NPC buy seed regression" }
       - name: Verify market RPC and ship movement safety
-        shell: pwsh
+        shell: powershell
         run: |
           python tools/verify_market_movement_rpc.py
           if ($LASTEXITCODE -ne 0) { throw "Market RPC/movement regression" }
       - name: Verify gameplay subsystem source invariants
-        shell: pwsh
+        shell: powershell
         run: |
           python tools/verify_subsystems_audit.py
           if ($LASTEXITCODE -ne 0) { throw "Gameplay subsystem audit regression" }
       - name: Verify 12-ship cruiser and battlecruiser Blockade mission
-        shell: pwsh
+        shell: powershell
         run: |
           python tools/verify_blockade_12_ship_fleet.py
           if ($LASTEXITCODE -ne 0) { throw "Blockade 12-ship fleet regression" }
       - name: Verify independent DED and Officer Security Agent mission
-        shell: pwsh
+        shell: powershell
         run: |
           python tools/verify_elite_security_mission.py
           if ($LASTEXITCODE -ne 0) { throw "DED/Officer mission regression" }
       - name: Verify Crucible-era weapon ranges and hull warp speed
-        shell: pwsh
+        shell: powershell
         run: |
           python tools/verify_crucible_range_and_warp.py
           if ($LASTEXITCODE -ne 0) { throw "Crucible weapon/warp regression" }
       - name: Verify blueprint industry workflows
-        shell: pwsh
+        shell: powershell
         run: |
           python tools/verify_industry_workflows.py
           if ($LASTEXITCODE -ne 0) { throw "Industry blueprint workflow regression" }
       - name: Verify sovereignty and POS integrity invariants
-        shell: pwsh
+        shell: powershell
         run: |
           python tools/verify_sov_pos_integrity.py
           if ($LASTEXITCODE -ne 0) { throw "Sovereignty/POS source regression" }
@@ -305,9 +321,10 @@ jobs:
         with:
           go-version: '1.23.x'
       - name: Build patched EVEDBTool Windows x86_64 binary
-        shell: pwsh
+        shell: powershell
         run: |
           $toolSource = Join-Path $env:RUNNER_TEMP "EVEDBTool"
+          if (Test-Path $toolSource) { Remove-Item $toolSource -Recurse -Force }
           git clone --quiet --depth 1 --branch 0.0.6 https://github.com/EvEmu-Project/EVEDBTool.git $toolSource
           Copy-Item tools/evedbtool/command_seed.go (Join-Path $toolSource "command_seed.go")
           Push-Location $toolSource
@@ -322,7 +339,7 @@ jobs:
           }
           Get-FileHash "sql/evedbtool.exe" -Algorithm SHA256 | Format-List
       - name: Smoke-test EVEDBTool market seed SQL
-        shell: pwsh
+        shell: powershell
         run: |
           Copy-Item sql/evedb.yaml.example sql/evedb.yaml
           Push-Location sql
@@ -400,7 +417,7 @@ jobs:
             done
           done
       - name: Create Windows ZIP and checksum
-        shell: pwsh
+        shell: powershell
         run: |
           Compress-Archive -Path stage\* -DestinationPath evemu-crucible-windows-x86_64.zip -Force
           $hash = (Get-FileHash evemu-crucible-windows-x86_64.zip -Algorithm SHA256).Hash.ToLower()
@@ -417,6 +434,7 @@ jobs:
 
   npc-buy-mariadb:
     name: NPC buy seed MariaDB insertion (unsigned orderRange)
+    if: ${{ inputs.include_hosted_linux == true }}
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     services:
@@ -603,6 +621,7 @@ jobs:
 
   docker:
     name: Docker image build
+    if: ${{ inputs.include_hosted_linux == true }}
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
