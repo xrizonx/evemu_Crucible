@@ -403,7 +403,7 @@ PyResult CorpRegistryBound::UpdateDivisionNames(PyCallArgs &call,
 {   // working
     // TODO: stop using this and make use of the parameters, changing this is way too out of the scope of the service manager changes
     Call_UpdateDivisionNames args;
-    if (!args.Decode(&call.tuple)) {
+    if (!args.Decode(static_cast<PyRep*>(call.tuple))) {
         codelog(SERVICE__ERROR, "CorpRegistryBound: Failed to decode arguments.");
         return PyStatic.NewNone();
     }
@@ -497,9 +497,13 @@ PyResult CorpRegistryBound::AddCorporation(PyCallArgs &call,
     PyRep* typeface, PyInt* applicationEnabled) {
 
     Client* pClient(call.client);
-    // TODO: stop using this and make use of the parameters, changing this is way too out of the scope of the service manager changes
+    // Decode(PyRep**) consumes the tuple even though PyCallArgs still owns
+    // it. This handler must use the non-consuming Decode(PyRep*) overload.
+    if (pClient == nullptr || call.tuple == nullptr)
+        throw CustomError("Corporation creation requires a valid logged-in client and request.");
+    sLog.Blue("CorpCreate", "Character %u: validating corporation creation request.", pClient->GetCharacterID());
     Call_AddCorporation args;
-    if (!args.Decode(&call.tuple)) {
+    if (!args.Decode(static_cast<PyRep*>(call.tuple))) {
         codelog(SERVICE__ERROR, "CorpRegistryBound: Failed to decode arguments.");
         return nullptr;
     }
@@ -539,6 +543,7 @@ PyResult CorpRegistryBound::AddCorporation(PyCallArgs &call,
 
     // Register new corp
     uint32 corpID(0);
+    sLog.Blue("CorpCreate", "Character %u: registering corporation in database.", pClient->GetCharacterID());
     if (!m_db.AddCorporation(args, pClient, corpID)) {
         codelog(SERVICE__ERROR, "New corporation creation failed.");
         return nullptr;
@@ -552,6 +557,7 @@ PyResult CorpRegistryBound::AddCorporation(PyCallArgs &call,
         return nullptr;
     }
 
+    sLog.Blue("CorpCreate", "Character %u: corporation ID %u created; initializing titles.", pClient->GetCharacterID(), corpID);
     // create default role title data
     m_db.CreateTitleData(corpID);
 
@@ -562,6 +568,7 @@ PyResult CorpRegistryBound::AddCorporation(PyCallArgs &call,
     reason += args.corpTicker;
     reason += ")";
 
+    sLog.Blue("CorpCreate", "Character %u: processing corporation registration fee.", pClient->GetCharacterID());
     AccountService::TransferFunds(
         pClient->GetCharacterID(),
         m_db.GetStationOwner(pClient->GetStationID()),  // station owner files paperwork, this is fee for that
@@ -575,6 +582,7 @@ PyResult CorpRegistryBound::AddCorporation(PyCallArgs &call,
     // add corp event for creating new corp
     m_db.AddItemEvent(corpID, pClient->GetCharacterID(), Corp::EventType::CreatedCorporation);
 
+    sLog.Blue("CorpCreate", "Character %u: creating corporation chat channel %u.", pClient->GetCharacterID(), corpID);
     // create corp channel
     this->m_lsc->CreateSystemChannel(corpID);
 
@@ -595,8 +603,10 @@ PyResult CorpRegistryBound::AddCorporation(PyCallArgs &call,
         data.grantableRolesAtBase = Corp::Role::Admin;
         data.grantableRolesAtHQ = Corp::Role::Admin;
         data.grantableRolesAtOther = Corp::Role::Admin;
+    sLog.Blue("CorpCreate", "Character %u: updating membership to corporation %u.", pClient->GetCharacterID(), corpID);
     // update corp data and refresh session data.
     pClient->GetChar()->JoinCorporation(data);
+    sLog.Blue("CorpCreate", "Character %u: membership updated; preparing notification.", pClient->GetCharacterID());
 
     // Here we send a notification about creating a new corporation...
     OnCorporationChanged cc;
@@ -608,12 +618,14 @@ PyResult CorpRegistryBound::AddCorporation(PyCallArgs &call,
         return nullptr;
     }
     PyTuple* a1 = cc.Encode();
+    sLog.Blue("CorpCreate", "Character %u: sending corporation change notifications.", pClient->GetCharacterID());
     // send single to client
     pClient->SendNotification("OnCorporationChanged", "clientID", &a1);
     // send multi to station guests
     PyIncRef(a1);
     sEntityList.Multicast("OnCorporationChanged", "stationid", &a1, NOTIF_DEST__LOCATION, pClient->GetLocationID());
 
+    sLog.Blue("CorpCreate", "Character %u: notifications queued; corporation %u created.", pClient->GetCharacterID(), corpID);
     return m_db.GetCorporations(corpID);
 }
 
@@ -629,7 +641,7 @@ PyResult CorpRegistryBound::UpdateTitle(PyCallArgs &call,
 
     // TODO: stop using this and make use of the parameters, changing this is way too out of the scope of the service manager changes
     Call_UpdateTitleData args;
-    if (!args.Decode(&call.tuple)) {
+    if (!args.Decode(static_cast<PyRep*>(call.tuple))) {
         codelog(SERVICE__ERROR, "CorpRegistryBound: Failed to decode arguments.");
         return nullptr;
     }
@@ -785,7 +797,7 @@ PyResult CorpRegistryBound::UpdateLogo(PyCallArgs &call,
 {
     // TODO: stop using this and make use of the parameters, changing this is way too out of the scope of the service manager changes
     Call_UpdateLogo args;
-    if (!args.Decode(&call.tuple)) {
+    if (!args.Decode(static_cast<PyRep*>(call.tuple))) {
         codelog(SERVICE__ERROR, "CorpRegistryBound: Failed to decode arguments.");
         return nullptr;
     }
@@ -1395,7 +1407,7 @@ PyResult CorpRegistryBound::UpdateMember(PyCallArgs &call,
 
     // TODO: stop using this and make use of the parameters, changing this is way too out of the scope of the service manager changes
     Call_UpdateMember args;
-    if (!args.Decode(&call.tuple)) {
+    if (!args.Decode(static_cast<PyRep*>(call.tuple))) {
         codelog(SERVICE__ERROR, "CorpRegistryBound: Failed to decode arguments.");
         return nullptr;
     }
@@ -1932,7 +1944,7 @@ PyResult CorpRegistryBound::InsertVoteCase(PyCallArgs &call, PyRep* voteCaseText
         return nullptr;
     }
     Call_InsertVoteCase args;
-    if (!args.Decode(&call.tuple)) {
+    if (!args.Decode(static_cast<PyRep*>(call.tuple))) {
         codelog(SERVICE__ERROR, "CorpRegistryBound: Failed to decode arguments.");
         return nullptr;
     }
