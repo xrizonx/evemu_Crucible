@@ -1241,9 +1241,13 @@ void SystemManager::RemoveEntity(SystemEntity* pSE) {
     m_ticEntities.erase(itemID);
     m_staticEntities.erase(itemID);
     m_opStaticEntities.erase(itemID);
+    // This is the owning lookup map. Leaving an entity here after its caller
+    // deletes pSE gives future GetSE / system ticks a dangling pointer.
+    m_entities.erase(itemID);
 
     // remove from anomaly map, if exists
-    m_anomMgr->RemoveSignal(itemID);
+    if (m_anomMgr != nullptr)
+        m_anomMgr->RemoveSignal(itemID);
 }
 
 void SystemManager::AddMarker(SystemEntity* pSE, bool sendBall/*false*/, bool addSignal/*false*/) {
