@@ -1,5 +1,16 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 22 November 2026 — Suppress stale RefPtr releases safely on final server exit
+
+- **Symptom:** Docker shutdown continued printing repeated `FATAL: DecRef() on deleted object` with invalid reference counts around 3.3 billion and unsymbolized stacks. These values are freed-memory garbage, not evidence of that many references.
+- **Unsafe existing handler:** `RefObject::DecRef()` read `mDeleted` and `mRefCount` from memory that could already have been freed. Removing the error log would not make the dangling access valid.
+- **Shutdown-only containment:** `RefObject` now registers live object addresses in a process-lifetime registry; `RefPtr` retains and releases through static entrypoints that check liveness under a lock **before** dereferencing any object during shutdown. The shutdown guard begins after the main loop ends. Final releases untrack before calling destructors; stale references and zero-count releases are skipped, with one aggregate count logged near exit. Runtime `RefPtr` retain/release remains on the existing atomic counter path rather than using per-operation mutex locking.
+- **ItemFactory cleanup:** `ItemFactory::Close()` now drains the static, dynamic **and** primary owning item caches before deleting ItemType definitions. The previous shutdown fix only drained `m_items`.
+- **Regression/local build:** Updated the existing `RefPtrLifetimeTest` with a shutdown stale-reference scenario. The optional `docker compose build --build-arg EVEMU_BUILD_TESTS=ON server` now runs that local test alongside MarketOrderReaderTest. Automatic GitHub Actions builds are still disabled.
+- **Limitations:** This is a shutdown-specific **containment**, not a complete fix for every ownership defect. A raw-pointer dereference or address-reuse (ABA) issue can still crash. No live Debian/Windows runtime shutdown was performed, no local compilation was available in this environment, and no CI build was triggered.
+- **Manual verification steps:** [docs/SHUTDOWN_REF_GUARD.md](docs/SHUTDOWN_REF_GUARD.md). Changes remain on hotfix branch PR #52, without merging to `master`.
+
+
 ## 22 November 2026 — Cross-platform devtools.raw inspection and safe literal editor
 
 - Inspected the binary `utils/config/devtools.raw` (10,117 bytes). It is a Python 2 marshal dictionary containing the compiled `Bootstrap` loader and hex-embedded compiled modules for `insider.py`, `devToolsWindow.py`, and `devToolsConsole.py`. The server's `DevToolsProviderService::GetLoader` sends the file bytes directly to the client.
