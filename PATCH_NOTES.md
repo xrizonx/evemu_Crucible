@@ -8,7 +8,7 @@
 - **Creator lifetime:** In `CorporationDB::AddCorporation`, the old `Character* pChar = pClient->GetChar().get()` used a raw pointer from a temporary `CharacterRef`; now holds a `CharacterRef creator` throughout the skill/member-limit checks and database work.
 - **Diagnostics:** Added `CorpCreate` stage logs for validation, DB registration, role setup, registration fee, corporation chat channel, membership update, and notification send; these let the next repro narrow the failing stage.
 - **Regression:** Added `CorporationCreateBorrowedTupleRegression` to `src/eve-test/marshal/EVEMarshalTest.cpp` using a thirteen-field `Call_AddCorporation` tuple matching `CorporationPkts.xmlp`. The test asserts the decoder did not destroy or invalidate the dispatcher-owned tuple.
-- **Verification:** These are source-level corrections on hotfix PR #52. **No build, CI, runtime test or symbolized stack has yet verified the corporation-creation fix.** No MariaDB schema/data migration. GitHub Actions automatic CI remains disabled. Build locally from the hotfix branch.
+- **Verification:** The optional local Docker test build (`docker compose build --build-arg EVEMU_BUILD_TESTS=ON server`) now includes `EVEMarshalTest`, `RefPtrLifetimeTest`, and `MarketOrderReaderTest`. These are source-level corrections on hotfix PR #52. **No build, CI, runtime test or symbolized stack has yet verified the corporation-creation fix.** No MariaDB schema/data migration. GitHub Actions automatic CI remains disabled.
 
 
 ## 22 November 2026 — Suppress stale RefPtr releases safely on final server exit
