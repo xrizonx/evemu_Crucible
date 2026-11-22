@@ -648,6 +648,8 @@ void PyTuple::clear()
 
 PyTuple& PyTuple::operator=( const PyTuple& oth )
 {
+    if (this == &oth)
+        return *this;
     //sLog.Yellow("PyTuple()", "Copy assignment.");
     clear();
     items.resize( oth.size() );
@@ -672,7 +674,10 @@ int32 PyTuple::hash() const
     long mult = 1000003L;
     x = 0x345678L;
     while (--len >= 0) {
-        y = items[index++]->hash();
+        PyRep* element = items[index++];
+        if (element == nullptr)
+            return -1; // partially filled tuples cannot be hash keys
+        y = element->hash();
         if (y == -1)
             return -1;
         x = (x ^ y) * mult;
@@ -722,6 +727,8 @@ void PyList::clear()
 // copy assignment
 PyList& PyList::operator=( const PyList& oth )
 {
+    if (this == &oth)
+        return *this;
     //sLog.Yellow("PyList()", "Copy assignment.");
     clear();
     items.resize( oth.size() );
@@ -829,6 +836,8 @@ void PyDict::SetItem( PyRep* key, PyRep* value )
 // copy assignment
 PyDict& PyDict::operator=( const PyDict& oth )
 {
+    if (this == &oth)
+        return *this;
     //sLog.Yellow("PyDict()", "Copy assignment.");
     clear();
     const_iterator cur = oth.begin(), end = oth.end();
@@ -851,15 +860,18 @@ PyObject::PyObject( PyString* type, PyRep* args )
 PyObject::PyObject(const char* type, PyRep* args )
 : PyRep(PyRep::PyTypeObject), mType(new PyString(type)), mArguments(args) { }
 PyObject::PyObject(const PyObject& oth)
-: PyRep(PyRep::PyTypeObject), mType(oth.mType), mArguments(oth.arguments())
+: PyRep(PyRep::PyTypeObject),
+  // PyObject::~PyObject() releases both members. A shallow copy caused the
+  // clone to free its source's type/arguments (RPC use-after-free).
+  mType(oth.mType == nullptr ? nullptr : oth.mType->Clone()->AsString()),
+  mArguments(oth.mArguments == nullptr ? nullptr : oth.mArguments->Clone())
 {
-    //sLog.Cyan("PyObject()", "Copy C'tor.");
 }
 
 PyObject::~PyObject()
 {
-    PyDecRef( mType );
-    PyDecRef( mArguments );
+    PySafeDecRef( mType );
+    PySafeDecRef( mArguments );
 }
 
 PyRep* PyObject::Clone() const
@@ -906,6 +918,8 @@ bool PyObjectEx::visit( PyVisitor& v ) const
 
 PyObjectEx& PyObjectEx::operator= (const PyObjectEx& oth)
 {
+    if (this == &oth)
+        return *this;
     list() = oth.list();
     dict() = oth.dict();
 
