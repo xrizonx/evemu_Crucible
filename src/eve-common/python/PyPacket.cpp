@@ -686,7 +686,10 @@ EVENotificationStream::~EVENotificationStream() {
 
 EVENotificationStream *EVENotificationStream::Clone() const {
     EVENotificationStream *res = new EVENotificationStream();
-    res->args = args->Clone()->AsTuple();
+    res->notifyType = notifyType;
+    res->remoteObject = remoteObject;
+    res->remoteObjectStr = remoteObjectStr;
+    res->args = (args == nullptr) ? nullptr : args->Clone()->AsTuple();
     return res;
 }
 
@@ -699,7 +702,8 @@ void EVENotificationStream::Dump(LogType type, PyVisitor& dumper)
         _log(type, "  Remote Object: %u", remoteObject);
 
     _log(type, "  Arguments:");
-    args->visit( dumper );
+    if (args != nullptr)
+        args->visit( dumper );
 }
 
 bool EVENotificationStream::Decode(const std::string &pkt_type, const std::string &notify_type, PyTuple *&in_payload) {
