@@ -144,9 +144,18 @@ public:
             // dispatch call
             CallMachoBindObject_call boundcall;
 
-            if (boundcall.Decode(&call.value()) == false) {
+            // The generated Decode(PyRep**) overload consumes and DecRefs
+            // its input. call.value() is a BORROWED pointer into args.tuple;
+            // passing its address allowed Decode() to free the owner's
+            // nested tuple, leaving a stale pointer in the outer request.
+            // Retain a separate reference for the consuming decoder.
+            PyTuple* decodeInput = call.value();
+            if (decodeInput == nullptr)
+                throw CustomError("MachoBindObject: missing nested bind-call tuple.");
+            PyIncRef(decodeInput);
+            if (boundcall.Decode(&decodeInput) == false) {
                 codelog(SERVICE__ERROR, "%s Service: Failed to decode boundcall arguments", this->GetName().c_str());
-                return nullptr;
+                throw CustomError("MachoBindObject: unable to decode nested call.");
             }
 
             _log(SERVICE__MESSAGE, "%s Service: MachoBindObject also contains call to %s", this->GetName().c_str(), boundcall.method_name.c_str());
