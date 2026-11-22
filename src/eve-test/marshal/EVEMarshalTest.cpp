@@ -25,6 +25,7 @@
 
 #include "eve-test.h"
 #include "python/PyPacket.h"
+#include "packets/General.h"
 #include "network/StreamPacketizer.h"
 
 #include <cstring>
@@ -181,6 +182,33 @@ bool NullPacketFieldRegression()
     return valid;
 }
 
+bool BorrowedMachoBindDecodeLifetimeRegression()
+{
+    // The nested call is still owned by the outer RPC argument tuple.
+    // Generated Decode(PyRep**) consumes its input, so its caller MUST
+    // acquire a temporary reference before invoking the overload.
+    PyTuple* parent = new PyTuple(1);
+    PyTuple* nested = new PyTuple(3);
+    nested->SetItem(0, new PyString("GetCorporation"));
+    nested->SetItem(1, new PyTuple(0));
+    nested->SetItem(2, new PyDict());
+    parent->SetItem(0, nested);
+
+    CallMachoBindObject_call decoded;
+    PyTuple* decoderInput = parent->GetItem(0)->AsTuple();
+    PyIncRef(decoderInput);
+    const bool success = decoded.Decode(&decoderInput);
+    const bool parentIntact = decoderInput == nullptr &&
+        nested->GetCount() == 1 &&
+        parent->GetItem(0) == nested &&
+        decoded.method_name == "GetCorporation" &&
+        decoded.arguments != nullptr &&
+        decoded.arguments->IsTuple() &&
+        decoded.arguments->size() == 0;
+    PyDecRef(parent);
+    return success && parentIntact;
+}
+
 bool CallPacketRoundTrip(bool channel, bool named, bool wrapped, bool malformed)
 {
     PyCallStream outbound;
@@ -267,6 +295,10 @@ int marshal_EVEMarshalTest( int argc, char* argv[] )
     }
     if (!NullPacketFieldRegression()) {
         ::puts("Packet null payload/call cloning regression.");
+        return EXIT_FAILURE;
+    }
+    if (!BorrowedMachoBindDecodeLifetimeRegression()) {
+        ::puts("Nested MachoBind decoder ownership regression.");
         return EXIT_FAILURE;
     }
     if (!CallPacketRoundTrip(false, false, false, false) ||
