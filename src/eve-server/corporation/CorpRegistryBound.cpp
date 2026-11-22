@@ -618,12 +618,19 @@ PyResult CorpRegistryBound::AddCorporation(PyCallArgs &call,
         return nullptr;
     }
     PyTuple* a1 = cc.Encode();
-    sLog.Blue("CorpCreate", "Character %u: sending corporation change notifications.", pClient->GetCharacterID());
-    // send single to client
-    pClient->SendNotification("OnCorporationChanged", "clientID", &a1);
-    // send multi to station guests
+    if (a1 == nullptr)
+        throw CustomError("Corporation creation: unable to encode change notification.");
+
+    // SendNotification / Multicast transfer payload references into queued
+    // notifications. Reserve BOTH references *before* the first send: the
+    // first send may serialize and release its packet synchronously, and
+    // incrementing a1 afterward could resurrect an already-freed tuple.
     PyIncRef(a1);
-    sEntityList.Multicast("OnCorporationChanged", "stationid", &a1, NOTIF_DEST__LOCATION, pClient->GetLocationID());
+    PyTuple* stationNotification = a1;
+    sLog.Blue("CorpCreate", "Character %u: sending corporation change notifications.", pClient->GetCharacterID());
+    pClient->SendNotification("OnCorporationChanged", "clientID", &a1);
+    sEntityList.Multicast("OnCorporationChanged", "stationid", &stationNotification,
+                          NOTIF_DEST__LOCATION, pClient->GetLocationID());
 
     sLog.Blue("CorpCreate", "Character %u: notifications queued; corporation %u created.", pClient->GetCharacterID(), corpID);
     return m_db.GetCorporations(corpID);
