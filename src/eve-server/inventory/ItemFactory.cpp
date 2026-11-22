@@ -77,16 +77,26 @@ void ItemFactory::Close()
 {
     sLog.Warning("      ItemFactory", "%lu Items, %lu Types still in list", \
                 m_items.size(), m_types.size());
-    // types
-    for (auto cur : m_types)
-        SafeDelete(cur.second);
-    m_types.clear();
-    // items
-    //for (auto cur : m_items)
-    //    delete(cur.second.get());
-    m_items.clear();
-    // Set Client pointer to NULL
+
+    // Each InventoryItem holds a reference to its ItemType. The old shutdown
+    // deleted all ItemTypes first, then released InventoryItemRefs; that left
+    // live items (and their AttributeMaps) referring to freed type data.
+    // Clear the active client marker before releasing any cached items.
     m_pClient = nullptr;
+
+    // Release one cached item at a time, detaching it from the map before its
+    // last RefPtr can run destructors/callbacks that revisit ItemFactory.
+    while (!m_items.empty()) {
+        auto it = m_items.begin();
+        InventoryItemRef held = it->second;
+        m_items.erase(it);
+        // held releases after the entry has been removed.
+    }
+
+    // ItemType objects must outlive every cached InventoryItem destructor.
+    for (auto& entry : m_types)
+        SafeDelete(entry.second);
+    m_types.clear();
 }
 
 void ItemFactory::SaveItems() {
