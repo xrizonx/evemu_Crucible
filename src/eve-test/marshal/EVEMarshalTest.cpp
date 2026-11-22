@@ -26,6 +26,7 @@
 #include "eve-test.h"
 #include "python/PyPacket.h"
 #include "packets/General.h"
+#include "packets/CorporationPkts.h"
 #include "network/StreamPacketizer.h"
 
 #include <cstring>
@@ -209,6 +210,41 @@ bool BorrowedMachoBindDecodeLifetimeRegression()
     return success && parentIntact;
 }
 
+bool CorporationCreateBorrowedTupleRegression()
+{
+    // The dispatcher owns this original request tuple throughout the RPC.
+    // Generated Decode(PyRep**) consumes its input; Decode(PyRep*) borrows.
+    // Corporation creation must not invalidate request arguments before
+    // the notification/session-update and response dispatch has finished.
+    PyTuple* request = new PyTuple(13);
+    request->SetItem(0, new PyString("Crucible Test Corporation"));
+    request->SetItem(1, new PyString("CTC"));
+    request->SetItem(2, new PyString("test corp"));
+    request->SetItem(3, new PyString("https://example.invalid"));
+    request->SetItem(4, new PyFloat(0.10));
+    for (size_t i = 5; i <= 11; ++i)
+        request->SetItem(i, PyStatic.NewNone());
+    request->SetItem(12, new PyInt(1));
+
+    bool decoded = false;
+    {
+        Call_AddCorporation call;
+        decoded = call.Decode(static_cast<PyRep*>(request));
+        if (decoded)
+            decoded = call.corpName == "Crucible Test Corporation" &&
+                      call.corpTicker == "CTC" && call.applicationEnabled == 1;
+    }
+    // Important: access the input AFTER the decoded wrapper releases its
+    // owned field copies. A consuming decoder would have destroyed it here.
+    const bool stillOwnedByDispatcher =
+        request->size() == 13 &&
+        request->GetItem(0) != nullptr &&
+        request->GetItem(0)->IsString() &&
+        request->GetItem(0)->AsString()->content() == "Crucible Test Corporation";
+    PyDecRef(request);
+    return decoded && stillOwnedByDispatcher;
+}
+
 bool CallPacketRoundTrip(bool channel, bool named, bool wrapped, bool malformed)
 {
     PyCallStream outbound;
@@ -299,6 +335,10 @@ int marshal_EVEMarshalTest( int argc, char* argv[] )
     }
     if (!BorrowedMachoBindDecodeLifetimeRegression()) {
         ::puts("Nested MachoBind decoder ownership regression.");
+        return EXIT_FAILURE;
+    }
+    if (!CorporationCreateBorrowedTupleRegression()) {
+        ::puts("Corporation create RPC borrowed tuple lifetime regression.");
         return EXIT_FAILURE;
     }
     if (!CallPacketRoundTrip(false, false, false, false) ||
