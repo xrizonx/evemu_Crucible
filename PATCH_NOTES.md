@@ -1,5 +1,12 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 22 November 2026 — Post-login corporation RPC DecRef crash (concurrency mitigation)
+
+- Windows server confirms `SelectCharacterID` RPC completed and queued a response, followed by corpRegistry/corpStationMgr resolve calls and petitioner unread-message response. A `DecRef()` on an already destroyed object is reported before subsequent corporation binds and inventory resolution. The symbol-less stack does not establish which object was destroyed. The 1529.6 ms warning only shows slow login dispatch.
+- Found a shared concurrency defect: `RefObject` intrusive reference count and deleted state were plain fields. Increment/decrement can race when references are retained or released on different threads. Moved the count to `std::atomic<uint32>` with atomic add/sub and release/acquire ordering on final release; made deleted marker atomic and handled decrement underflow without wrapping.
+- This only addresses reference-count data races. It does not render an already dangling pointer valid, and it does not prove the user's crash is fixed. No tests or builds were run on this change. Character data and client wire-format are unchanged.
+
+
 ## 21 November 2026 — Docker invbroker MachoBindObject IncRef fatal
 
 - Screenshot shows the Linux server exiting code 139 immediately after `invbroker::MachoBindObject()`, with `IncRef()` on deleted object. This indicates a memory-safety fault in the C++ server process; the MariaDB aborted-connection line follows the termination.
