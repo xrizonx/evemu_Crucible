@@ -1,5 +1,16 @@
 # Live Patch Notes — xrizonx/evemu_Crucible
 
+## 22 November 2026 — Corporation creation gameplay RefPtr / borrowed RPC lifetime
+
+- **Report:** Creating a player corporation produced `[RefPtrError] IncRef() on deleted object` in Linux/Docker. The printed count (`1679760624`) is not a credible active reference count; the stack was not symbolized, so the exact `RefObject` call site is **not yet proven**.
+- **Concrete RPC ownership defect:** Six `CorpRegistryBound` handlers, including `AddCorporation`, used `args.Decode(&call.tuple)`. The generated `Decode(PyRep**)` overload calls `PyDecRef` on that tuple and sets it to null. The shared dispatcher owns `PyCallArgs::tuple` and passed borrowed decoded argument pointers into the handler. Changed all six sites to `Decode(static_cast<PyRep*>(call.tuple))`, which borrows the tuple and leaves its ownership with the dispatcher until return.
+- **Notification lifetime:** `AddCorporation` previously sent a queued client notification, **then** `PyIncRef`'d the same payload for station guests. The first send's packet can release its reference, so this sequence risks retaining a freed payload. Reserve the separate station notification reference **before** the first send and transfer each reference to the appropriate notification path.
+- **Creator lifetime:** In `CorporationDB::AddCorporation`, the old `Character* pChar = pClient->GetChar().get()` used a raw pointer from a temporary `CharacterRef`; now holds a `CharacterRef creator` throughout the skill/member-limit checks and database work.
+- **Diagnostics:** Added `CorpCreate` stage logs for validation, DB registration, role setup, registration fee, corporation chat channel, membership update, and notification send; these let the next repro narrow the failing stage.
+- **Regression:** Added `CorporationCreateBorrowedTupleRegression` to `src/eve-test/marshal/EVEMarshalTest.cpp` using a thirteen-field `Call_AddCorporation` tuple matching `CorporationPkts.xmlp`. The test asserts the decoder did not destroy or invalidate the dispatcher-owned tuple.
+- **Verification:** These are source-level corrections on hotfix PR #52. **No build, CI, runtime test or symbolized stack has yet verified the corporation-creation fix.** No MariaDB schema/data migration. GitHub Actions automatic CI remains disabled. Build locally from the hotfix branch.
+
+
 ## 22 November 2026 — Suppress stale RefPtr releases safely on final server exit
 
 - **Symptom:** Docker shutdown continued printing repeated `FATAL: DecRef() on deleted object` with invalid reference counts around 3.3 billion and unsymbolized stacks. These values are freed-memory garbage, not evidence of that many references.
