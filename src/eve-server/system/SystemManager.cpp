@@ -122,7 +122,7 @@ SystemManager::~SystemManager() {
     }
 
     if (m_loaded)
-        UnloadSystem();
+        UnloadSystem(true);
 
     SafeDelete(m_dungMgr);
     SafeDelete(m_anomMgr);
@@ -348,8 +348,8 @@ bool SystemManager::SystemActivity() {
 }
 
 // called from EntityList::Process() and EntityList::Close()
-void SystemManager::UnloadSystem() {
-    if (!m_loaded or !SafeToUnload())
+void SystemManager::UnloadSystem(bool force) {
+    if (!m_loaded || (!force && !SafeToUnload()))
         return;
 
     sLog.Magenta("    SystemManager", "UnloadSystem() called for %s(%u).", m_data.name.c_str(), m_data.systemID);
@@ -361,51 +361,61 @@ void SystemManager::UnloadSystem() {
     /** @todo  this will throw on error.  if called from d'tor, this CANNOT throw.  fix it */
     //PayBounties();
     
-    // unload belts, which saves and removes roids from system
-    m_beltMgr->ClearAll();
-    // close anomaly mgr, which saves and removes sigs from system
-    m_anomMgr->Close();
+    // Belts and anomalies may unregister entities as they are cleared.
+    if (m_beltMgr != nullptr)
+        m_beltMgr->ClearAll();
+    if (m_anomMgr != nullptr)
+        m_anomMgr->Close();
 
-    // remove static and dynamic entities
-    std::map<uint32, SystemEntity*>::iterator itr = m_entities.begin();
-    SystemEntity* pSE(nullptr);
-    while (itr != m_entities.end()) {
-        if ((itr->first == 0) or (itr->second == nullptr)) {
-            itr = m_entities.erase(itr);
+    // Detach from the owning entity map BEFORE invoking target, station,
+    // inventory or bubble callbacks. Those callbacks may call RemoveEntity(),
+    // which now erases m_entities; keeping a live iterator through them caused
+    // invalid-iterator access and double releases during shutdown.
+    while (!m_entities.empty()) {
+        auto it = m_entities.begin();
+        const uint32 itemID = it->first;
+        SystemEntity* pSE = it->second;
+        m_entities.erase(it);
+        m_ticEntities.erase(itemID);
+        m_staticEntities.erase(itemID);
+        m_opStaticEntities.erase(itemID);
+
+        if (pSE == nullptr)
             continue;
-        }
-        pSE = itr->second;
 
         if (pSE->TargetMgr() != nullptr)
             pSE->TargetMgr()->Unload();
 
-        if (pSE->IsStaticEntity() or pSE->isGlobal()) {
+        if (pSE->IsStaticEntity() || pSE->isGlobal()) {
             if (pSE->IsStationSE()) {
-                pSE->GetStationSE()->UnloadStation();
-                sEntityList.RemoveStation(itr->first);
+                if (pSE->GetStationSE() != nullptr)
+                    pSE->GetStationSE()->UnloadStation();
+                sEntityList.RemoveStation(itemID);
             }
-            m_staticEntities.erase(m_staticEntities.find(itr->first));
         } else if (pSE->IsShipSE()) {
-            pSE->GetShipSE()->GetShipItemRef()->LogOut();
+            if (pSE->GetShipSE() != nullptr) {
+                ShipItemRef ship = pSE->GetShipSE()->GetShipItemRef();
+                if (ship.get() != nullptr)
+                    ship->LogOut();
+            }
         } else if (pSE->IsNPCSE()) {
-            sEntityList.RemoveNPC();    // this is for loaded npc count.
-            pSE->GetSelf()->Delete();
+            sEntityList.RemoveNPC();
+            InventoryItemRef item = pSE->GetSelf();
+            if (item.get() != nullptr)
+                item->Delete();
         } else if (pSE->IsProbeSE()) {
-            sEntityList.RemoveProbe(itr->first);
+            sEntityList.RemoveProbe(itemID);
         }
 
-        if (pSE->IsOperSE()) { //Remove operational statics from list
-            m_opStaticEntities.erase(m_opStaticEntities.find(itr->first));
-        }
-
-        sItemFactory.RemoveItem(itr->first);
-        itr = m_entities.erase(itr);
+        sItemFactory.RemoveItem(itemID);
         sBubbleMgr.Remove(pSE);
         SafeDelete(pSE);
     }
 
-    // save items, then remove from system inventory, item factory and decrement item count
-    m_solarSystemRef->GetMyInventory()->Unload();
+    // Unload the system inventory while its ItemType and cache still exist.
+    if (m_solarSystemRef.get() != nullptr &&
+        m_solarSystemRef->GetMyInventory() != nullptr)
+        m_solarSystemRef->GetMyInventory()->Unload();
     _log(PHYSICS__MESSAGE, "SystemManager::UnloadSystem() - map count after unload: %lu npcs, %lu entities, %lu statics.", \
                 m_npcs.size(), m_entities.size(), m_staticEntities.size());
 
