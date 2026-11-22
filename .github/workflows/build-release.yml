@@ -4,12 +4,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+# TEMPORARY BILLING PAUSE (2026-11-22):
+# Automatic CI is disabled to avoid exhausting free GitHub Actions minutes.
+# Preserve the original build jobs so they can be re-enabled later.
+# A build runs ONLY if someone explicitly selects "Run workflow".
 on:
-  push:
-    branches: [master]
-    tags: ["v*", "stable-rizonx"]
-  pull_request:
-    branches: [master]
   workflow_dispatch:
 
 permissions:
