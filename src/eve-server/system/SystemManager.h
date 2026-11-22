@@ -65,7 +65,7 @@ public:
 
     bool ProcessTic();          // called at 1Hz.
     bool BootSystem();
-    void UnloadSystem();
+    void UnloadSystem(bool force = false); // force final cleanup even with active POS/colonies
     void UpdateData();          // called from EntityList every 5m for active systems
 
     bool IsLoaded()                                     { return m_loaded; }
