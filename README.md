@@ -174,6 +174,8 @@ C:\EVEmu\
 
 **Do not move the DLLs away from `bin\eve-server.exe`.** The compressed SQL data, migration scripts and `evedbtool.exe` must remain together under `share\evemu\sql`.
 
+**Editing `devtools.raw`:** This is compiled Python 2 marshal data, not plain text. Use the [cross-platform DevTools RAW inspector/editor](docs/DEVTOOLS_RAW_EDITOR.md) for safe string-constant edits, module inspection and Windows/Linux/Debian Docker deployment instructions. The active Docker file is `./config/devtools.raw`; the source `utils/config/devtools.raw` is only a template.
+
 ## 2. Prepare Windows folders and configuration templates
 
 On a **new installation**, open PowerShell:
