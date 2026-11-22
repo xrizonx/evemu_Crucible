@@ -2337,18 +2337,29 @@ void Client::ChannelLeft(LSCChannel *chan) {
 /* character notification messages wrapper                              */
 /************************************************************************/
 void Client::CharNoLongerInStation() {
-    // clear station data
-    // remove client from station guest list
-    sEntityList.GetStationByID(m_stationData.stationID)->RemoveGuest(this);
-    m_system->SetDockCount(this, false);
+    // A failed or interrupted station boot may not have a cached station.
+    StationItemRef stationRef = sEntityList.GetStationByID(m_stationData.stationID);
+    if (stationRef.get() != nullptr)
+        stationRef->RemoveGuest(this);
+    else
+        sLog.Warning("Client::CharNoLongerInStation", "Missing station %u for departing character %u.",
+                     m_stationData.stationID, GetCharacterID());
+    if (m_system != nullptr)
+        m_system->SetDockCount(this, false);
+    if (m_char.get() == nullptr) {
+        m_stationData = StationData();
+        return;
+    }
     OnCharNoLongerInStation ocnis;
         ocnis.charID = m_char->itemID();
         ocnis.corpID = GetCorporationID();
         ocnis.allianceID = GetAllianceID();
         ocnis.factionID = GetWarFactionID();
     PyTuple* tmp = ocnis.Encode();
-    if (tmp == nullptr)
+    if (tmp == nullptr) {
+        m_stationData = StationData();
         return;
+    }
     std::vector<Client*> clients;
     clients.clear();
     sEntityList.GetStationGuestList(m_stationData.stationID, clients);
@@ -2363,6 +2374,10 @@ void Client::CharNoLongerInStation() {
 }
 
 void Client::CharNowInStation() {
+    if (m_system == nullptr || m_char.get() == nullptr) {
+        sLog.Warning("Client::CharNowInStation", "Station entry skipped with incomplete character or system.");
+        return;
+    }
     m_system->SetDockCount(this, true);
     OnCharNowInStation ocnis;
         ocnis.charID = m_char->itemID();
@@ -2370,6 +2385,8 @@ void Client::CharNowInStation() {
         ocnis.allianceID = GetAllianceID();
         ocnis.warFactionID = GetWarFactionID();
     PyTuple* tmp = ocnis.Encode();
+    if (tmp == nullptr)
+        return;
     std::vector<Client*> clients;
     clients.clear();
     sEntityList.GetStationGuestList(m_locationID, clients);
