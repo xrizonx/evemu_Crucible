@@ -84,14 +84,21 @@ void ItemFactory::Close()
     // Clear the active client marker before releasing any cached items.
     m_pClient = nullptr;
 
-    // Release one cached item at a time, detaching it from the map before its
-    // last RefPtr can run destructors/callbacks that revisit ItemFactory.
-    while (!m_items.empty()) {
-        auto it = m_items.begin();
-        InventoryItemRef held = it->second;
-        m_items.erase(it);
-        // held releases after the entry has been removed.
-    }
+    // ItemFactory has THREE owning item caches, not just m_items. Even if
+    // static/dynamic caches are not populated in the usual code path, they
+    // must be cleared before ItemType descriptors are destroyed. Otherwise
+    // their remaining RefPtrs can outlive the metadata their items reference.
+    // Detach each entry first; release the last RefPtr outside map mutation.
+    auto releaseItems = [](auto& cache) {
+        while (!cache.empty()) {
+            auto it = cache.begin();
+            InventoryItemRef held = it->second;
+            cache.erase(it);
+        }
+    };
+    releaseItems(m_staticItems);
+    releaseItems(m_dynamicItems);
+    releaseItems(m_items);
 
     // ItemType objects must outlive every cached InventoryItem destructor.
     for (auto& entry : m_types)
